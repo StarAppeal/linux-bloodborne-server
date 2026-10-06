@@ -31,6 +31,7 @@ git submodule update --init --recursive
 | `tools/build-server.ps1` | builds shadnet and its tests (`out\server`) |
 | `tools/ci-check.ps1 -Component emulator\|server [-All]` | runs the upstream CI checks locally: clang-format 19, trailing whitespace, REUSE, build, ctest |
 | `tools/rig-setup.ps1` | creates a two-player test rig on one PC (own shadnet, backend, host and guest dirs) |
+| `tools/online-kit.ps1` | packs the current build into a kit for playing with a friend over the internet ([guide](docs/ONLINE_TEST.md)) |
 
 ## Pulling upstream updates
 
