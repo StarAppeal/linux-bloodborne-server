@@ -62,8 +62,10 @@ $pass = Ask "Account password (letters, digits, _ or -)" $saved["PASS"] $isSecre
 Write-Host ""
 Write-Host "  The party is name:secret, and both players must type exactly the same thing."
 $party = Ask "Party" $(if ($saved["PARTY"]) { $saved["PARTY"] } else { "hunters:changeme" }) $isParty "Use name:secret, letters, digits, _ or - only."
-$defPort = if ($saved["P2PPORT"]) { $saved["P2PPORT"] } elseif ($role -eq "host") { "51610" } else { "51611" }
-$p2pPort = Ask "P2P UDP port" $defPort $isPort "A number from 1024 to 65535."
+# "auto" lets Windows pick a free port. A fixed one only matters for port forwarding, and Windows
+# (Hyper-V, WSL, Docker) can reserve ranges that refuse the bind with error 10013.
+$defPort = if ($saved["P2PPORT"] -and $saved["P2PPORT"] -notin @("51610", "51611")) { $saved["P2PPORT"] } else { "auto" }
+$p2pPort = Ask "P2P UDP port (auto unless you port-forward)" $defPort { param($v) $v -eq "auto" -or (& $isPort $v) } "Type auto, or a number from 1024 to 65535."
 
 # --- user dir --------------------------------------------------------------------------------
 $user = Join-Path $kit "user"

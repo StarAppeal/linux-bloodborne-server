@@ -14,7 +14,9 @@ if not exist "%GAMEDIR%\CUSA03173\eboot.bin" (
     exit /b 1
 )
 set SHADPS4_BLOODBORNE_SEAMLESS_COOP=1
-set SHADPS4_P2P_PORT=%P2PPORT%
+rem auto (and the old kit defaults 51610/51611) lets Windows pick a free UDP port.
+set "SHADPS4_P2P_PORT="
+if /i not "%P2PPORT%"=="auto" if not "%P2PPORT%"=="51610" if not "%P2PPORT%"=="51611" set "SHADPS4_P2P_PORT=%P2PPORT%"
 set SHADPS4_BLOODBORNE_PARTY=%PARTY%
 set SHADPS4_BLOODBORNE_PARTY_ROLE=%ROLE%
 set SHADPS4_BLOODBORNE_RE_TRACE=0
