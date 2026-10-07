@@ -2,6 +2,7 @@
 #   <Out>\shadps4.exe            snapshot of out\emulator\build (both players must run the same one)
 #   <Out>\server                 shadnet on 0.0.0.0, ports 31313 (TCP), 31314 (UDP), 31315 (WebAPI)
 #   <Out>\backend                the local ss4 backend (port 20443)
+#   <Out>\event-patch            patched map event files (tools\re\party_boss_events.py)
 #   <Out>\*.bat, tools\setup.ps1 from tools\online-kit
 # and zips it (without any player's user dir or settings) as <Out>.zip to send to the other player.
 # See docs/ONLINE_TEST.md.
@@ -40,6 +41,14 @@ RegistrationSecretKey=
 Copy-Item "$PSScriptRoot\..\backend\*.py", "$PSScriptRoot\..\backend\ss_info_template.xml" "$Out\backend\" -Force
 if (-not (Test-Path "$Out\backend\notice.txt")) { "" | Set-Content "$Out\backend\notice.txt" }
 
+# Map events every party member needs (boss loot, death wakes, messenger gifts; see
+# tools\re\party_boss_events.py). SETUP lays them over the player's own mods in kit\game.
+$game = "$Install\DATA\Bloodborne"
+if (Test-Path "$Out\event-patch") { Remove-Item -Recurse -Force "$Out\event-patch" }
+& py -3 "$PSScriptRoot\re\party_boss_events.py" "$Out\event-patch" "$game\CUSA03173\dvdroot_ps4\event" `
+    "$game\CUSA03173-patch\dvdroot_ps4\event" "$game\CUSA03173-mods\dvdroot_ps4\event"
+if ($LASTEXITCODE -ne 0 -or -not (Get-ChildItem "$Out\event-patch" -Filter *.emevd.dcx)) { throw "party_boss_events.py failed" }
+
 # cmd needs CRLF for labels and goto; the repo may hand us LF.
 foreach ($f in Get-ChildItem $src -Recurse -File) {
     $rel = $f.FullName.Substring($src.Length + 1)
@@ -49,7 +58,7 @@ foreach ($f in Get-ChildItem $src -Recurse -File) {
 
 $zip = "$Out.zip"
 if (Test-Path $zip) { Remove-Item $zip }
-$items = Get-ChildItem $Out | Where-Object { $_.Name -notin @("user", "settings.bat") }
+$items = Get-ChildItem $Out | Where-Object { $_.Name -notin @("user", "settings.bat", "game") }
 Compress-Archive -Path $items.FullName -DestinationPath $zip -CompressionLevel Optimal
 $hash = (Get-FileHash "$Out\shadps4.exe" -Algorithm SHA256).Hash.Substring(0, 12)
 Write-Host "Kit ready at $Out"

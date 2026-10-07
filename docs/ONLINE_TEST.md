@@ -61,6 +61,7 @@ This creates `C:\bb\online-kit\` and `C:\bb\online-kit.zip` (about 40 MB). The k
 | File | Who | What |
 |---|---|---|
 | `shadps4.exe` | both | snapshot of `C:\bb\out\emulator\build\shadps4.exe` |
+| `event-patch\` | both | 17 map event files from `tools\re\party_boss_events.py` (boss loot for the guest, death wakes, per-player messenger gifts); identical to the rig's |
 | `1 - SETUP.bat` | both | asks host IP, role, account, party, P2P port; copies your `DATA\user` into the kit and configures it |
 | `2 - PLAY.bat` | both | sets the co-op/party env vars and starts the game |
 | `FIREWALL - Allow (run as admin).bat` | both | inbound rules for `shadps4.exe`, TCP 31313/31315/20443, UDP 31314/51610-51611 |
@@ -98,7 +99,11 @@ Unzip the kit anywhere. Run `FIREWALL - Allow (run as admin)` as administrator, 
 | P2P UDP port | Enter (51610) | Enter (51611) |
 
 SETUP writes `settings.bat` and, on first run, copies your `DATA\user` (saves, keys, controls)
-into `kit\user`. The copied files it then edits are `custom_configs\CUSA03173.json` (shadnet
+into `kit\user`. It also builds `kit\game`: junctions to the install's `CUSA03173`,
+`CUSA03173-patch` and each active mod folder, plus a real `event` folder with the patched
+events on top. `2 - PLAY` starts `kit\game\CUSA03173\eboot.bin`, so the install's own mods
+folder is never changed (the same trick as `rig-lowspec.ps1`). A mod that edits event files
+would be overridden by the patched ones for those maps. The copied files it then edits are `custom_configs\CUSA03173.json` (shadnet
 and WebAPI at the host IP, UPnP off), `users.json` (the account) and `host_overrides.json`
 (ss4 to `http://HOSTIP:20443`). Progress made in the kit stays in the kit's own save. Run SETUP
 again any time to change answers.

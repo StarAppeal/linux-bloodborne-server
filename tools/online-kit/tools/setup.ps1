@@ -74,6 +74,35 @@ if (-not (Test-Path (Join-Path $user "custom_configs\CUSA03173.json"))) {
     if ($LASTEXITCODE -ge 8) { throw "robocopy failed ($LASTEXITCODE)" }
 }
 
+# --- game folder -----------------------------------------------------------------------------
+# kit\game is junctions to the install's base game, patch and active mods, plus a real "event"
+# folder: the install's event mods with the kit's patched map events on top. shadPS4 takes the
+# -patch and -mods folders from the -g path, so the install itself is never changed.
+$src = "$install\DATA\Bloodborne"
+$gameDir = Join-Path $kit "game"
+$modsDst = "$gameDir\CUSA03173-mods\dvdroot_ps4"
+function Remove-Junction([string]$Path) {
+    # rmdir removes only the link; Remove-Item -Recurse could follow it into the install.
+    if (Test-Path $Path) { cmd /c rmdir "$Path" | Out-Null }
+}
+New-Item -ItemType Directory -Force $modsDst | Out-Null
+foreach ($name in "CUSA03173", "CUSA03173-patch") {
+    Remove-Junction "$gameDir\$name"
+    New-Item -ItemType Junction -Path "$gameDir\$name" -Target "$src\$name" | Out-Null
+}
+foreach ($item in Get-ChildItem -Force $modsDst) {
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { Remove-Junction $item.FullName }
+    else { Remove-Item -Recurse -Force $item.FullName }
+}
+$skip = @("MODS", "!BACKUP", "!INSTLOGS", "JSGME.exe", "JSGME.ini", "event")
+foreach ($item in Get-ChildItem -Force "$src\CUSA03173-mods\dvdroot_ps4" | Where-Object { $_.Name -notin $skip }) {
+    if ($item.PSIsContainer) { New-Item -ItemType Junction -Path "$modsDst\$($item.Name)" -Target $item.FullName | Out-Null }
+    else { Copy-Item $item.FullName "$modsDst\" }
+}
+New-Item -ItemType Directory -Force "$modsDst\event" | Out-Null
+if (Test-Path "$src\CUSA03173-mods\dvdroot_ps4\event") { Copy-Item "$src\CUSA03173-mods\dvdroot_ps4\event\*" "$modsDst\event\" -Recurse -Force }
+Copy-Item "$kit\event-patch\*" "$modsDst\event\" -Force
+
 $cfgPath = Join-Path $user "custom_configs\CUSA03173.json"
 $cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
 Set-Prop $cfg.General "connected_to_network" $true

@@ -6,9 +6,9 @@ This is a test build of seamless co-op for Bloodborne on shadPS4. One player
 
 YOU NEED
   - Your own Bloodborne.PC.Online folder (game 01.09), the same one you
-    already play with. Keep the same mods enabled as the host.
-  - Radmin VPN (https://www.radmin-vpn.com), joined to the host's network.
-    The host tells you the network name and password.
+    already play with. Keep the same mods enabled as the host. Nothing in it
+    gets changed.
+  - The VPN you already use with the host (Radmin VPN), connected.
   - If shadps4.exe will not start ("MSVCP140.dll was not found"), install the
     Microsoft Visual C++ Redistributable x64:
     https://aka.ms/vs/17/release/vc_redist.x64.exe
@@ -32,7 +32,11 @@ STEPS (guest)
 
 NOTES
   - SETUP copies your DATA\user folder (settings and saves) into this kit, so
-    progress made here stays here. Your normal install is not touched.
+    progress made here stays here. It also makes a "game" folder that links to
+    your install's game, patch and mods and adds the co-op event files (boss
+    loot, deaths, messenger gifts) on top. Your normal install is not touched.
+  - When the host sends a newer kit, unzip it over this folder and run
+    "1 - SETUP" again (Enter keeps every answer).
   - The emulator log is user\log\shad_log.txt. Send it to the host if
     something goes wrong.
   - Both players must run the exact same shadps4.exe from the host's kit.
