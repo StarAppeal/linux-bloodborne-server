@@ -78,13 +78,31 @@ if (-not (Test-Path (Join-Path $user "custom_configs\CUSA03173.json"))) {
 # kit\game is junctions to the install's base game, patch and active mods, plus a real "event"
 # folder: the install's event mods with the kit's patched map events on top. shadPS4 takes the
 # -patch and -mods folders from the -g path, so the install itself is never changed.
+# Junctions need NTFS. On an exFAT or FAT32 drive (common for external drives) the folder goes
+# under %LOCALAPPDATA% instead; a junction there can still point at the other drive.
 $src = "$install\DATA\Bloodborne"
-$gameDir = Join-Path $kit "game"
-$modsDst = "$gameDir\CUSA03173-mods\dvdroot_ps4"
 function Remove-Junction([string]$Path) {
     # rmdir removes only the link; Remove-Item -Recurse could follow it into the install.
     if (Test-Path $Path) { cmd /c rmdir "$Path" | Out-Null }
 }
+function Test-JunctionSupport([string]$Dir) {
+    $probe = Join-Path $Dir ".junction-probe"
+    try {
+        New-Item -ItemType Directory -Force $Dir | Out-Null
+        Remove-Junction $probe
+        New-Item -ItemType Junction -Path $probe -Target $src -ErrorAction Stop | Out-Null
+        Remove-Junction $probe
+        return $true
+    } catch { return $false }
+}
+$gameDir = Join-Path $kit "game"
+if (-not (Test-JunctionSupport $gameDir)) {
+    if ((Test-Path $gameDir) -and -not (Get-ChildItem -Force -Recurse $gameDir -File)) { Remove-Item -Recurse -Force $gameDir }
+    $gameDir = Join-Path $env:LOCALAPPDATA "BloodborneSeamlessCoop\game"
+    Write-Host "  This drive can't hold folder links, so the game folder goes in $gameDir"
+    if (-not (Test-JunctionSupport $gameDir)) { throw "Can't create folder links in $gameDir either" }
+}
+$modsDst = "$gameDir\CUSA03173-mods\dvdroot_ps4"
 New-Item -ItemType Directory -Force $modsDst | Out-Null
 foreach ($name in "CUSA03173", "CUSA03173-patch") {
     Remove-Junction "$gameDir\$name"
@@ -134,7 +152,8 @@ $lines = @(
     "set `"NPID=$npid`"",
     "set `"PASS=$pass`"",
     "set `"PARTY=$party`"",
-    "set `"P2PPORT=$p2pPort`""
+    "set `"P2PPORT=$p2pPort`"",
+    "set `"GAMEDIR=$gameDir`""
 )
 [IO.File]::WriteAllLines($settingsPath, $lines, (New-Object Text.ASCIIEncoding))
 
