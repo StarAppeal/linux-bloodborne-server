@@ -56,10 +56,21 @@ foreach ($f in Get-ChildItem $src -Recurse -File) {
     [IO.File]::WriteAllText((Join-Path $Out $rel), $text, (New-Object Text.ASCIIEncoding))
 }
 
+# The zip unpacks straight into a Bloodborne.PC.Online folder: the kit as SeamlessCoop\ plus
+# launcher-style .bat files next to "LAUNCH - shadPS4 Launcher.bat".
 $zip = "$Out.zip"
+$stage = "$Out-zip"
 if (Test-Path $zip) { Remove-Item $zip }
+if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+New-Item -ItemType Directory -Force "$stage\SeamlessCoop" | Out-Null
 $items = Get-ChildItem $Out | Where-Object { $_.Name -notin @("user", "settings.bat", "game") }
-Compress-Archive -Path $items.FullName -DestinationPath $zip -CompressionLevel Optimal
+Copy-Item $items.FullName "$stage\SeamlessCoop\" -Recurse
+foreach ($f in Get-ChildItem "$PSScriptRoot\online-kit-root" -File) {
+    $text = [IO.File]::ReadAllText($f.FullName) -replace "`r?`n", "`r`n"
+    [IO.File]::WriteAllText((Join-Path $stage $f.Name), $text, (New-Object Text.ASCIIEncoding))
+}
+Compress-Archive -Path (Get-ChildItem $stage).FullName -DestinationPath $zip -CompressionLevel Optimal
+Remove-Item -Recurse -Force $stage
 $hash = (Get-FileHash "$Out\shadps4.exe" -Algorithm SHA256).Hash.Substring(0, 12)
 Write-Host "Kit ready at $Out"
 Write-Host "Send $zip to the other player. shadps4.exe sha256 starts $hash; both players must match."

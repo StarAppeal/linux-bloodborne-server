@@ -14,10 +14,13 @@ YOU NEED
     https://aka.ms/vs/17/release/vc_redist.x64.exe
 
 STEPS (guest)
-  1. Unzip this folder anywhere, for example next to Bloodborne.PC.Online.
-  2. Right-click "FIREWALL - Allow (run as admin)" and run it as administrator.
-  3. Run "1 - SETUP":
-       Bloodborne.PC.Online folder   where yours is
+  1. Unzip the zip straight into your Bloodborne.PC.Online folder, next to
+     "LAUNCH - shadPS4 Launcher.bat". You get a SeamlessCoop folder and a few
+     "... Seamless Co-op" .bat files beside your old ones.
+  2. In SeamlessCoop, right-click "FIREWALL - Allow (run as admin)" and run it
+     as administrator.
+  3. Run "SETUP - Seamless Co-op":
+       Bloodborne.PC.Online folder   Enter (it finds the folder it is in)
        host or guest                 guest
        Host IP                       the host's 26.x.x.x address from Radmin VPN
        Account name / password       pick any, and tell the host so they can
@@ -27,7 +30,7 @@ STEPS (guest)
   4. Wait for the host to say the servers are up and your account is
      registered. Optional check: open http://HOST-IP:20443/status in a browser;
      it should say "ok": true.
-  5. Run "2 - PLAY", load your character, and wait. You are pulled into the
+  5. Run "LAUNCH - Seamless Co-op", load your character, and wait. You are pulled into the
      host's world automatically after a few seconds. No bells needed.
 
 NOTES
@@ -35,8 +38,9 @@ NOTES
     progress made here stays here. It also makes a "game" folder that links to
     your install's game, patch and mods and adds the co-op event files (boss
     loot, deaths, messenger gifts) on top. Your normal install is not touched.
-  - When the host sends a newer kit, unzip it over this folder and run
-    "1 - SETUP" again (Enter keeps every answer).
-  - The emulator log is user\log\shad_log.txt. Send it to the host if
+  - When the host sends a newer kit, unzip it the same way (overwrite) and run
+    "SETUP - Seamless Co-op" again (Enter keeps every answer).
+  - The old "LAUNCH - shadPS4 Launcher" still starts the old version as before.
+  - The emulator log is SeamlessCoop\user\log\shad_log.txt. Send it to the host if
     something goes wrong.
   - Both players must run the exact same shadps4.exe from the host's kit.

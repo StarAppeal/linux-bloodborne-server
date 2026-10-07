@@ -86,8 +86,14 @@ SHA-256 so you can compare. `-Force` keeps your `user` folder and `settings.bat`
 
 ## 4. Set up (both)
 
-Unzip the kit anywhere. Run `FIREWALL - Allow (run as admin)` as administrator, then
-`1 - SETUP`:
+Unzip `online-kit.zip` straight into your Bloodborne.PC.Online folder (next to
+`LAUNCH - shadPS4 Launcher.bat`). It adds a `SeamlessCoop` folder (the kit) and four bats in
+the old package's style: `SETUP - Seamless Co-op`, `LAUNCH - Seamless Co-op` (runs SETUP the
+first time, then plays), `SERVER - Seamless Co-op Host` and `SERVER - Seamless Co-op Register
+User`. The old `LAUNCH - shadPS4 Launcher` keeps starting the old version through the Qt
+launcher; the Qt launcher can't set the party env vars, so the new build is started by the bat.
+Run `SeamlessCoop\FIREWALL - Allow (run as admin)` as administrator, then
+`SETUP - Seamless Co-op` (the install folder defaults to the one the kit sits in):
 
 | Question | Kaniel | Friend |
 |---|---|---|
