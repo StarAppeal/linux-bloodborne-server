@@ -2,14 +2,15 @@
 title Start co-op servers
 rem HOST ONLY. Starts shadnet (accounts, matchmaking, summons; ports 31313-31315)
 rem and the local backend (game login and online check; port 20443).
-rem Leave both windows open while you play.
-cd /d "%~dp0"
-if not exist "settings.bat" (
+rem Leave both windows open while you play. Running it again starts only what is missing.
+set "KIT=%~dp0"
+cd /d "%KIT%"
+if not exist "%KIT%settings.bat" (
     echo Run "1 - SETUP" first.
     pause
     exit /b 1
 )
-call settings.bat
+call "%KIT%settings.bat"
 
 set "PY=py -3"
 where py >nul 2>nul
@@ -23,19 +24,25 @@ if errorlevel 1 (
 )
 
 tasklist /fi "imagename eq shadnet.exe" | find /i "shadnet.exe" >nul
-if not errorlevel 1 (
-    echo A shadnet.exe is already running. If it is the test rig or the old
-    echo "SERVER - Host P2P", close it first so the ports are free.
-    pause
-    exit /b 1
+if errorlevel 1 (
+    cd /d "%KIT%server"
+    start "co-op shadnet" "%KIT%server\shadnet.exe"
+    echo Started shadnet.
+) else (
+    echo shadnet is already running. If it is the test rig or the old
+    echo "SERVER - Host P2P" rather than this one, close it and run this again.
 )
 
-cd /d "%~dp0server"
-start "co-op shadnet" shadnet.exe
-cd /d "%~dp0backend"
-start "co-op backend" %PY% bb_dummy_server.py --address %HOSTIP% --port 20443 --shadnet-webapi http://%HOSTIP%:31315
+netstat -ano | find ":20443 " | find "LISTENING" >nul
+if errorlevel 1 (
+    cd /d "%KIT%backend"
+    start "co-op backend" %PY% "%KIT%backend\bb_dummy_server.py" --address %HOSTIP% --port 20443 --shadnet-webapi http://%HOSTIP%:31315
+    echo Started the backend for %HOSTIP%.
+) else (
+    echo The backend is already running.
+)
 
-echo Started shadnet and the backend for %HOSTIP%.
+echo.
 echo Check from any PC: http://%HOSTIP%:20443/status should say "ok": true
 echo.
 pause

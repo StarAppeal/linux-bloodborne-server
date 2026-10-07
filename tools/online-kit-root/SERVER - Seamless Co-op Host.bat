@@ -1,4 +1,4 @@
 @echo off
 cd /d "%~dp0SeamlessCoop"
-call "HOST - Start Servers.bat"
+call "%~dp0SeamlessCoop\HOST - Start Servers.bat"
 exit

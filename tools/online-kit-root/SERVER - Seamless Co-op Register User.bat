@@ -1,4 +1,4 @@
 @echo off
 cd /d "%~dp0SeamlessCoop"
-call "HOST - Register Account.bat"
+call "%~dp0SeamlessCoop\HOST - Register Account.bat"
 exit

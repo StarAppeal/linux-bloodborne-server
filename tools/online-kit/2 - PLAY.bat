@@ -1,12 +1,13 @@
 @echo off
-cd /d "%~dp0"
+set "KIT=%~dp0"
+cd /d "%KIT%"
 if not exist "settings.bat" (
     echo Run "1 - SETUP" first.
     pause
     exit /b 1
 )
-call settings.bat
-if "%GAMEDIR%"=="" set "GAMEDIR=%~dp0game"
+call "%KIT%settings.bat"
+if "%GAMEDIR%"=="" set "GAMEDIR=%KIT%game"
 if not exist "%GAMEDIR%\CUSA03173\eboot.bin" (
     echo Run "1 - SETUP" again: the game folder is missing.
     pause
@@ -18,4 +19,4 @@ set SHADPS4_BLOODBORNE_PARTY=%PARTY%
 set SHADPS4_BLOODBORNE_PARTY_ROLE=%ROLE%
 set SHADPS4_BLOODBORNE_RE_TRACE=0
 if exist user\log\shad_log.txt copy /y user\log\shad_log.txt user\log\shad_log.prev.txt >nul
-start "" "%~dp0shadps4.exe" -g "%GAMEDIR%\CUSA03173\eboot.bin"
+start "" "%KIT%shadps4.exe" -g "%GAMEDIR%\CUSA03173\eboot.bin"
