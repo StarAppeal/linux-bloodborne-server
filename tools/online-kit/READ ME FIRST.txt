@@ -33,6 +33,14 @@ STEPS (guest)
   5. Run "LAUNCH - Seamless Co-op", load your character, and wait. You are pulled into the
      host's world automatically after a few seconds. No bells needed.
 
+A THIRD PLAYER (or more)
+  Exactly the same steps as above, as a guest:
+  - the same zip from the host, so everyone runs the same shadps4.exe (mixed
+    builds don't share kills or echoes);
+  - their own account name and password, which the host registers with
+    "SERVER - Seamless Co-op Register User";
+  - the same Host IP and exactly the same Party as everyone else.
+
 NOTES
   - SETUP copies your DATA\user folder (settings and saves) into this kit, so
     progress made here stays here. It also makes a "game" folder that links to

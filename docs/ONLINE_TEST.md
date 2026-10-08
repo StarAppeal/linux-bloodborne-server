@@ -127,6 +127,11 @@ again any time to change answers.
 4. Have the friend open `http://<your 26.x IP>:20443/status`. `{"ok": true, ...}` means the
    VPN and firewall are fine.
 
+**A third player** sets up exactly like the friend: the same zip (so the same `shadps4.exe`;
+mixed builds don't share kills or echoes), role `guest`, the host's VPN IP, the same party
+string, and their own account, which you register with `SERVER - Seamless Co-op Register User`.
+They also need to join your Radmin network.
+
 ## 6. Play
 
 1. Both run `2 - PLAY`, sign in and load your characters. Kaniel goes first.
