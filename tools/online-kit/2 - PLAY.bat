@@ -13,6 +13,8 @@ if not exist "%GAMEDIR%\CUSA03173\eboot.bin" (
     pause
     exit /b 1
 )
+rem An update made while the game was running waits as shadps4-next.exe; swap it in now.
+if exist "%KIT%shadps4-next.exe" move /y "%KIT%shadps4-next.exe" "%KIT%shadps4.exe" >nul
 rem A newer kit brings newer event files; put them in place on every start.
 copy /y "%KIT%event-patch\*" "%GAMEDIR%\CUSA03173-mods\dvdroot_ps4\event\" >nul
 set SHADPS4_BLOODBORNE_SEAMLESS_COOP=1
