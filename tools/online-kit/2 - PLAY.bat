@@ -13,6 +13,8 @@ if not exist "%GAMEDIR%\CUSA03173\eboot.bin" (
     pause
     exit /b 1
 )
+rem A newer kit brings newer event files; put them in place on every start.
+copy /y "%KIT%event-patch\*" "%GAMEDIR%\CUSA03173-mods\dvdroot_ps4\event\" >nul
 set SHADPS4_BLOODBORNE_SEAMLESS_COOP=1
 rem auto (and the old kit defaults 51610/51611) lets Windows pick a free UDP port.
 set "SHADPS4_P2P_PORT="
