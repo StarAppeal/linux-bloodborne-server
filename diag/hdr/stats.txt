@@ -1,0 +1,75 @@
+diag-spot1
+  display: mean rgb [0.061 0.062 0.075] alpha mean 0.998
+  output: mean rgb [0.061 0.062 0.075] alpha mean 1.000
+  sdr luma 0-0.002:  35.5% of px, ui>0.5 in  90.7%
+  sdr luma 0.002-0.05:  62.2% of px, ui>0.5 in 100.0%
+  sdr luma 0.05-0.25:   2.0% of px, ui>0.5 in 100.0%
+  sdr luma 0.25-0.8:   0.4% of px, ui>0.5 in 100.0%
+  sdr luma 0.8-1.01:   0.0% of px, ui>0.5 in  90.1%
+  scene16F luma p50/p90/p99/max [0.0058 0.0371 0.1065 1.2448]
+  sdr(display) linear luma p50/p90/p99/max [0.0031 0.0191 0.124  1.    ]
+  px sdr>0.25: 0.39%  scene/sdr median 0.5889 p99 1.2330
+  midtone exposure sdr/scene 0.9193; scene*k / sdr for sdr>0.25: median 0.541 p99 1.134
+  gain max 1.172 ui mean 0.939
+diag-spot1 sdr>0.9: 0.004% px scene luma there p10/p50/p90/max [0.    0.    0.263 1.037] | input720 max 18.692 frac>1 0.004 %
+diag-spot1 input720 luma [6.0000e-03 3.7000e-02 1.1500e-01 2.9400e-01 7.5400e-01 1.8692e+01]  output1080 [0.006 0.037 0.106 0.24  0.518 1.245]
+diag-spot2
+  display: mean rgb [0.033 0.028 0.027] alpha mean 0.998
+  output: mean rgb [0.033 0.028 0.027] alpha mean 1.000
+  sdr luma 0-0.002:  68.1% of px, ui>0.5 in  95.5%
+  sdr luma 0.002-0.05:  30.8% of px, ui>0.5 in 100.0%
+  sdr luma 0.05-0.25:   0.8% of px, ui>0.5 in 100.0%
+  sdr luma 0.25-0.8:   0.4% of px, ui>0.5 in 100.0%
+  sdr luma 0.8-1.01:   0.0% of px, ui>0.5 in 100.0%
+  scene16F luma p50/p90/p99/max [0.0011 0.0082 0.063  0.4389]
+  sdr(display) linear luma p50/p90/p99/max [0.0013 0.0044 0.0686 1.    ]
+  px sdr>0.25: 0.40%  scene/sdr median 0.5115 p99 0.8836
+  midtone exposure sdr/scene 3.5005; scene*k / sdr for sdr>0.25: median 1.791 p99 3.093
+  gain max 1.000 ui mean 0.923
+diag-spot2 sdr>0.9: 0.003% px scene luma there p10/p50/p90/max [0.    0.001 0.001 0.002] | input720 max 1.552 frac>1 0.0 %
+diag-spot2 input720 luma [1.000e-03 8.000e-03 7.500e-02 2.440e-01 3.070e-01 1.552e+00]  output1080 [0.001 0.008 0.063 0.232 0.281 0.439]
+diag-spot3
+  display: mean rgb [0.058 0.054 0.055] alpha mean 0.998
+  output: mean rgb [0.058 0.054 0.055] alpha mean 1.000
+  sdr luma 0-0.002:  27.7% of px, ui>0.5 in  99.6%
+  sdr luma 0.002-0.05:  70.6% of px, ui>0.5 in  99.9%
+  sdr luma 0.05-0.25:   1.5% of px, ui>0.5 in 100.0%
+  sdr luma 0.25-0.8:   0.3% of px, ui>0.5 in 100.0%
+  sdr luma 0.8-1.01:   0.0% of px, ui>0.5 in 100.0%
+  scene16F luma p50/p90/p99/max [0.0057 0.021  0.0952 0.6269]
+  sdr(display) linear luma p50/p90/p99/max [0.003  0.0099 0.1    1.    ]
+  px sdr>0.25: 0.32%  scene/sdr median 0.7034 p99 0.9953
+  midtone exposure sdr/scene 1.0891; scene*k / sdr for sdr>0.25: median 0.766 p99 1.084
+  gain max 1.000 ui mean 0.988
+diag-spot3 sdr>0.9: 0.004% px scene luma there p10/p50/p90/max [0.01  0.014 0.022 0.031] | input720 max 1.837 frac>1 0.001 %
+diag-spot3 input720 luma [0.006 0.021 0.099 0.252 0.357 1.837]  output1080 [0.006 0.021 0.095 0.247 0.348 0.627]
+diag-spot4
+  display: mean rgb [0.125 0.138 0.138] alpha mean 0.998
+  output: mean rgb [0.125 0.138 0.138] alpha mean 1.000
+  sdr luma 0-0.002:   1.5% of px, ui>0.5 in 100.0%
+  sdr luma 0.002-0.05:  90.1% of px, ui>0.5 in  99.9%
+  sdr luma 0.05-0.25:   7.5% of px, ui>0.5 in 100.0%
+  sdr luma 0.25-0.8:   0.9% of px, ui>0.5 in 100.0%
+  sdr luma 0.8-1.01:   0.0% of px, ui>0.5 in  85.5%
+  scene16F luma p50/p90/p99/max [0.0183 0.0596 0.2282 2.3012]
+  sdr(display) linear luma p50/p90/p99/max [0.0124 0.0431 0.2404 1.    ]
+  px sdr>0.25: 0.90%  scene/sdr median 0.7801 p99 1.3827
+  midtone exposure sdr/scene 0.9221; scene*k / sdr for sdr>0.25: median 0.719 p99 1.275
+  gain max 1.646 ui mean 0.999
+diag-spot4 sdr>0.9: 0.023% px scene luma there p10/p50/p90/max [0.008 0.219 1.042 2.301] | input720 max 3.335 frac>1 0.012 %
+diag-spot4 input720 luma [0.018 0.062 0.243 0.476 1.06  3.335]  output1080 [0.018 0.06  0.228 0.388 0.827 2.301]
+diag-spot5
+  display: mean rgb [0.109 0.102 0.103] alpha mean 0.998
+  output: mean rgb [0.109 0.102 0.103] alpha mean 1.000
+  sdr luma 0-0.002:   4.9% of px, ui>0.5 in 100.0%
+  sdr luma 0.002-0.05:  90.3% of px, ui>0.5 in 100.0%
+  sdr luma 0.05-0.25:   4.5% of px, ui>0.5 in 100.0%
+  sdr luma 0.25-0.8:   0.2% of px, ui>0.5 in 100.0%
+  sdr luma 0.8-1.01:   0.0% of px, ui>0.5 in 100.0%
+  scene16F luma p50/p90/p99/max [0.0135 0.0611 0.1513 0.8731]
+  sdr(display) linear luma p50/p90/p99/max [0.0072 0.0308 0.119  1.    ]
+  px sdr>0.25: 0.24%  scene/sdr median 0.7222 p99 1.5437
+  midtone exposure sdr/scene 0.6497; scene*k / sdr for sdr>0.25: median 0.469 p99 1.003
+  gain max 1.000 ui mean 0.997
+diag-spot5 sdr>0.9: 0.005% px scene luma there p10/p50/p90/max [0.006 0.013 0.038 0.055] | input720 max 1.29 frac>1 0.0 %
+diag-spot5 input720 luma [0.014 0.062 0.156 0.329 0.618 1.29 ]  output1080 [0.013 0.061 0.151 0.312 0.451 0.873]

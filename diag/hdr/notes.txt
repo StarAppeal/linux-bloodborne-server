@@ -1,0 +1,74 @@
+HDR scene highlights (PR #9) diagnostic, 2026-10-11
+====================================================
+
+Build: hdr-scene 35a1033a package (same code as port-kit-hdr-scene.zip), one rig port game (host
+role, baseline save), autoplay. Settings: upscaler=dlss preset=1 (1280x720 -> 1920x1080),
+output_res=1920x1080 windowed, hdr=0 with BB_HDR_SCENE_TEST=1 (gain maps made with SDR output),
+hdr_scene=1, hdr_highlights=0.5, all game effects on. Dumps per spot: the presenter's frame dump
+(display / output / hdr_gain) and the upscaler dump (input 720p 16F, output 1080p 16F = the scene
+the combine compute 0x9a9cf8a9 works on) taken within ~1 s of each other, camera still.
+
+Spots: 1 Central Yharnam first lamp (chandelier, the lit lamp in view), 2/3 by Iosefka's clinic
+(two headings), 4 Hunter's Dream lamp (doll, the lamp's flame, the sky), 5 Cathedral Ward lamp.
+Pictures: shots/*.png (the rig's screenshots), spotN/ (display = the game's finished SDR frame,
+scene = upscaler output 16F Reinhard-mapped by dump_view.py, hdr_gain = gain on a log scale with
+the UI in blue, ui_mask = the gain pass's UI coverage, white = "UI").
+
+hdr_gain (dump_view.py)
+  spot1: max 1.17, above 1.05 0.0%, UI 96.7%
+  spot2: max 1.00, above 1.05 0.0%, UI 96.9%
+  spot3: max 1.00, above 1.05 0.0%, UI 99.8%
+  spot4: max 1.65, above 1.05 0.0%, UI 99.9%
+  spot5: max 1.00, above 1.05 0.0%, UI 100.0%
+
+FINDING 1: the UI mask covers nearly the whole frame, so the gain is 1 nearly everywhere.
+  hdr_gain.comp counts a pixel as UI where the display buffer differs from the hudless copy by
+  more than 2-6/255 (gamma space). Here ui>0.5 on 99-100% of mid-tone and bright pixels (and
+  90-95% of near-black ones), at every spot, with almost no UI on screen. So weight = 0 and the
+  gain stays 1. With DLSS (Scaled presets) the hudless copy comes from CaptureScaledHudless
+  (ui_image right after the upscale); the display buffer the gain pass compares it with differs
+  from it nearly everywhere: wrong frame, wrong format/encoding (decode_srgb or a view of the copy
+  in the display buffer's format), or a pass after the upscale (sharpen, the game's AA/grain or a
+  gamma pass) that the copy misses. Not yet pinned down: the hudless copy itself is not dumped.
+  Next step: dump hudless next to display/hdr_gain on BB_FRAME_DUMP_TRIGGER.
+
+FINDING 2: the game's 16F scene holds very little above SDR white, so even a perfect mask gives
+small gains.
+  Luminance (Rec.709 luma), scene = upscaler output 16F, sdr = the display buffer linearized:
+            scene p50/p90/p99/max              sdr p50/p90/p99/max
+  spot1   0.0058 0.0371 0.1065 1.2448        0.0031 0.0191 0.124  1.0
+  spot2   0.0011 0.0082 0.0630 0.4389        0.0013 0.0044 0.0686 1.0
+  spot3   0.0057 0.0210 0.0952 0.6269        0.0030 0.0099 0.1000 1.0
+  spot4   0.0183 0.0596 0.2282 2.3012        0.0124 0.0431 0.2404 1.0
+  spot5   0.0135 0.0611 0.1513 0.8731        0.0072 0.0308 0.1190 1.0
+  Pixels with sdr linear luma > 0.25: only 0.24-0.90% of the frame; scene/sdr there:
+  spot1 median 0.589 p99 1.233 | spot2 0.512 / 0.884 | spot3 0.703 / 0.995 |
+  spot4 0.780 / 1.383 | spot5 0.722 / 1.544
+  (after the gain pass's mid-tone exposure k = sdr/scene: spot1 k 0.92 -> 0.54 / 1.13,
+  spot2 k 3.50 -> 1.79 / 3.09, spot3 k 1.09 -> 0.77 / 1.08, spot4 k 0.92 -> 0.72 / 1.28,
+  spot5 k 0.65 -> 0.47 / 1.00)
+  SDR pixels at > 0.9 (clipped white): 0.003-0.023% of the frame, mostly the HUD's text (scene
+  ~0 there); the game's own SDR frame clips almost nothing.
+  Upscaler input (720p, before DLSS) p99.99 / max: spot1 0.754 / 18.69 (a few lamp-flame
+  pixels), spot2 0.307 / 1.55, spot3 0.357 / 1.84, spot4 1.06 / 3.34, spot5 0.618 / 1.29;
+  after DLSS (1080p) max 0.44-2.30: the few very bright pixels are averaged away.
+  So Bloodborne's scene is already close to display-referred at the combine: its tonemap is near
+  linear up to ~1 and its bright spots are tiny. Scene highlights can add at most ~1.2-2x on a
+  few small lamp/flame spots, which matches "it changes something but nothing drastic".
+
+Pass list (frame capture, spot1): #57 COMPUTE cs 0x9a9cf8a9 writes R16G16B16A16Sfloat
+  1920x1080 (the combine), then #58 a draw into the same 16F target sampling another
+  R16G16B16A16Sfloat 1920x1080, R32Sfloat 1920x1080 and B10G11R11 768x432 (bloom); 16F sizes in
+  the frame: 1920x1080 (38 uses), 960x540 (5), 480x270 (2).
+
+Game log: no SceneHdr lines (the code logs none); "Window: the display's HDR is on", "HDR10
+  swapchain: available", "DLSS: DLSS 1280x720 -> 1920x1080, quality 1, preset 0, HDR input".
+  Kaniel's own log (port-kit-main, hdr=1) shows "Presenter: HDR output on (HDR10)" / "off (SDR)"
+  toggling 15 times in one session (the display-HDR check flapping: every toggle rebuilds the
+  swapchain).
+
+Also from Kaniel's bbport.ini: hdr_paper_white=400, hdr_peak_nits=1000 -> headroom 2.5x only; SDR
+  white at 400 nits already looks like a bright SDR desktop, so highlights have little room.
+
+Tools: tools/driver.py (the run), tools/stats.py, tools/clip.py, tools/io.py (the numbers above,
+  stats.txt their full output).
