@@ -34,13 +34,8 @@ SETTINGS = {
 
 SCRIPT = [
     sc.START, "godmode", "wait 8",
-    "log diag-spot1", "wait 6", "shot cy-lamp",
-    "teleport -200.0 -40.5 206.8 0.0", "wait 4", "log diag-spot2", "wait 6", "shot cy-clinic-a",
-    "teleport -200.0 -40.5 212.8 3.1416", "wait 4", "log diag-spot3", "wait 6",
-    "shot cy-clinic-b",
-    f"travel {sc.HUNTERS_DREAM}", "wait 12", "log diag-spot4", "wait 6", "shot dream",
-    f"ensure-map {sc.CATHEDRAL_WARD} {sc.CATHEDRAL_WARD_LAMP}", "wait 12", "log diag-spot5",
-    "wait 6", "shot ward",
+    "log diag-spot1", "wait 8", "shot cy-lamp",
+    f"travel {sc.HUNTERS_DREAM}", "wait 12", "log diag-spot4", "wait 8", "shot dream",
     "done",
 ]
 
@@ -68,7 +63,7 @@ def main() -> int:
     if rs.games_running():
         print("A game is running; not starting another.")
         return 2
-    run_dir = DIAG / "run2"
+    run_dir = DIAG / "run3"
     run_dir.mkdir(parents=True, exist_ok=True)
     shots = rs.ENGINE.shots(ROLE)
     if shots.exists():
@@ -96,7 +91,7 @@ def main() -> int:
                     (DIAG / "scene.trig").write_text("1")
                     (DIAG / "frame.trig").write_text("1")
                     time.sleep(4)
-                    spot = DIAG / tag
+                    spot = DIAG / ("v2-" + tag)
                     spot.mkdir(exist_ok=True)
                     for f in list(DIAG.glob("*.raw")):
                         shutil.move(str(f), str(spot / f.name))

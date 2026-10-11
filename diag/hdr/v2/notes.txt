@@ -1,0 +1,25 @@
+HDR highlights v2 (hdr-fixes 28d36729, draft PR #13), 2026-10-11
+=================================================================
+Same rig setup as diag/hdr/notes.txt: one port game (rig host, baseline save), DLSS preset 1
+(1280x720 -> 1920x1080), all effects on, hdr=0 with BB_HDR_SCENE_TEST=1, hdr_highlights=0.5,
+hdr_paper_white=200, hdr_peak_nits=1000 (headroom 5). Spot1 = first Central Yharnam lamp,
+spot4 = Hunter's Dream lamp. Build 28d36729 passed; all 11 bbport tests pass.
+
+            gain max   gain>1.05   gain>2    UI (mask>0.5)
+  spot1     4.32       0.12%       0.012%    0.31%   (v1: max 1.17, 0.0%, UI 96.7%)
+  spot4     4.96       0.22%       0.032%    0.51%   (v1: max 1.65, 0.0%, UI 99.9%)
+  gain>2 pixels: spot1 241 px (x 591-1307, y 10-695: chandelier candles, lantern), spot4 662 px
+  (x 84-1718, y 335-629: the lamp's flame, lit lanterns).
+
+HUD: the UI share is now about the HUD's area. HUD boxes (top-left bars/items 100-340 x 55-220,
+top-right counters 1570-1790 x 60-170): every bright (>0.5) pixel in the top-left box has gain
+1.000 at both spots; top-right box gain 1.000 at spot1. At spot4 the top-right counters sit on the
+bright sky: pixels the mask flags as UI: 28 of 6785 above 1.05 (max 1.14, glyph edges at the
+smoothstep); bright UI pixels max 1.12; the gained pixels there (max 1.31) are sky between the
+glyphs (mask 0).
+
+Hudless copy not dumped: with the UI share at 0.3-0.5% the v1 cause (threshold too low for the
+gap between the copy and the display buffer) is fixed; no channel/encoding check needed.
+No HDR switch lines in this run (hdr=0: the output never switches). Pictures: spotN/display.png,
+scene.png (16F upscaler output, Reinhard-mapped), hdr_gain.png (log scale, UI in blue),
+ui_mask.png; shots/ the rig's screenshots. Numbers: tools/v2.py.
