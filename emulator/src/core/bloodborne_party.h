@@ -2291,6 +2291,16 @@ u32 ReviveHitDamage(s32 attack_rating, bool heavy);
 float ReviveShare(u32 landed, u32 needed);
 // The HP a revived player gets up with: half its max, at least 1.
 s32 RevivedHp(s32 max);
+// The HP a downed player shows while it is struck back up: 1, rising with the share of the revive
+// done to just under its max (the revive sets the real HP), so the game's own HP bar and the
+// nameplate bar the others see over it (RemotePCTag, fed by the synced HP) fill with the revive.
+s32 DownedHp(s32 max, u32 landed, u32 needed);
+// The game's SetTextEffect (event binding; this, id): queues one of the HUD's big banners, ids 1
+// to 17 (1 NIGHTMARE SLAIN, 2 YOU DIED, 5 PREY SLAUGHTERED, 17 the PvP Draw). The party HUD
+// (bbport/scripts/hud_patch.py) makes the Draw banner the yellow YOU ARE DOWN.
+constexpr u64 SetTextEffectOffset = 0x013360B0;
+constexpr std::array<u8, 6> SetTextEffectStart{0x8D, 0x46, 0xFF, 0x83, 0xF8, 0x10};
+constexpr s32 DownedBannerTextEffect = 17;
 
 // The local player's side of party death. Times are steady milliseconds.
 class DownedState {

@@ -161,6 +161,17 @@ TEST_F(BloodborneEboot, TheNamedGameFunctionsStartThere) {
     }
 }
 
+// The downed banner is the game's SetTextEffect (the event binding that queues the HUD's big
+// banners, ids 1 to 17): `lea eax, [rsi - 1]; cmp eax, 0x10`, and the Lua table registers it.
+TEST_F(BloodborneEboot, TheDownedBannerIsQueuedBySetTextEffect) {
+    EXPECT_EQ(Bytes(SetTextEffectOffset, SetTextEffectStart.size()),
+              std::vector<u8>(SetTextEffectStart.begin(), SetTextEffectStart.end()));
+    EXPECT_LE(DownedBannerTextEffect, 17);
+    // lea rax, [rip - 0xC745] at 0x013427EE: the binding's registration takes this function.
+    EXPECT_EQ(Bytes(0x013427EE, 3), (std::vector<u8>{0x48, 0x8D, 0x05}));
+    EXPECT_EQ(0x013427F5 + ReadAt<s32>(*text, 0x013427F1), SetTextEffectOffset);
+}
+
 // The calls the patches and hooks are about are where the comments say.
 TEST_F(BloodborneEboot, ThePatchedCallsGoWhereTheCommentsSay) {
     // Ghost death: SetEventFlag(4047) twice, then CustomLuaCallStart(4063).

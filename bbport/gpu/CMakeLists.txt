@@ -232,6 +232,8 @@ target_include_directories(bbnet PRIVATE shim shadps4 . "${SHADNET_PROTO_OUT}" $
 target_link_libraries(bbnet PRIVATE nlohmann_json::nlohmann_json)
 # Party death is on by default in the port (it has the party HUD); the emulator's stays off.
 target_compile_definitions(bbnet PRIVATE BLOODBORNE_PARTY_DEATH_DEFAULT=1)
+# The port's HUD is patched at its start (scripts/hud_patch.py): party death shows its downed banner.
+target_compile_definitions(bbnet PRIVATE BLOODBORNE_PARTY_HUD=1)
 # HTTPS (the community game server only speaks TLS) and gzip replies in cpp-httplib.
 find_package(OpenSSL REQUIRED)
 find_package(ZLIB REQUIRED)
@@ -279,9 +281,10 @@ set_source_files_properties(third_party/imgui/imgui.cpp third_party/imgui/imgui_
     COMPILE_OPTIONS "-fvisibility=hidden;-fvisibility-inlines-hidden")
 target_compile_definitions(bbgpu PRIVATE IMGUI_IMPL_VULKAN_NO_PROTOTYPES
     BB_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf"
-    BB_SERIF_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSerif.ttf")
+    BB_SERIF_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSerif.ttf"
+    BB_PARTY_ICONS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/art/party_icons.bin")
 set_source_files_properties(shim/bbport_overlay.cpp PROPERTIES
-    OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf;${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSerif.ttf")
+    OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf;${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSerif.ttf;${CMAKE_CURRENT_SOURCE_DIR}/art/party_icons.bin")
 target_include_directories(bbgpu PRIVATE shim layer games cp shadps4 ${SHADER_INCLUDE} third_party/gcn/include third_party/half/include
     ${BB_EMULATOR_SRC})
 target_compile_definitions(bbgpu PRIVATE BOOST_ASIO_STANDALONE NDEBUG)
@@ -454,6 +457,13 @@ target_compile_options(party-layout-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
 target_include_directories(party-layout-test PRIVATE ..)
 # bbport co-op: the party panel's HP bar from the game's own HUD art, read from its files
 # (shim/bbport_game_art.h): BC7, the PS4's block order, a TPF in a DCX (made-up data).
+# bbport co-op: party death's icons (art/party_icons.bin, drawn for the port) as the overlay embeds them.
+add_executable(party-icons-test EXCLUDE_FROM_ALL ../tests/test_party_icons.cpp shim/bbport_party_icons.cpp)
+target_compile_options(party-icons-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
+target_include_directories(party-icons-test PRIVATE ..)
+target_compile_definitions(party-icons-test PRIVATE
+    BB_PARTY_ICONS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/art/party_icons.bin")
+target_link_libraries(party-icons-test PRIVATE miniz::miniz)
 add_executable(game-art-test EXCLUDE_FROM_ALL ../tests/test_game_art.cpp shim/bbport_game_art.cpp)
 target_compile_options(game-art-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
 target_include_directories(game-art-test PRIVATE ..)

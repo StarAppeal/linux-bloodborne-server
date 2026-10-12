@@ -3939,6 +3939,14 @@ s32 RevivedHp(s32 max) {
     return std::max(max / 2, 1);
 }
 
+s32 DownedHp(s32 max, u32 landed, u32 needed) {
+    if (max <= 1 || needed == 0) {
+        return 1;
+    }
+    const s64 done = std::min<s64>(landed, needed);
+    return static_cast<s32>(std::min<s64>(1 + (s64{max} - 1) * done / needed, s64{max} - 1));
+}
+
 u32 DownedState::GoDown(s64 now_ms, s32 max) {
     if (up_since && now_ms - *up_since >= PenaltyResetMs) {
         downs = 0;

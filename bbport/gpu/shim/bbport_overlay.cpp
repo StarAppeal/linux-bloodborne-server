@@ -20,6 +20,7 @@
 #include <SDL3/SDL.h>
 #include "../bbcoop.h"
 #include "bbport_game_art.h"
+#include "bbport_party_icons.h"
 #include "bbport_party_layout.h"
 #include "bbport_save_editor.h"
 #include "bbport_settings.h"
@@ -77,6 +78,30 @@ asm(".section .rodata\n"
 #endif
 extern "C" const unsigned char bb_serif_ttf[];
 extern "C" const unsigned char bb_serif_ttf_end[];
+// Party death's icons (art/party_icons.bin, drawn for the port: shim/bbport_party_icons.h).
+#ifdef _WIN32
+asm(".section .rdata,\"dr\"\n"
+    ".balign 16\n"
+    ".global bb_party_icons\n"
+    "bb_party_icons:\n"
+    ".incbin \"" BB_PARTY_ICONS_PATH "\"\n"
+    ".global bb_party_icons_end\n"
+    "bb_party_icons_end:\n"
+    ".text\n");
+#else
+asm(".section .rodata\n"
+    ".balign 16\n"
+    ".hidden bb_party_icons\n"
+    ".global bb_party_icons\n"
+    "bb_party_icons:\n"
+    ".incbin \"" BB_PARTY_ICONS_PATH "\"\n"
+    ".hidden bb_party_icons_end\n"
+    ".global bb_party_icons_end\n"
+    "bb_party_icons_end:\n"
+    ".previous\n");
+#endif
+extern "C" const unsigned char bb_party_icons[];
+extern "C" const unsigned char bb_party_icons_end[];
 
 extern "C" void runtime_restart(void); // bb-probe (probe.c)
 // The controls (runtime_pad.c, declared in src/runtime.h): the Controls tab.
@@ -1516,11 +1541,28 @@ bool Read() {
 ImTextureData* gauge = nullptr;
 bool gauge_tried = false;
 
+// The party icons as an ImGui texture (a row of BbPartyIcons::Size squares), made once; null if the
+// embedded atlas does not decode (the plain shapes are drawn then).
+ImTextureData* icons = nullptr;
+
+void LoadIcons() {
+    const auto atlas = BbPartyIcons::Decode(bb_party_icons, size_t(bb_party_icons_end - bb_party_icons));
+    if (!atlas) {
+        std::printf("Overlay: the party icons did not decode; drawing plain shapes\n");
+        return;
+    }
+    icons = IM_NEW(ImTextureData)();
+    icons->Create(ImTextureFormat_RGBA32, atlas->width, atlas->height);
+    std::memcpy(icons->GetPixels(), atlas->rgba.data(), atlas->rgba.size());
+    ImGui::RegisterUserTexture(icons);
+}
+
 void LoadGauge() {
     if (gauge_tried) {
         return;
     }
     gauge_tried = true;
+    LoadIcons();
     char path[1024];
     if (!bbcoop_game_file("dvdroot_ps4/menu/common.tpf.dcx", path, sizeof(path))) {
         return;
@@ -1597,17 +1639,6 @@ float Alpha(ImU32 color) {
     return float((color >> IM_COL32_A_SHIFT) & 0xFF) / 255.0f;
 }
 
-// Each member keeps a colour by its place on the board, as Nightreign's players do.
-ImU32 MemberColor(int index, float alpha) {
-    static constexpr ImVec4 colors[] = {{0.42f, 0.62f, 0.92f, 1.0f},
-                                        {0.88f, 0.70f, 0.32f, 1.0f},
-                                        {0.56f, 0.82f, 0.52f, 1.0f},
-                                        {0.78f, 0.52f, 0.86f, 1.0f}};
-    ImVec4 color = colors[index % 4];
-    color.w = alpha;
-    return ImGui::GetColorU32(color);
-}
-
 /// Text with a soft shadow (readable over bright scenes); `align` 0.5 centres it on `at`.
 void Text(ImDrawList* draw, ImFont* font, float size, ImVec2 at, ImU32 color, const char* text,
           float align = 0.0f) {
@@ -1619,26 +1650,57 @@ void Text(ImDrawList* draw, ImFont* font, float size, ImVec2 at, ImU32 color, co
     draw->AddText(font, size, at, color, text);
 }
 
-/// The revive ring, after Nightreign's: purple for the damage still needed, emptying clockwise as
-/// the party's strikes deal it (bbcoop_revive_share), inside a pale ring that turns gold once
-/// they land.
+// The party palette, as the game's HUD: bone white, ash, iron and blood.
+ImU32 Bone(float alpha = 1.0f) {
+    return Rgba(0.86f, 0.84f, 0.78f, alpha);
+}
+ImU32 Blood(float alpha = 1.0f) {
+    return Rgba(0.77f, 0.16f, 0.13f, alpha);
+}
+ImU32 Iron(float alpha = 1.0f) {
+    return Rgba(0.23f, 0.21f, 0.20f, alpha);
+}
+
+/// One of the party icons, `size` square, centred on `centre`. False without the icons.
+bool Icon(ImDrawList* draw, BbPartyIcons::Icon icon, ImVec2 centre, float size, float alpha) {
+    if (icons == nullptr) {
+        return false;
+    }
+    const float h = size * 0.5f;
+    draw->AddImage(icons->GetTexRef(), ImVec2(centre.x - h, centre.y - h),
+                   ImVec2(centre.x + h, centre.y + h), ImVec2(BbPartyIcons::U0(icon), 0.0f),
+                   ImVec2(BbPartyIcons::U1(icon), 1.0f),
+                   ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, alpha)));
+    return true;
+}
+
+/// The red share of a ring (an icon's, in its 128 units), filling clockwise from the top.
+void RingShare(ImDrawList* draw, ImVec2 centre, float size, BbPartyIcons::Ring ring, float share,
+               float alpha) {
+    if (share <= 0.0f) {
+        return;
+    }
+    const float unit = size / float(BbPartyIcons::Size);
+    const float top = -IM_PI * 0.5f;
+    draw->PathArcTo(centre, ring.radius * unit, top, top + 2.0f * IM_PI * std::min(share, 1.0f),
+                    64);
+    draw->PathStroke(Blood(alpha), 0, ring.width * unit);
+}
+
+/// The revive ring: the iron ring of the icons, its red share and the percentage in its middle.
+/// Plain circles without the icons.
 void ReviveRing(ImDrawList* draw, ImVec2 centre, float radius, u32 landed, u32 needed,
                 float alpha) {
-    const float share = bbcoop_revive_share(landed, needed);
-    draw->AddCircleFilled(centre, radius, Rgba(0.03f, 0.03f, 0.05f, 0.85f * alpha));
-    const float inner = radius * 0.42f, outer = radius * 0.78f, mid = (inner + outer) * 0.5f;
-    const float top = -IM_PI * 0.5f, split = top + 2.0f * IM_PI * share;
-    if (share > 0.0f) {
-        draw->PathArcTo(centre, mid, top, split, 48);
-        draw->PathStroke(Rgba(0.10f, 0.10f, 0.13f, alpha), 0, outer - inner);
+    const float share = bbcoop_revive_share(landed, needed), size = radius * 2.0f;
+    if (!Icon(draw, BbPartyIcons::Icon::ReviveRing, centre, size, alpha)) {
+        draw->AddCircleFilled(centre, radius, Rgba(0.03f, 0.03f, 0.03f, 0.85f * alpha));
+        draw->AddCircle(centre, radius * 0.75f, Iron(alpha), 0, radius * 0.19f);
     }
-    if (share < 1.0f) {
-        draw->PathArcTo(centre, mid, split, top + 2.0f * IM_PI, 48);
-        draw->PathStroke(Rgba(0.40f, 0.30f, 0.86f, alpha), 0, outer - inner);
-    }
-    draw->AddCircle(centre, radius * 0.92f,
-                    landed > 0 ? Ui::Gold(alpha) : Rgba(0.62f, 0.68f, 0.86f, 0.9f * alpha), 0,
-                    std::max(1.5f, radius * 0.11f));
+    RingShare(draw, centre, size, BbPartyIcons::ReviveRing, share, alpha);
+    char text[8];
+    std::snprintf(text, sizeof(text), "%d%%", int(std::lround(share * 100.0f)));
+    const float font = radius * 0.42f;
+    Text(draw, serif_font, font, ImVec2(centre.x, centre.y - font * 0.55f), Bone(alpha), text, 0.5f);
 }
 
 /// Revive progress as text: the share of the damage dealt.
@@ -1660,16 +1722,25 @@ void MemberList(ImDrawList* draw, float pulse) {
         const float a = member.here ? 1.0f : 0.55f;
         const ImU32 clear = Rgba(0.0f, 0.0f, 0.0f, 0.0f);
         // A shade fading out to the right behind the row: red while down. No edge lines.
-        const ImU32 color = MemberColor(i, a);
         const float mid_y = y + height * 0.5f;
         const ImU32 frame = down ? Rgba(0.46f, 0.04f, 0.06f, (0.55f + 0.20f * pulse) * a)
-                                 : Rgba(0.03f, 0.04f, 0.07f, 0.62f * a);
+                                 : Rgba(0.03f, 0.03f, 0.03f, 0.62f * a);
         draw->AddRectFilledMultiColor(ImVec2(x + S(8.0f), y), ImVec2(x + S(330.0f), y + height),
                                       frame, clear, clear, frame);
-        // The icon: the revive ring while down (as Nightreign's replaces the portrait), a cross
-        // while dead, the member's colour as a small diamond while up.
+        // The icon: the downed drop with its ring filling red with the revive, the headstone
+        // while dead, the lantern on another map, the hunter while up.
         const ImVec2 icon(x + S(34.0f), mid_y);
-        if (down) {
+        const float icon_size = S(48.0f);
+        using BbPartyIcons::Icon;
+        if (down && Party::Icon(draw, Icon::Downed, icon, icon_size, a)) {
+            RingShare(draw, icon, icon_size, BbPartyIcons::DownedRing,
+                      bbcoop_revive_share(member.landed, member.needed),
+                      a * (0.80f + 0.20f * pulse));
+        } else if (dead && Party::Icon(draw, Icon::Fallen, icon, icon_size, a)) {
+        } else if (!down && !dead &&
+                   Party::Icon(draw, member.here ? Icon::Hunter : Icon::Elsewhere, icon,
+                               icon_size, a)) {
+        } else if (down) {
             ReviveRing(draw, icon, S(21.0f), member.landed, member.needed,
                        a * (0.80f + 0.20f * pulse));
         } else if (dead) {
@@ -1681,7 +1752,7 @@ void MemberList(ImDrawList* draw, float pulse) {
         } else {
             const float r = S(7.0f);
             draw->AddQuadFilled(ImVec2(icon.x, icon.y - r), ImVec2(icon.x + r, icon.y),
-                                ImVec2(icon.x, icon.y + r), ImVec2(icon.x - r, icon.y), color);
+                                ImVec2(icon.x, icon.y + r), ImVec2(icon.x - r, icon.y), Bone(a));
         }
         const float text_x = x + S(64.0f);
         const char* name = member.name[0] != '\0' ? member.name : T("Hunter", "Охотник");
@@ -1754,7 +1825,10 @@ void RevivePrompt(ImDrawList* draw) {
                                   band, clear, clear, band);
     Ui::Ornament(draw, mid - w * 0.5f, mid + w * 0.5f, y - S(10.0f));
     Ui::Ornament(draw, mid - w * 0.5f, mid + w * 0.5f, y + S(38.0f));
-    Text(draw, serif_font, size, ImVec2(mid, y + S(2.0f)), Ui::Bright(), line, 0.5f);
+    const float text_w = w - S(120.0f);
+    Icon(draw, BbPartyIcons::Icon::Strike, ImVec2(mid - text_w * 0.5f - S(26.0f), y + S(14.0f)),
+         S(40.0f), 1.0f);
+    Text(draw, serif_font, size, ImVec2(mid, y + S(2.0f)), Bone(), line, 0.5f);
 }
 
 /// This player is down: a red edge around the screen, its revive ring and how to give up.
@@ -1776,14 +1850,26 @@ void OwnDown(ImDrawList* draw, float pulse) {
     const ImVec2 centre(mid, DownRingY(game, base_scale));
     ReviveRing(draw, centre, S(DownRingRadius), panel.landed, panel.needed,
                0.85f + 0.15f * pulse);
-    Text(draw, serif_font, S(30.0f), ImVec2(mid, centre.y + S(DownTitleBelow)), Ui::Bright(),
-         T("You are down", "Вы повержены"), 0.5f);
+    // The party HUD's YOU ARE DOWN banner says it in the game's own letters (BB_PARTY_HUD=0: here).
+    static const bool hud_banner = [] {
+        const char* setting = std::getenv("BB_PARTY_HUD");
+        return setting == nullptr || std::string_view{setting} != "0";
+    }();
+    if (!hud_banner) {
+        Text(draw, serif_font, S(30.0f), ImVec2(mid, centre.y + S(DownTitleBelow)), Bone(),
+             T("You are down", "Вы повержены"), 0.5f);
+    }
     Text(draw, serif_font, S(18.0f), ImVec2(mid, centre.y + S(DownHintBelow)), Ui::Plain(0.9f),
          T("A party member can raise you by striking you",
            "Союзник может поднять вас, нанося вам удары"),
          0.5f);
-    Text(draw, sans_font, S(15.0f), ImVec2(mid, centre.y + S(DownGiveUpBelow)), Ui::Gold(0.85f),
-         T("Hold Circle to give up", "Удерживайте Круг, чтобы сдаться"), 0.5f);
+    const char* give_up = T("Hold Circle to give up", "Удерживайте Круг, чтобы сдаться");
+    const float give_up_w = sans_font->CalcTextSizeA(S(15.0f), FLT_MAX, 0.0f, give_up).x;
+    Icon(draw, BbPartyIcons::Icon::GiveUp,
+         ImVec2(mid - give_up_w * 0.5f - S(18.0f), centre.y + S(DownGiveUpBelow) + S(9.0f)),
+         S(28.0f), 0.95f);
+    Text(draw, sans_font, S(15.0f), ImVec2(mid, centre.y + S(DownGiveUpBelow)), Bone(0.85f),
+         give_up, 0.5f);
     // The give-up bar: an empty track with a faint frame (so it shows before Circle is held),
     // filling while it's held.
     const float y = centre.y + S(DownBarBelow), w = S(180.0f), h = S(DownBarHeight);
@@ -1791,10 +1877,10 @@ void OwnDown(ImDrawList* draw, float pulse) {
     draw->AddRectFilled(b0, b1, Rgba(0.0f, 0.0f, 0.0f, 0.6f));
     if (panel.give_up > 0.0f) {
         draw->AddRectFilled(b0, ImVec2(b0.x + w * std::clamp(panel.give_up, 0.0f, 1.0f), b1.y),
-                            Rgba(0.90f, 0.42f, 0.25f, 1.0f));
+                            Blood());
     }
     draw->AddRect(ImVec2(b0.x - S(1.0f), b0.y - S(1.0f)), ImVec2(b1.x + S(1.0f), b1.y + S(1.0f)),
-                  Ui::Gold(0.45f), 0.0f, 0, S(1.0f));
+                  Bone(0.45f), 0.0f, 0, S(1.0f));
 }
 
 void Draw() {

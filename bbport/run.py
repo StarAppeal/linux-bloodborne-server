@@ -200,10 +200,14 @@ def main():
     icons = ['--icons-layer', icons_dir] if icons_dir else []
     if icons_note:
         print(icons_note)
+    # The party HUD (scripts/hud_patch.py): the HUD the mods show, with party death's downed banner, over them.
+    # BB_PARTY_HUD=0 keeps the game's HUD as it is.
+    party_hud = ['--party-hud'] if env.get('BB_PARTY_HUD', '1') != '0' else []
     game = Path(run_script('mods.py', game, '--out', out,
                            '--mods-dir', env.get('BB_MODS_DIR', data / 'mods'),
                            '--config', env.get('BB_MODS_CONFIG', data / 'mods.json'),
-                           '--enabled', env.get('BB_MODS_ENABLED', '1'), *icons, capture=True).strip())
+                           '--enabled', env.get('BB_MODS_ENABLED', '1'), *icons, *party_hud,
+                           capture=True).strip())
     mod_view = game if game.resolve() != original_game else None
     try:
         run_script('prepare.py', game, '--out', out)

@@ -311,10 +311,17 @@ def main():
     parser.add_argument('--config', type=Path)
     parser.add_argument('--enabled', choices=('0', '1'), default='1')
     parser.add_argument('--icons-layer', type=Path, help='a folder with the generated button icons (a layer under the mods)')
+    parser.add_argument('--party-hud', action='store_true',
+                        help='put the party HUD (hud_patch.py: the HUD the layers show, patched) over the mods')
     args = parser.parse_args()
     layers, note = mod_layers(args.game, args.mods_dir, args.config, args.enabled, args.icons_layer)
     if note:
         print(f'Mods: {note}', file=sys.stderr)
+    if args.party_hud:
+        import hud_patch
+        layers, notes = hud_patch.with_party_hud(args.game, layers, args.out)
+        for line in notes:
+            print(f'Mods: {line}', file=sys.stderr)
     print(build_overlay(args.game, args.out, layers))
 
 

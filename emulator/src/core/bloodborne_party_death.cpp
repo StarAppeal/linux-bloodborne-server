@@ -809,6 +809,31 @@ void SetPlayerFlag(u64 offset, u8 value) {
     WriteValue(image_base + offset, 0, value);
 }
 
+// The yellow YOU ARE DOWN banner (the party HUD's, in place of the game's PvP Draw banner): queued
+// by the game's own SetTextEffect, as YOU DIED is. Without the party HUD it would show the Draw
+// banner's own words, so it is left out where the HUD is not the port's (the emulator) or is off
+// (BB_PARTY_HUD=0).
+void ShowDownedBanner() {
+#ifdef BLOODBORNE_PARTY_HUD
+    static const bool party_hud = [] {
+        const char* setting = std::getenv("BB_PARTY_HUD"); // run.py's switch for the patched HUD
+        return setting == nullptr || std::string_view{setting} != "0";
+    }();
+    if (!party_hud) {
+        return;
+    }
+    const auto* start = reinterpret_cast<const u8*>(image_base + SetTextEffectOffset);
+    if (!std::ranges::equal(std::span<const u8>{start, SetTextEffectStart.size()},
+                            SetTextEffectStart)) {
+        LOG_ERROR(Debug, "Bloodborne party death: SetTextEffect is not where it should be; no "
+                         "downed banner");
+        return;
+    }
+    reinterpret_cast<void PS4_SYSV_ABI (*)(u64, s32)>(image_base + SetTextEffectOffset)(
+        0, DownedBannerTextEffect);
+#endif
+}
+
 void GoDown(PartyDeathRun& run, u64 data, s64 now_ms) {
     const u32 down = run.downed.GoDown(now_ms, ReadValue<s32>(data, 0xFC));
     run.give_up.Restart((party_pad_buttons.load() & PadCircle) != 0);
@@ -821,6 +846,7 @@ void GoDown(PartyDeathRun& run, u64 data, s64 now_ms) {
     run.silence_before = ReadValue<u8>(image_base + PlayerSilenceFlagOffset, 0);
     SetPlayerFlag(PlayerHideFlagOffset, 1);
     SetPlayerFlag(PlayerSilenceFlagOffset, 1);
+    ShowDownedBanner();
     bool posed = false;
     if (downed_animation > 0) {
         using ForcePlayAnimation = bool PS4_SYSV_ABI (*)(u64 unused, s32 entity, s32 animation);
@@ -834,15 +860,18 @@ void GoDown(PartyDeathRun& run, u64 data, s64 now_ms) {
              downed_animation, posed);
 }
 
-// Each tick while down: no damage, 1 HP, unseen and unheard (the game may undo any of them).
+// Each tick while down: no damage, the revive's progress as HP (DownedHp), unseen and unheard
+// (the game may undo any of them).
 void KeepDown(PartyDeathRun& run, u64 data) {
     const u8 flags = ReadValue<u8>(data, 0x200);
     if ((flags & DownedNoDamageFlags) != DownedNoDamageFlags) {
         run.flags_added |= DownedNoDamageFlags & static_cast<u8>(~flags);
         WriteValue(data, 0x200, static_cast<u8>(flags | DownedNoDamageFlags));
     }
-    if (ReadValue<s32>(data, 0xF8) > 1) {
-        WriteValue(data, 0xF8, s32{1});
+    const s32 hp =
+        DownedHp(ReadValue<s32>(data, 0xFC), run.downed.DamageLanded(), run.downed.DamageNeeded());
+    if (ReadValue<s32>(data, 0xF8) != hp) {
+        WriteValue(data, 0xF8, hp);
     }
     SetPlayerFlag(PlayerHideFlagOffset, 1);
     SetPlayerFlag(PlayerSilenceFlagOffset, 1);
@@ -988,7 +1017,6 @@ void TickPartyDeath() {
                      run.downed.DownId(), party_death_reset.load());
             break;
         }
-        KeepDown(run, data);
         const auto wipe = view.Fresh() ? WipeFor(view.board, view.member) : std::nullopt;
         const bool wiped = wipe && *wipe != run.handled_wipe;
         const bool gave_up = run.give_up.Tick((party_pad_buttons.load() & PadCircle) != 0, now);
@@ -1000,6 +1028,7 @@ void TickPartyDeath() {
         }
         const bool revived = run.downed.Damage(damage, now);
         run.downed.Tick(now);
+        KeepDown(run, data);
         switch (EndOfDown(wiped, gave_up, revived, view.age_ms)) {
         case DownEnd::None:
             break;

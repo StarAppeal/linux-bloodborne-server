@@ -133,6 +133,24 @@ TEST(BloodbornePartyDeath, GetsUpWithHalfItsHp) {
     EXPECT_EQ(RevivedHp(0), 1);
 }
 
+// While down, HP shows the revive's progress: 1 with nothing landed, rising with the damage dealt,
+// and never the full bar before the revive is done (the game's own HP bar and the nameplate over
+// the player on the others' screens fill as it is struck).
+TEST(BloodbornePartyDeath, DownedHpShowsTheReviveProgress) {
+    EXPECT_EQ(DownedHp(1000, 0, 1000), 1);
+    EXPECT_EQ(DownedHp(1000, 500, 1000), 500);
+    EXPECT_EQ(DownedHp(1000, 640, 2000), 320);
+    EXPECT_EQ(DownedHp(1000, 999, 1000), 999);
+    EXPECT_EQ(DownedHp(1000, 1000, 1000), 999) << "the revive itself sets the HP";
+    EXPECT_EQ(DownedHp(1000, 5000, 1000), 999);
+    EXPECT_EQ(DownedHp(2, 1, 2), 1);
+    EXPECT_EQ(DownedHp(1, 1, 1), 1);
+    EXPECT_EQ(DownedHp(0, 3, 4), 1);
+    EXPECT_EQ(DownedHp(1000, 7, 0), 1);
+    EXPECT_EQ(DownedHp(2'000'000'000, 1'999'999'999, 2'000'000'000), 1'999'999'999)
+        << "no overflow";
+}
+
 TEST(BloodbornePartyDeath, GoesDownWithANewDownEachTime) {
     DownedState state{100};
     EXPECT_EQ(state.Current(), Vital::Up);
