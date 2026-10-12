@@ -57,7 +57,9 @@ def fe_movie():
         sprite(14, place2(1, 11, ''), place2(3, 13, '')),
         edit_text(20, DEAD_HTML, b'\x96\x08\x07\xff'), sprite(21, place2(1, 20, 'StaticText_522001')),
         sprite(22, place2(1, 21, '')),
-        place2(5, 14, 'TextEffect_Draw'), place2(6, 22, 'TextEffect_Dead'),
+        sprite(30, tag(1, b'')),
+        place2(5, 14, 'TextEffect_Draw'), place2(6, 22, 'TextEffect_Dead'), place2(9, 30, 'RemotePCTag0'),
+        tag(1, b''),
         symbol_class(14, 'Fe_fla._TextEffect_Draw_195'))
 
 
@@ -80,6 +82,44 @@ class GfxTests(unittest.TestCase):
         self.assertIn(b'StaticText_522001', patched)
         self.assertEqual(hud_patch.write_movie(hud_patch.read_movie(patched)), patched)
 
+    def test_the_party_list_is_three_more_nameplate_tags_on_top(self):
+        _, tags = hud_patch.read_movie(hud_patch.patch_fe(fe_movie()))
+        first_frame = next(i for i, t in enumerate(tags) if t.code == hud_patch.SHOW_FRAME)
+        places = {hud_patch.place_parts(t)[1]: t for t in tags[:first_frame] if t.code == hud_patch.PLACE_OBJECT2}
+        self.assertEqual([places[name].body[3:5] for name in hud_patch.PARTY_LIST], [struct.pack('<H', 30)] * 3)
+        self.assertEqual([hud_patch.place_depth(places[name]) for name in hud_patch.PARTY_LIST], [11, 13, 15])
+
+    def test_the_list_icons_are_a_sprite_of_our_drawings_beside_each_tag(self):
+        strip = hud_patch.HUD_ICONS.read_bytes()
+        patched = hud_patch.patch_fe(fe_movie(), strip)
+        self.assertEqual(hud_patch.write_movie(hud_patch.read_movie(patched)), patched)
+        _, tags = hud_patch.read_movie(patched)
+        bitmaps = [t for t in tags if t.code == 36]
+        self.assertEqual(len(bitmaps), len(hud_patch.HUD_ICON_FRAMES) - 1)
+        sprites = {struct.unpack_from('<H', t.body)[0]: t for t in tags if t.code == hud_patch.SPRITE}
+        first_frame = next(i for i, t in enumerate(tags) if t.code == hud_patch.SHOW_FRAME)
+        places = {hud_patch.place_parts(t)[1]: t for t in tags[:first_frame] if t.code == hud_patch.PLACE_OBJECT2}
+        icon_char = hud_patch.place_parts(places['CoopPartyIcon0'])[0]
+        self.assertEqual(struct.unpack_from('<H', sprites[icon_char].body, 2)[0], len(hud_patch.HUD_ICON_FRAMES))
+        self.assertEqual({hud_patch.place_parts(places[name])[0] for name in hud_patch.PARTY_ICONS}, {icon_char})
+        # Defined before they are placed, with ids of their own.
+        defined = [struct.unpack_from('<H', t.body)[0] for t in tags if t.code in (2, 36, hud_patch.SPRITE)]
+        self.assertEqual(len(defined), len(set(defined)))
+        self.assertLess(tags.index(sprites[icon_char]), tags.index(places['CoopPartyIcon0']))
+        self.assertEqual(hud_patch.patch_fe(patched, strip), patched, 'once')
+
+    def test_the_matrix_and_rect_bits(self):
+        self.assertEqual(hud_patch.matrix(None, 0, 0), bytes([0x02, 0x00]))  # no scale, no rotation, 1-bit moves
+        self.assertEqual(hud_patch.rect(0, 0)[0] >> 3, 1)
+        bits = hud_patch.BitWriter()
+        bits.put(-1, 3, True)
+        self.assertEqual(bits.data(), bytes([0b11100000]))
+
+    def test_a_hud_without_remote_tags_gets_the_banner_but_no_list(self):
+        patched = hud_patch.patch_fe(fe_movie().replace(b'RemotePCTag0', b'RemotePCTagX'))
+        self.assertIn(b'YOU ARE DOWN', patched)
+        self.assertNotIn(b'CoopParty0', patched)
+
     def test_the_patch_is_idempotent(self):
         once = hud_patch.patch_fe(fe_movie())
         self.assertEqual(hud_patch.patch_fe(once), once)
@@ -100,6 +140,12 @@ class GfxTests(unittest.TestCase):
         self.assertEqual(patched.count(b'YOU ARE DOWN'), 2)  # its two text fields (one shown twice)
         self.assertNotIn(b'StaticText_522007', patched)
         self.assertIn(b'StaticText_522001', patched)
+        for name in hud_patch.PARTY_LIST:
+            self.assertEqual(patched.count(name.encode() + b'\0'), 1)
+        with_icons = hud_patch.patch_fe(data, hud_patch.HUD_ICONS.read_bytes())
+        self.assertEqual(hud_patch.write_movie(hud_patch.read_movie(with_icons)), with_icons)
+        for name in hud_patch.PARTY_ICONS:
+            self.assertEqual(with_icons.count(name.encode() + b'\0'), 1)
 
 
 class LayerTests(unittest.TestCase):

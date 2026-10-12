@@ -1708,6 +1708,108 @@ int RevivePercent(u32 landed, u32 needed) {
     return int(std::lround(bbcoop_revive_share(landed, needed) * 100.0f));
 }
 
+// The pad inputs party death names (runtime_pad.c's order).
+constexpr int InputCircle = 1, InputR1 = 5, InputR2 = 7;
+
+/// The icon set of this start (run.py's BB_ICONS_SET, as the game's own glyphs): 'p'layStation,
+/// 'x'box or 'k'eyboard.
+char IconSet() {
+    static const char set = [] {
+        const char* value = std::getenv("BB_ICONS_SET");
+        const std::string_view name = value ? value : "playstation";
+        return name == "xbox" ? 'x' : name == "keyboard" ? 'k' : 'p';
+    }();
+    return set;
+}
+
+/// The first of a binding text's entries ("Space, Return" -> "Space").
+std::string FirstBinding(int input, int pad) {
+    char text[96];
+    runtime_pad_binding_text(input, pad, text, sizeof(text));
+    std::string first = text;
+    return first.substr(0, first.find(", "));
+}
+
+/// The button glyph for `input` with its left edge and middle at `at`, `height` tall: the icon set's
+/// own (PlayStation shapes, Xbox letters, or the bound key on a key cap). Returns its width.
+float ButtonGlyph(ImDrawList* draw, int input, ImVec2 at, float height, float alpha) {
+    const char set = IconSet();
+    const float r = height * 0.5f;
+    const ImU32 ink = Bone(alpha), ground = Rgba(0.05f, 0.04f, 0.04f, 0.85f * alpha);
+    if (set == 'k') {
+        const std::string key = FirstBinding(input, 0);
+        const char* label = key.empty() ? "?" : key.c_str();
+        const float size = height * 0.62f;
+        const float w = std::max(sans_font->CalcTextSizeA(size, FLT_MAX, 0.0f, label).x + height * 0.5f,
+                                 height);
+        draw->AddRectFilled(ImVec2(at.x, at.y - r), ImVec2(at.x + w, at.y + r), ground, height * 0.18f);
+        draw->AddRect(ImVec2(at.x, at.y - r), ImVec2(at.x + w, at.y + r), Bone(0.7f * alpha),
+                      height * 0.18f, 0, std::max(1.0f, height * 0.06f));
+        draw->AddText(sans_font, size, ImVec2(at.x + height * 0.25f, at.y - size * 0.55f),
+                      ink, label);
+        return w;
+    }
+    const std::string pad = FirstBinding(input, 1);
+    const ImVec2 centre(at.x + r, at.y);
+    const bool shoulder = pad.find("shoulder") != std::string::npos || pad.find("trigger") != std::string::npos;
+    if (shoulder) {
+        const bool right = pad.rfind("right", 0) == 0, trigger = pad.find("trigger") != std::string::npos;
+        const char* label = set == 'x' ? (right ? (trigger ? "RT" : "RB") : (trigger ? "LT" : "LB"))
+                                       : (right ? (trigger ? "R2" : "R1") : (trigger ? "L2" : "L1"));
+        const float size = height * 0.6f;
+        const float w = sans_font->CalcTextSizeA(size, FLT_MAX, 0.0f, label).x + height * 0.6f;
+        draw->AddRectFilled(ImVec2(at.x, at.y - r), ImVec2(at.x + w, at.y + r), ground, r);
+        draw->AddRect(ImVec2(at.x, at.y - r), ImVec2(at.x + w, at.y + r), Bone(0.7f * alpha), r, 0,
+                      std::max(1.0f, height * 0.06f));
+        draw->AddText(sans_font, size, ImVec2(at.x + height * 0.3f, at.y - size * 0.55f), ink, label);
+        return w;
+    }
+    draw->AddCircleFilled(centre, r, ground);
+    draw->AddCircle(centre, r, Bone(0.7f * alpha), 0, std::max(1.0f, height * 0.06f));
+    const char face = pad == "a" ? 'a' : pad == "b" ? 'b' : pad == "x" ? 'x' : pad == "y" ? 'y' : 0;
+    if (set == 'x' || face == 0) {
+        const char label[2] = {face ? char(face - 'a' + 'A') : '?', 0};
+        const float size = height * 0.7f;
+        const float w = sans_font->CalcTextSizeA(size, FLT_MAX, 0.0f, label).x;
+        draw->AddText(sans_font, size, ImVec2(centre.x - w * 0.5f, centre.y - size * 0.55f),
+                      face == 'b' ? Blood(alpha) : ink, label);
+        return height;
+    }
+    // PlayStation: Cross (a), Circle (b), Square (x), Triangle (y), in the game's white.
+    const float s = r * 0.5f, line = std::max(1.5f, height * 0.09f);
+    if (face == 'a') {
+        draw->AddLine(ImVec2(centre.x - s, centre.y - s), ImVec2(centre.x + s, centre.y + s), ink, line);
+        draw->AddLine(ImVec2(centre.x + s, centre.y - s), ImVec2(centre.x - s, centre.y + s), ink, line);
+    } else if (face == 'b') {
+        draw->AddCircle(centre, s, ink, 0, line);
+    } else if (face == 'x') {
+        draw->AddRect(ImVec2(centre.x - s * 0.9f, centre.y - s * 0.9f),
+                      ImVec2(centre.x + s * 0.9f, centre.y + s * 0.9f), ink, 0.0f, 0, line);
+    } else {
+        draw->AddTriangle(ImVec2(centre.x, centre.y - s), ImVec2(centre.x + s, centre.y + s * 0.75f),
+                          ImVec2(centre.x - s, centre.y + s * 0.75f), ink, line);
+    }
+    return height;
+}
+
+/// A line of words with a button glyph between `before` and `after`, centred on `mid`.
+void TextWithGlyph(ImDrawList* draw, ImFont* font, float size, float mid, float y, ImU32 color,
+                   const char* before, int input, const char* after) {
+    const float gap = size * 0.35f, glyph_h = size * 1.25f;
+    const float w0 = font->CalcTextSizeA(size, FLT_MAX, 0.0f, before).x;
+    const float w1 = font->CalcTextSizeA(size, FLT_MAX, 0.0f, after).x;
+    // The glyph's width depends on what it shows: measured by drawing it off screen first.
+    ImDrawList scratch(ImGui::GetDrawListSharedData());
+    scratch.AddDrawCmd();
+    const float glyph_w = ButtonGlyph(&scratch, input, ImVec2(-10000.0f, -10000.0f), glyph_h, 0.0f);
+    float x = mid - (w0 + gap + glyph_w + gap + w1) * 0.5f;
+    Text(draw, font, size, ImVec2(x, y), color, before);
+    x += w0 + gap;
+    ButtonGlyph(draw, input, ImVec2(x, y + size * 0.55f), glyph_h, Alpha(color));
+    x += glyph_w + gap;
+    Text(draw, font, size, ImVec2(x, y), color, after);
+}
+
 void MemberList(ImDrawList* draw, float pulse) {
     using Ui::S;
     using Ui::T;
@@ -1810,14 +1912,12 @@ void RevivePrompt(ImDrawList* draw) {
     using Ui::T;
     const bbcoop_panel_member& member = panel.members[panel.revive_target];
     char line[96];
-    std::snprintf(
-        line, sizeof(line),
-        T("R1 / R2: strike to revive %s  %d%%", "R1 / R2: ударьте, чтобы поднять %s  %d%%"),
-        member.name[0] != '\0' ? member.name : T("Hunter", "Охотник"),
-        RevivePercent(member.landed, member.needed));
+    std::snprintf(line, sizeof(line), T("strike to revive %s  %d%%", "ударьте, чтобы поднять %s  %d%%"),
+                  member.name[0] != '\0' ? member.name : T("Hunter", "Охотник"),
+                  RevivePercent(member.landed, member.needed));
     const float size = S(21.0f), mid = game.x + game.w * 0.5f,
                 y = BbPartyLayout::RevivePromptY(game);
-    const float w = serif_font->CalcTextSizeA(size, FLT_MAX, 0.0f, line).x + S(120.0f);
+    const float w = serif_font->CalcTextSizeA(size, FLT_MAX, 0.0f, line).x + S(220.0f);
     const ImU32 band = Rgba(0.0f, 0.0f, 0.0f, 0.62f), clear = Rgba(0.0f, 0.0f, 0.0f, 0.0f);
     draw->AddRectFilledMultiColor(ImVec2(mid - w * 0.5f, y - S(10.0f)), ImVec2(mid, y + S(38.0f)),
                                   clear, band, band, clear);
@@ -1825,10 +1925,23 @@ void RevivePrompt(ImDrawList* draw) {
                                   band, clear, clear, band);
     Ui::Ornament(draw, mid - w * 0.5f, mid + w * 0.5f, y - S(10.0f));
     Ui::Ornament(draw, mid - w * 0.5f, mid + w * 0.5f, y + S(38.0f));
-    const float text_w = w - S(120.0f);
-    Icon(draw, BbPartyIcons::Icon::Strike, ImVec2(mid - text_w * 0.5f - S(26.0f), y + S(14.0f)),
-         S(40.0f), 1.0f);
-    Text(draw, serif_font, size, ImVec2(mid, y + S(2.0f)), Bone(), line, 0.5f);
+    // R1 / R2 as the player's own buttons, then the words; the strike icon before them.
+    const float glyph_h = size * 1.15f, gap = size * 0.3f;
+    ImDrawList scratch(ImGui::GetDrawListSharedData());
+    scratch.AddDrawCmd();
+    const float g1 = ButtonGlyph(&scratch, InputR1, ImVec2(-10000.0f, -10000.0f), glyph_h, 0.0f);
+    const float g2 = ButtonGlyph(&scratch, InputR2, ImVec2(-10000.0f, -10000.0f), glyph_h, 0.0f);
+    const float slash = serif_font->CalcTextSizeA(size, FLT_MAX, 0.0f, "/").x;
+    const float words = serif_font->CalcTextSizeA(size, FLT_MAX, 0.0f, line).x;
+    const float total = g1 + gap + slash + gap + g2 + gap * 2.0f + words;
+    float x = mid - total * 0.5f;
+    const float glyph_y = y + S(2.0f) + size * 0.55f;
+    Icon(draw, BbPartyIcons::Icon::Strike, ImVec2(x - S(30.0f), y + S(14.0f)), S(40.0f), 1.0f);
+    x += ButtonGlyph(draw, InputR1, ImVec2(x, glyph_y), glyph_h, 1.0f) + gap;
+    Text(draw, serif_font, size, ImVec2(x, y + S(2.0f)), Bone(), "/");
+    x += slash + gap;
+    x += ButtonGlyph(draw, InputR2, ImVec2(x, glyph_y), glyph_h, 1.0f) + gap * 2.0f;
+    Text(draw, serif_font, size, ImVec2(x, y + S(2.0f)), Bone(), line);
 }
 
 /// This player is down: a red edge around the screen, its revive ring and how to give up.
@@ -1863,13 +1976,17 @@ void OwnDown(ImDrawList* draw, float pulse) {
          T("A party member can raise you by striking you",
            "Союзник может поднять вас, нанося вам удары"),
          0.5f);
-    const char* give_up = T("Hold Circle to give up", "Удерживайте Круг, чтобы сдаться");
-    const float give_up_w = sans_font->CalcTextSizeA(S(15.0f), FLT_MAX, 0.0f, give_up).x;
+    // Hold <the dodge button, as the player's icon set shows it> to give up.
+    const char* hold = T("Hold", "Удерживайте");
+    const char* to_give_up = T("to give up", ", чтобы сдаться");
+    const float give_up_w = sans_font->CalcTextSizeA(S(15.0f), FLT_MAX, 0.0f, hold).x +
+                            sans_font->CalcTextSizeA(S(15.0f), FLT_MAX, 0.0f, to_give_up).x +
+                            S(15.0f) * 2.0f;
     Icon(draw, BbPartyIcons::Icon::GiveUp,
-         ImVec2(mid - give_up_w * 0.5f - S(18.0f), centre.y + S(DownGiveUpBelow) + S(9.0f)),
+         ImVec2(mid - give_up_w * 0.5f - S(30.0f), centre.y + S(DownGiveUpBelow) + S(9.0f)),
          S(28.0f), 0.95f);
-    Text(draw, sans_font, S(15.0f), ImVec2(mid, centre.y + S(DownGiveUpBelow)), Bone(0.85f),
-         give_up, 0.5f);
+    TextWithGlyph(draw, sans_font, S(15.0f), mid, centre.y + S(DownGiveUpBelow), Bone(0.85f), hold,
+                  InputCircle, to_give_up);
     // The give-up bar: an empty track with a faint frame (so it shows before Circle is held),
     // filling while it's held.
     const float y = centre.y + S(DownBarBelow), w = S(180.0f), h = S(DownBarHeight);
@@ -1886,7 +2003,9 @@ void OwnDown(ImDrawList* draw, float pulse) {
 void Draw() {
     ImDrawList* draw = ImGui::GetBackgroundDrawList();
     const float pulse = 0.5f + 0.5f * std::sin(float(ImGui::GetTime()) * 4.0f);
-    MemberList(draw, pulse);
+    if (!panel.native_list) { // else the game's HUD shows it (the party HUD's CoopParty tags)
+        MemberList(draw, pulse);
+    }
     if (panel.vital == BBCOOP_VITAL_DOWN) {
         OwnDown(draw, pulse);
     } else if (panel.revive_target >= 0 && panel.revive_target < panel.member_count) {

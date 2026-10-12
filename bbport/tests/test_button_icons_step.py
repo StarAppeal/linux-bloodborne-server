@@ -82,6 +82,16 @@ class RunPyTests(unittest.TestCase):
     def setUp(self):
         self.source = (ROOT / 'run.py').read_text(encoding='utf-8')
 
+    def test_the_icon_set_follows_the_choice_and_the_controller(self):
+        xbox = [('030000005e040000e002000000007200', 'Xbox Wireless Controller')]
+        playstation = [('030000004c050000c405000000006800', 'Wireless Controller')]
+        self.assertEqual(button_icons.icon_set({'button_icons': 'keyboard'}), 'keyboard')
+        self.assertEqual(button_icons.icon_set({'button_icons': 'xbox'}), 'xbox')
+        self.assertEqual(button_icons.icon_set({}, gamepads=lambda: xbox), 'xbox')
+        self.assertEqual(button_icons.icon_set({}, gamepads=lambda: playstation), 'playstation')
+        self.assertEqual(button_icons.icon_set({}, gamepads=lambda: []), 'keyboard')
+        self.assertEqual(button_icons.icon_set({}), 'playstation', 'pads unknown: the game\'s own')
+
     def test_the_launcher_s_choice_is_taken_out_of_the_environment(self):
         self.assertIn("env.pop('BB_ICONS_DIR', None)", self.source)
         self.assertIn("env.pop('BB_ICONS_NOTE', None)", self.source)

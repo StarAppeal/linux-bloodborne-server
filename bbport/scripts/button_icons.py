@@ -46,6 +46,20 @@ def list_gamepads(tool):
     return pads
 
 
+def icon_set(ini, gamepad='', gamepads=None):
+    """'playstation', 'xbox' or 'keyboard': the button icons of this start (as environment() picks them), for the
+    overlay's glyphs. gamepads: as for environment(), asked only for the automatic choice."""
+    try:
+        import bbport_controls
+    except ImportError:
+        return 'playstation'
+    choice = ini.get('button_icons', bbport_controls.ICON_DEFAULT)
+    if choice not in [value for value, _text in bbport_controls.ICON_CHOICES]:
+        choice = bbport_controls.ICON_DEFAULT
+    pads = gamepads() if choice == 'auto' and gamepads else None
+    return bbport_controls.resolve_icon_set(choice, pads, str(gamepad).strip())
+
+
 def environment(game, out_dir, ini, mods_dir, mods_config, mods_enabled, gamepad='', gamepads=None):
     """The environment entries of the icons: BB_ICONS_DIR (the generated common.tpf.dcx's folder) and
     BB_ICONS_NOTE (a line for the log). {} when the game keeps its own icons (PlayStation, or no game file to

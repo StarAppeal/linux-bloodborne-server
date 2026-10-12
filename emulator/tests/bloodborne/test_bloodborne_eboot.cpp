@@ -192,6 +192,28 @@ TEST_F(BloodborneEboot, TheReviveHitHookIsWhereTheHitsDamageIsStored) {
     EXPECT_EQ(CharacterTeamOffset, 0x88u);
 }
 
+// The native party list: the HUD tick after its tags (`mov rdi, [r15 + 0xF8]`, r15 the HUD, the
+// frame time at [rbp - 0x6C8]) builds its tags as the HUD's own init does (child lookup, then the
+// tag constructor) and updates them with the tag update.
+TEST_F(BloodborneEboot, ThePartyListUsesTheHudsOwnTagCode) {
+    EXPECT_EQ(Bytes(HudTicksTagsDoneOffset, HudTicksTagsDone.size()),
+              std::vector<u8>(HudTicksTagsDone.begin(), HudTicksTagsDone.end()));
+    EXPECT_EQ(CallTarget(HudTicksTagsDoneOffset - 5), HudTagUpdateOffset)
+        << "the last tag's update";
+    // vmovss xmm0, [rbp - 0x6C8] right before it: the frame time.
+    EXPECT_EQ(Bytes(0x01BF8A43, 8),
+              (std::vector<u8>{0xC5, 0xFA, 0x10, 0x85, 0x38, 0xF9, 0xFF, 0xFF}));
+    EXPECT_EQ(CallTarget(0x01BF5261), HudChildLookupOffset) << "RemotePCTag%d";
+    EXPECT_EQ(CallTarget(0x01BF5270), HudTagConstructorOffset);
+    for (const u64 offset :
+         {HudChildLookupOffset, HudTagConstructorOffset, HudTagUpdateOffset, HudSetVisibleOffset}) {
+        EXPECT_EQ(Bytes(offset, FunctionPrologue.size()), FunctionPrologue) << std::hex << offset;
+    }
+    // The tag's allocation: 0x6E0 bytes.
+    EXPECT_EQ(Bytes(0x01BF522D, 5), (std::vector<u8>{0xBE, 0xE0, 0x06, 0x00, 0x00}));
+    EXPECT_EQ(HudTagSize, 0x6E0u);
+}
+
 // The calls the patches and hooks are about are where the comments say.
 TEST_F(BloodborneEboot, ThePatchedCallsGoWhereTheCommentsSay) {
     // Ghost death: SetEventFlag(4047) twice, then CustomLuaCallStart(4063).

@@ -2342,6 +2342,56 @@ std::optional<std::string> NameplateRoleLine(const struct PartyPanel& panel, std
 // Which remote player's tag (0 to 6) a TagData address is, from FeData's address.
 std::optional<int> RemoteTagIndex(u64 tag_data, u64 fe_data);
 
+// The native party list: the party HUD's CoopParty0-2 (bbport/scripts/hud_patch.py, three more of
+// the tag sprite RemotePCTag0 shows), made and updated with the HUD's own tag code: the child
+// lookup (0x01ADB220: out PathRef, parent, printf format, ...), the tag constructor (0x01B58E40:
+// tag of HudTagSize bytes, PathRef, 0, 0) and the tag update with its TagData and the frame time.
+// Where the HUD tick has updated its own tags (0x01BF8A50, `mov rdi, [r15 + 0xF8]`: r15 the HUD,
+// the frame time at [rbp - 0x6C8]) the list's are updated.
+constexpr u64 HudChildLookupOffset = 0x01ADB220;
+constexpr u64 HudTagConstructorOffset = 0x01B58E40;
+constexpr u64 HudTagUpdateOffset = 0x01B59E20;
+// An element's SetVisible (0x01ACB760: element, shown), the element wrapper's vtable slot 1; a tag
+// starts with such a wrapper of its whole sprite.
+constexpr u64 HudSetVisibleOffset = 0x01ACB760;
+constexpr u64 HudTagSize = 0x6E0;
+constexpr u64 HudPathRefSize = 0x60;
+constexpr u64 HudTicksTagsDoneOffset = 0x01BF8A50;
+constexpr std::array<u8, 7> HudTicksTagsDone{0x49, 0x8B, 0xBF, 0xF8, 0x00, 0x00, 0x00};
+constexpr s64 HudFrameTimeFrameOffset = -0x6C8;
+constexpr int PartyListSize = 3;
+struct PartyListEntry {
+    bool visible = false;
+    s32 hp = 0;
+    s32 max = 1;
+    std::string role; // html, the game's role line
+    std::string name;
+    u32 icon = 1; // its icon's frame (PartyListIcon...)
+};
+// The icon sprite's frames beside each tag (CoopPartyIcon0-2, our drawings: hud_patch.py
+// HUD_ICON_FRAMES), 1-based as GotoAndStop takes them: none, the hunter, the lantern (another map),
+// the headstone, then the downed drop with its ring red to 0%, 10%, ... 100%.
+constexpr u32 PartyListIconNone = 1;
+constexpr u32 PartyListIconHunter = 2;
+constexpr u32 PartyListIconElsewhere = 3;
+constexpr u32 PartyListIconFallen = 4;
+constexpr u32 PartyListIconDowned0 = 5;
+constexpr u32 PartyListIconFrames = PartyListIconDowned0 + 10;
+// The icon objects' value (a PathRef's) and the object interface's GotoAndPlay(data, frame, stop)
+// slot.
+constexpr u64 HudGotoFrameSlot = 0x158;
+// The list's tags for the panel's first members: HP while up, the revive while down (of 100).
+std::array<PartyListEntry, PartyListSize> PartyListEntries(const struct PartyPanel& panel);
+// Where a tag goes on the HUD's 1920x1080 stage (its HP bar's left end).
+std::pair<s32, s32> PartyListPosition(int index);
+// The TagData the tag update takes for an entry; `role` and `name` are the addresses of its UTF-16
+// strings (kept by the caller, at most 63 characters each). A game HUD string is 0x38 bytes: the
+// tag update copies it with the allocator at +0x28 (and a flag at +0x30), so each string starts as
+// the one in `game` (a TagData of the game's own, RemotePCTag0's).
+constexpr size_t GameHudStringFullSize = 0x38;
+void WriteTagData(std::span<u8, HudTagDataSize> data, std::span<const u8, HudTagDataSize> game,
+                  const PartyListEntry& entry, s32 x, s32 y, u64 role, u64 name);
+
 // The local player's side of party death. Times are steady milliseconds.
 class DownedState {
 public:

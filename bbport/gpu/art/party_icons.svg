@@ -2,7 +2,8 @@
 <!-- SPDX-License-Identifier: GPL-2.0-or-later -->
 <!-- Party death icons, drawn for this port (none of it is the game's). The atlas order is
      BbPartyIcons::Icon: hunter, downed, fallen, elsewhere, strike, give up, revive ring.
-     The rings' red share and the revive ring's percentage are drawn live over them.
+     The rings' red share and the revive ring's percentage are drawn live over them. The h-* glyphs are the
+     party HUD's list (scripts/party_hud_icons.bin), in the style of the game's Blood Echoes and Insight icons.
      Rebuild party_icons.bin with scripts/party_icons_atlas.py after an edit. -->
 <defs>
     <linearGradient id="g-bone" x1="0" y1="0" x2="0.3" y2="1">
@@ -231,6 +232,89 @@
       </g>
       <path d="M64 2 L70 10 L64 22 L58 10Z" fill="url(#g-steel)" stroke="#1a1716" stroke-width=".9"/>
       <circle cx="64" cy="64" r="36" fill="none" stroke="#7d766d" stroke-width="1" opacity=".8"/>
+    </symbol>
+    <!-- The HUD list's glyphs, as the game's Blood Echoes and Insight icons: engraved bone-white shapes with a dark
+         edge, hatched shading and worn grain, no frame (the downed drop in blood red, its ring filled in the strip). -->
+    <linearGradient id="h-white" x1="0" y1="0" x2="0.25" y2="1">
+      <stop offset="0" stop-color="#f8f5ee"/><stop offset=".5" stop-color="#dcd5c7"/><stop offset="1" stop-color="#9c9484"/>
+    </linearGradient>
+    <linearGradient id="h-red" x1="0" y1="0" x2="0.2" y2="1">
+      <stop offset="0" stop-color="#ea5544"/><stop offset=".5" stop-color="#b3241b"/><stop offset="1" stop-color="#5e0c09"/>
+    </linearGradient>
+    <pattern id="h-hatch" width="3.5" height="3.5" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
+      <line x1="0" y1="0" x2="0" y2="3.5" stroke="#2b2522" stroke-width="1" opacity=".55"/>
+    </pattern>
+    <filter id="h-shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="2" seed="3" result="n"/>
+      <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -0.55 1.18" result="m"/>
+      <feComposite in="SourceGraphic" in2="m" operator="in" result="worn"/>
+      <feDropShadow in="worn" dx="0" dy="3" stdDeviation="3" flood-color="#000" flood-opacity=".9"/>
+    </filter>
+    <symbol id="h-hunter" viewBox="0 0 128 128">
+      <g filter="url(#h-shadow)" stroke="#0b0909" stroke-width="3" stroke-linejoin="round">
+        <!-- coat collar and shoulders -->
+        <path d="M28 118 Q34 97 50 91 L64 101 L78 91 Q94 97 100 118Z" fill="url(#h-white)"/>
+        <path d="M28 118 Q34 97 50 91 L60 99 Q46 104 42 118Z" fill="url(#h-hatch)" stroke="none"/>
+        <path d="M50 91 L57 112 M78 91 L71 112" stroke-width="1.6" fill="none"/>
+        <!-- scarf over the face, the face in the brim's shadow -->
+        <path d="M47 82 Q64 94 81 82 L79 91 Q64 101 49 91Z" fill="#cfc8ba" stroke-width="2.4"/>
+        <path d="M51 86 Q64 93 77 86" stroke-width="1.2" fill="none"/>
+        <ellipse cx="64" cy="77" rx="16" ry="6.5" fill="#120e0d" stroke="none"/>
+        <!-- tricorn crown with its crease -->
+        <path d="M44 66 L53 30 Q64 21 75 30 L84 66 Q64 60 44 66Z" fill="url(#h-white)"/>
+        <path d="M44 66 L53 30 Q57 27 60 26 Q54 44 54 64Z" fill="url(#h-hatch)" stroke="none"/>
+        <path d="M60 27 Q63 44 62 62" stroke-width="1.4" fill="none"/>
+        <!-- band -->
+        <path d="M45 58 Q64 53 83 58 L84 65 Q64 60 44 65Z" fill="#8e1a16" stroke-width="2"/>
+        <!-- brim, upturned points, its edge -->
+        <path d="M9 70 Q31 55 44 63 Q64 71 84 63 Q97 55 119 70 Q102 84 64 84 Q26 84 9 70Z" fill="url(#h-white)"/>
+        <path d="M16 72 Q40 80 64 80 Q88 80 112 72" stroke-width="1.6" fill="none"/>
+        <path d="M14 70 Q30 61 41 66" stroke="#fffdf8" stroke-width="1.6" fill="none"/>
+      </g>
+    </symbol>
+    <symbol id="h-lantern" viewBox="0 0 128 128">
+      <g filter="url(#h-shadow)" stroke="#0b0909" stroke-width="3" stroke-linejoin="round">
+        <circle cx="64" cy="13" r="7" fill="none" stroke="#0b0909" stroke-width="8"/>
+        <circle cx="64" cy="13" r="7" fill="none" stroke="#dcd6ca" stroke-width="4"/>
+        <path d="M60 20 H68 V27 H60Z" fill="url(#h-white)" stroke-width="2"/>
+        <path d="M44 38 H84 L76 27 H52Z" fill="url(#h-white)"/>
+        <path d="M54 31 H74" stroke-width="1.4"/>
+        <circle cx="56" cy="34" r="1.4" fill="#0b0909" stroke="none"/><circle cx="64" cy="34" r="1.4" fill="#0b0909" stroke="none"/><circle cx="72" cy="34" r="1.4" fill="#0b0909" stroke="none"/>
+        <path d="M40 38 H88 V92 H40Z" fill="url(#h-white)"/>
+        <path d="M49 45 H79 V85 H49Z" fill="#1a1312"/>
+        <path d="M64 49 C64 49 54 64 54 72 a10 10 0 0 0 20 0 C74 64 64 49 64 49Z" fill="#e2a66d" stroke="none"/>
+        <path d="M64 61 C64 61 60 68 60 72 a4 4 0 0 0 8 0 C68 68 64 61 64 61Z" fill="#fff1d6" stroke="none"/>
+        <path d="M58 45 V85 M70 45 V85 M49 58 H79 M49 72 H79" stroke="#cfc8ba" stroke-width="2.2"/>
+        <path d="M40 38 V92 H48 V38Z" fill="url(#h-hatch)" stroke="none"/>
+        <path d="M34 92 H94 L86 104 H42Z" fill="url(#h-white)"/>
+        <path d="M48 104 H80 L76 114 H52Z" fill="url(#h-white)"/>
+        <path d="M40 98 H88" stroke-width="1.4"/>
+      </g>
+    </symbol>
+    <symbol id="h-dead" viewBox="0 0 128 128">
+      <g filter="url(#h-shadow)" stroke="#0b0909" stroke-width="3" stroke-linejoin="round">
+        <path d="M34 110 V52 Q34 30 64 16 Q94 30 94 52 V110Z" fill="url(#h-white)"/>
+        <path d="M40 106 V54 Q40 37 64 24 Q88 37 88 54 V106" fill="none" stroke-width="1.5"/>
+        <path d="M34 110 V52 Q34 30 64 16 Q46 32 44 54 V110Z" fill="url(#h-hatch)" stroke="none"/>
+        <path d="M58 36 H70 V52 H82 V64 H70 V96 H58 V64 H46 V52 H58Z" fill="#1a1312"/>
+        <path d="M80 70 l-5 7 l3 5 l-5 8 l2 6" stroke-width="1.6" fill="none"/>
+        <path d="M18 110 H110 V120 H18Z" fill="url(#h-white)"/>
+        <path d="M18 114 H110" stroke-width="1.2"/>
+        <path d="M26 110 l2 -8 l2 8 M33 110 l3 -10 l1 10 M96 110 l2 -7 l2 7 M103 110 l2 -9 l1 9" stroke-width="1.4" fill="none"/>
+      </g>
+    </symbol>
+    <symbol id="h-down" viewBox="0 0 128 128">
+      <circle cx="64" cy="64" r="52" fill="none" stroke="#000" stroke-width="12" opacity=".6"/>
+      <circle cx="64" cy="64" r="52" fill="none" stroke="#dcd6ca" stroke-width="7" opacity=".3"/>
+      <path d="M64 7 L68 12 L64 17 L60 12Z" fill="#dcd6ca" stroke="#0b0909" stroke-width="1.5"/>
+      <g filter="url(#h-shadow)">
+        <path d="M64 26 C64 26 40 60 40 76 a24 24 0 0 0 48 0 C88 60 64 26 64 26Z" fill="url(#h-red)"
+              stroke="#0b0909" stroke-width="3" stroke-linejoin="round"/>
+        <path d="M64 26 C64 26 40 60 40 76 a24 24 0 0 0 14 22 Q46 80 64 26Z" fill="url(#h-hatch)" opacity=".7"/>
+        <path d="M71 50 Q78 62 79 74" stroke="#ffd9cf" stroke-width="3" fill="none" stroke-linecap="round" opacity=".85"/>
+        <ellipse cx="74" cy="82" rx="3" ry="4.5" fill="#ffe2da" opacity=".7"/>
+        <path d="M58 99 q1 6 0 9 a2.2 2.2 0 0 0 4 0 q-1 -3 0 -9Z" fill="#8e1a16" stroke="#0b0909" stroke-width="1.2"/>
+      </g>
     </symbol>
   </defs>
 <use href="#i-hunter" x="0" width="128" height="128"/>

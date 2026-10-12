@@ -41,5 +41,8 @@ void FilterPartyDeathPad(std::uint32_t& buttons, std::array<std::uint8_t, 4>& st
 // Party death's panel (bloodborne_party.h) as of the last party tick, for the port's overlay:
 // false when there is nothing to draw (no party session, nobody else on the board, not down).
 bool ReadPartyPanel(PartyPanel& panel);
+// The party HUD's own party list drew members within the last half second (the overlay leaves its
+// list out then).
+bool NativePartyListShown();
 
 } // namespace Core::Bloodborne

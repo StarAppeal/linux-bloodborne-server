@@ -200,6 +200,15 @@ def main():
     icons = ['--icons-layer', icons_dir] if icons_dir else []
     if icons_note:
         print(icons_note)
+    # The icon set the overlay's button glyphs follow (party death's prompts): the one the game's own glyphs show.
+    sys.path.insert(0, str(PORT / 'scripts'))
+    try:
+        import button_icons
+        env['BB_ICONS_SET'] = 'playstation' if env.get('BB_ICONS', '1') == '0' else button_icons.icon_set(
+            button_icons.read_ini(config), env.get('BB_GAMEPAD', ''),
+            lambda: button_icons.list_gamepads(probe.parent / 'bb-gpu-capabilities.exe'))
+    except Exception:  # nothing about the icons may stop the game from starting
+        env['BB_ICONS_SET'] = 'playstation'
     # The party HUD (scripts/hud_patch.py): the HUD the mods show, with party death's downed banner, over them.
     # BB_PARTY_HUD=0 keeps the game's HUD as it is.
     party_hud = ['--party-hud'] if env.get('BB_PARTY_HUD', '1') != '0' else []

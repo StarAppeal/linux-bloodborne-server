@@ -208,6 +208,126 @@ TEST(BloodbornePartyHud, TheNameplateOfADownedMemberShowsItsRevive) {
         << "a member without an online id goes by its board name";
 }
 
+// The native party list: the first three members as the game's own nameplate tags, under the
+// game's quick items: HP while up, the revive while down, the role line saying what is going on.
+TEST(BloodbornePartyHud, ThePartyListShowsEachMembersState) {
+    PartyPanel panel;
+    panel.members.push_back(PanelMember{.member = "a",
+                                        .name = "rig_host",
+                                        .vital = Vital::Up,
+                                        .here = true,
+                                        .hp = 400,
+                                        .max = 800});
+    panel.members.push_back(PanelMember{.member = "b",
+                                        .name = "rig_guest",
+                                        .vital = Vital::Down,
+                                        .here = true,
+                                        .hp = 300,
+                                        .max = 800,
+                                        .landed = 640,
+                                        .needed = 1000});
+    panel.members.push_back(
+        PanelMember{.member = "c", .name = "", .vital = Vital::Dead, .here = true, .max = 900});
+    panel.members.push_back(PanelMember{
+        .member = "d", .name = "far", .vital = Vital::Up, .here = false, .hp = 10, .max = 20});
+    const auto entries = PartyListEntries(panel);
+    EXPECT_TRUE(entries[0].visible);
+    EXPECT_EQ(entries[0].name, "<font color=\"#ece8df\">rig_host</font>") << "in white";
+    EXPECT_EQ(entries[0].role, "") << "the icon says the state";
+    EXPECT_EQ(entries[0].hp, 400);
+    EXPECT_EQ(entries[0].max, 800);
+    EXPECT_EQ(entries[1].role, "");
+    EXPECT_EQ(entries[1].hp, 64);
+    EXPECT_EQ(entries[1].max, 100);
+    EXPECT_EQ(entries[2].name, "<font color=\"#ece8df\">c</font>")
+        << "no online id: the board name";
+    EXPECT_EQ(entries[2].role, "");
+    EXPECT_EQ(entries[2].hp, 0);
+    EXPECT_EQ(entries[2].max, 900);
+    EXPECT_EQ(entries[0].icon, PartyListIconHunter);
+    EXPECT_EQ(entries[1].icon, PartyListIconDowned0 + 6) << "64% shows the 60% ring";
+    EXPECT_EQ(entries[2].icon, PartyListIconFallen);
+
+    panel.members.erase(panel.members.begin(), panel.members.begin() + 3);
+    const auto away = PartyListEntries(panel);
+    EXPECT_EQ(away[0].role, "");
+    EXPECT_EQ(away[0].icon, PartyListIconElsewhere);
+    EXPECT_EQ(away[1].icon, PartyListIconNone);
+    EXPECT_FALSE(away[1].visible);
+    EXPECT_FALSE(away[2].visible);
+    EXPECT_FALSE(PartyListEntries(PartyPanel{})[0].visible);
+}
+
+TEST(BloodbornePartyHud, ADownedMembersIconFillsWithItsRevive) {
+    PartyPanel panel;
+    panel.members.push_back(PanelMember{.member = "a", .vital = Vital::Down, .needed = 1000});
+    for (const auto& [landed, frame] :
+         std::vector<std::pair<u32, u32>>{{0, PartyListIconDowned0},
+                                          {44, PartyListIconDowned0},
+                                          {50, PartyListIconDowned0 + 1},
+                                          {999, PartyListIconFrames},
+                                          {1000, PartyListIconFrames}}) {
+        panel.members[0].landed = landed;
+        EXPECT_EQ(PartyListEntries(panel)[0].icon, frame) << landed;
+    }
+}
+
+TEST(BloodbornePartyHud, ThePartyListStacksUnderTheQuickItems) {
+    const auto [x0, y0] = PartyListPosition(0);
+    const auto [x1, y1] = PartyListPosition(1);
+    const auto [x2, y2] = PartyListPosition(2);
+    EXPECT_EQ(x0, x1);
+    EXPECT_EQ(x1, x2);
+    EXPECT_EQ(x0 - 97, 107) << "the bar starts under the player's HP bar (hud_patch.py)";
+    EXPECT_GE(y0 - 70, 240) << "the role line clears the game's quick items (1080p stage)";
+    EXPECT_EQ(y1 - y0, y2 - y1);
+    EXPECT_GE(y1 - y0, 90) << "each tag's role line clears the bar above";
+    EXPECT_LE(y2 + 20, 700) << "above the game's notices";
+}
+
+// A TagData the game's tag update takes: shown and placed, the HP gauge's values, and the role line
+// and name as game HUD strings kept out of place (our buffers).
+TEST(BloodbornePartyHud, WritesTheGamesTagData) {
+    std::array<u8, HudTagDataSize> data{};
+    data.fill(0xCC);
+    std::array<u8, HudTagDataSize> game{};
+    const u64 role_allocator = 0x7777'0000, name_allocator = 0x8888'0000;
+    std::memcpy(game.data() + 0x28 + 0x28, &role_allocator, 8);
+    std::memcpy(game.data() + 0x60 + 0x28, &name_allocator, 8);
+    game[0x28 + 0x30] = 5;
+    game[0x60 + 0x30] = 6;
+    const PartyListEntry entry{.visible = true, .hp = 64, .max = 100, .role = "r", .name = "n"};
+    WriteTagData(data, game, entry, 160, 330, 0x1111'0000, 0x2222'0000);
+    const auto u32_at = [&](size_t at) {
+        u32 value;
+        std::memcpy(&value, data.data() + at, 4);
+        return value;
+    };
+    const auto u64_at = [&](size_t at) {
+        u64 value;
+        std::memcpy(&value, data.data() + at, 8);
+        return value;
+    };
+    EXPECT_EQ(data[0], 1);
+    EXPECT_EQ(data[1], 1);
+    EXPECT_EQ(u32_at(0x04), 160u);
+    EXPECT_EQ(u32_at(0x08), 330u);
+    EXPECT_EQ(u32_at(0x0C), 64u);
+    EXPECT_EQ(u32_at(0x14), 100u);
+    EXPECT_EQ(u64_at(0x28 + 0x08), 0x1111'0000u);
+    EXPECT_EQ(u64_at(0x28 + 0x18), 1u) << "its length";
+    EXPECT_GE(u64_at(0x28 + 0x20), 8u) << "a capacity that says out of place";
+    EXPECT_EQ(u64_at(0x60 + 0x08), 0x2222'0000u);
+    EXPECT_EQ(u64_at(0x28 + 0x28), role_allocator) << "the game's string allocator, copied";
+    EXPECT_EQ(u64_at(0x60 + 0x28), name_allocator);
+    EXPECT_EQ(data[0x28 + 0x30], 5);
+    EXPECT_EQ(data[0x60 + 0x30], 6);
+    EXPECT_EQ(u64_at(0x98), 0u) << "no damage number";
+    EXPECT_EQ(data[0xA0], 0);
+    WriteTagData(data, game, PartyListEntry{}, 0, 0, 1, 2);
+    EXPECT_EQ(data[0], 0) << "hidden";
+}
+
 // Which remote player's nameplate the game is updating: its TagData among FeData's seven.
 TEST(BloodbornePartyHud, FindsTheRemotePlayersTag) {
     const u64 fe_data = 0x1000'0000;

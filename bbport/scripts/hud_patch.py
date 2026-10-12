@@ -6,8 +6,15 @@ layer. Nothing of the game's is kept in the port: the movie is read and patched 
 
 The banner is the game's TextEffect_Draw (a PvP result, never shown in co-op; SetTextEffect id 17): its text
 fields are renamed, so that the game no longer fills them from its text tables (fields named StaticText_<id>),
-and get our words in the game's font, in yellow. The game's fade-in and blur trail stay as they are."""
+and get our words in the game's font, in yellow. The game's fade-in and blur trail stay as they are.
+
+The party list is three more of the game's own nameplate tags (the sprite RemotePCTag0 shows), placed at the
+top level as CoopParty0-2: party death fills and places them each frame through the game's own tag code
+(bloodborne_party_death.cpp), so the list has the game's font, bars and fades and sits under its menus. Left of
+each sits CoopPartyIcon0-2, a sprite whose frames are our own icon drawings (scripts/party_hud_icons.bin, made by
+party_icons_atlas.py; HUD_ICON_FRAMES): party death shows the member's with GotoAndStop."""
 import hashlib
+import zlib
 from pathlib import Path
 import struct
 
@@ -18,6 +25,19 @@ DRAW_FIELD = 'StaticText_522007'
 DOWNED_FIELD = 'CoopDownedText'
 DOWNED_TEXT = 'YOU ARE DOWN'
 DOWNED_COLOR = 'd8b03c'
+
+PARTY_TAG = 'RemotePCTag0'
+PARTY_LIST = ('CoopParty0', 'CoopParty1', 'CoopParty2')
+PARTY_ICONS = ('CoopPartyIcon0', 'CoopPartyIcon1', 'CoopPartyIcon2')
+HUD_ICONS = Path(__file__).resolve().parent / 'party_hud_icons.bin'
+# The icon sprite's frames (1-based, as GotoAndStop takes them; PartyListIconFrame in bloodborne_party.cpp).
+HUD_ICON_FRAMES = ('none', 'hunter', 'elsewhere', 'fallen') + tuple(f'downed {p}%' for p in range(0, 101, 10))
+# Where the list's tags stand on the HUD's 1920x1080 stage (PartyListPosition in bloodborne_party.cpp), and each
+# icon's centre from its tag, its size in pixels.
+LIST_X, LIST_Y, LIST_STEP = 204, 330, 95  # each bar starts where the player's HP bar does (x 107)
+ICON_FROM_TAG, ICON_SIZE = (-128, 1), 36  # centred on the tag's HP bar
+# Character ids for what the patch defines, above any the game's movies use.
+FIRST_NEW_ID = 50000
 
 SHOW_FRAME, PLACE_OBJECT2, PLACE_OBJECT3, EDIT_TEXT, SPRITE, SYMBOL_CLASS = 1, 26, 70, 37, 39, 76
 
@@ -181,8 +201,167 @@ def downed_html(html):
     return f'{head}<b>{DOWNED_TEXT}</b>{tail}'
 
 
-def patch_fe(data):
-    """The game's HUD movie with the downed banner in place of the Draw banner (see the module's note)."""
+class BitWriter:
+    def __init__(self):
+        self.bits = []
+
+    def put(self, value, count, signed=False):
+        if signed and value < 0:
+            value += 1 << count
+        self.bits += [(value >> (count - 1 - i)) & 1 for i in range(count)]
+
+    def data(self):
+        bits = self.bits + [0] * (-len(self.bits) % 8)
+        return bytes(int(''.join(map(str, bits[i:i + 8])), 2) for i in range(0, len(bits), 8))
+
+
+def signed_bits(*values):
+    return max(max(abs(v) for v in values).bit_length() + 1, 1)
+
+
+def matrix(scale, tx, ty):
+    """A MATRIX: scale (16.16) and translation (twips), no rotation."""
+    bits = BitWriter()
+    if scale is None:
+        bits.put(0, 1)
+    else:
+        fixed = round(scale * 65536)
+        n = signed_bits(fixed)
+        bits.put(1, 1)
+        bits.put(n, 5)
+        bits.put(fixed, n, True)
+        bits.put(fixed, n, True)
+    bits.put(0, 1)
+    n = signed_bits(tx, ty)
+    bits.put(n, 5)
+    bits.put(tx, n, True)
+    bits.put(ty, n, True)
+    return bits.data()
+
+
+def rect(width, height):
+    n = signed_bits(width, height)
+    bits = BitWriter()
+    bits.put(n, 5)
+    for value in (0, width, 0, height):
+        bits.put(value, n, True)
+    return bits.data()
+
+
+def read_strip(data):
+    """(count, [RGBA bytes of each 128-pixel icon]) of a party_icons_atlas.py strip."""
+    if data[:4] != b'BBIC':
+        raise ValueError('not a party icon strip')
+    width, height, count = struct.unpack_from('<HHH', data, 4)
+    rgba = zlib.decompress(data[10:])
+    if height != 128 or width != 128 * count or len(rgba) != width * height * 4:
+        raise ValueError('the party icon strip is not a row of 128-pixel icons')
+    icons = []
+    for index in range(count):
+        icon = bytearray()
+        for y in range(128):
+            start = (y * width + index * 128) * 4
+            icon += rgba[start:start + 128 * 4]
+        icons.append(bytes(icon))
+    return count, icons
+
+
+def bitmap(char, rgba):
+    """DefineBitsLossless2: 128x128 premultiplied ARGB."""
+    argb = bytearray(len(rgba))
+    for i in range(0, len(rgba), 4):
+        r, g, b, a = rgba[i:i + 4]
+        argb[i:i + 4] = bytes((a, r * a // 255, g * a // 255, b * a // 255))
+    return Tag(36, struct.pack('<HBHH', char, 5, 128, 128) + zlib.compress(bytes(argb), 9), True)
+
+
+def bitmap_square(char, bitmap_char):
+    """DefineShape: a 128-pixel square filled with the bitmap (clipped), its top left at the origin."""
+    side = 128 * 20
+    fill = bytes([1, 0x41]) + struct.pack('<H', bitmap_char) + matrix(20.0, 0, 0)
+    bits = BitWriter()
+    bits.put(1, 4)  # fill index bits
+    bits.put(0, 4)  # line index bits
+    # Style change: fill style 1, move to (0, 0).
+    bits.put(0, 1); bits.put(0, 1); bits.put(0, 1); bits.put(1, 1); bits.put(0, 1); bits.put(1, 1)
+    bits.put(1, 5); bits.put(0, 1, True); bits.put(0, 1, True)
+    bits.put(1, 1)
+    n = signed_bits(side)
+    for dx, dy in ((side, 0), (0, side), (-side, 0), (0, -side)):
+        bits.put(1, 1); bits.put(1, 1); bits.put(n - 2, 4); bits.put(0, 1)
+        bits.put(1 if dx == 0 else 0, 1)
+        bits.put(dy if dx == 0 else dx, n, True)
+    bits.put(0, 6)  # end of shape
+    return Tag(2, struct.pack('<H', char) + rect(side, side) + fill + b'\0' + bits.data(), False)
+
+
+def place(char, depth, name=None, place_matrix=None, replace=False):
+    flags = 0x02 | (0x01 if replace else 0) | (0x04 if place_matrix else 0) | (0x20 if name else 0)
+    body = bytes([flags]) + struct.pack('<HH', depth, char) + (place_matrix or b'')
+    return Tag(PLACE_OBJECT2, body + (name.encode('latin-1') + b'\0' if name else b''), False)
+
+
+def icon_sprite(char, shapes):
+    """A sprite showing nothing in its first frame, then each shape in a frame of its own."""
+    frames = [Tag(SHOW_FRAME, b'', False)]
+    for index, shape in enumerate(shapes):
+        frames.append(place(shape, 1, replace=index > 0))
+        frames.append(Tag(SHOW_FRAME, b'', False))
+    sprite = Tag(SPRITE, struct.pack('<HH', char, len(shapes) + 1), True)
+    sprite.children = frames + [Tag(0, b'', False)]
+    return sprite
+
+
+def party_icon_tags(depth, strip):
+    """The tags that define the icon sprite and place CoopPartyIcon0-2 (from `depth` up)."""
+    count, icons = read_strip(strip)
+    if count != len(HUD_ICON_FRAMES):
+        raise ValueError(f'the party icon strip has {count} icons, not {len(HUD_ICON_FRAMES)}')
+    tags, shapes, char = [], [], FIRST_NEW_ID
+    for rgba in icons[1:]:  # the first frame shows nothing
+        tags += [bitmap(char, rgba), bitmap_square(char + 1, char)]
+        shapes.append(char + 1)
+        char += 2
+    tags.append(icon_sprite(char, shapes))
+    scale = ICON_SIZE / 128
+    for index, name in enumerate(PARTY_ICONS):
+        depth += 2
+        cx = LIST_X + ICON_FROM_TAG[0]
+        cy = LIST_Y + LIST_STEP * index + ICON_FROM_TAG[1]
+        tags.append(place(char, depth, name, matrix(scale, (cx - ICON_SIZE // 2) * 20, (cy - ICON_SIZE // 2) * 20)))
+    return tags
+
+
+def place_depth(tag):
+    return struct.unpack_from('<H', tag.body, 2 if tag.code == PLACE_OBJECT3 else 1)[0]
+
+
+def add_party_list(tags, strip=None):
+    """Places CoopParty0-2 (the tag sprite RemotePCTag0 shows) and, with the icon strip, CoopPartyIcon0-2 at the
+    top level, above everything, in its first frame; nothing when they are there already."""
+    first_frame = next(i for i, tag in enumerate(tags) if tag.code == SHOW_FRAME)
+    places = [tag for tag in tags[:first_frame] if tag.code in (PLACE_OBJECT2, PLACE_OBJECT3)]
+    names = {place_parts(tag)[1] for tag in places}
+    if names >= set(PARTY_LIST):
+        return
+    tag_sprite = next((place_parts(tag)[0] for tag in places if place_parts(tag)[1] == PARTY_TAG), None)
+    if tag_sprite is None:
+        return  # a HUD without the remote players' tags: the overlay keeps drawing the list
+    depth = max(place_depth(tag) for tag in places)
+    added = []
+    for name in PARTY_LIST:
+        depth += 2
+        # PlaceObject2: has a name (0x20), a matrix (0x04, the identity: one zero byte), a character (0x02).
+        added.append(Tag(PLACE_OBJECT2, bytes([0x26]) + struct.pack('<HH', depth, tag_sprite) + b'\0' +
+                         name.encode('latin-1') + b'\0', False))
+    if strip is not None:
+        added += party_icon_tags(depth, strip)
+    tags[first_frame:first_frame] = added
+
+
+def patch_fe(data, strip=None):
+    """The game's HUD movie with the downed banner in place of the Draw banner and the party list (see the
+    module's note); `strip` is the list's icons (party_hud_icons.bin), none without it."""
     header, tags = read_movie(data)
     defined = {struct.unpack_from('<H', tag.body)[0]: tag for tag in tags if tag.code in (SPRITE, EDIT_TEXT)}
     banner = None
@@ -227,6 +406,7 @@ def patch_fe(data):
         body = text.body[:start] + html + text.body[end:]
         c0, c1 = parts['color']
         text.body = body[:c0] + bytes.fromhex(DOWNED_COLOR) + b'\xff' + body[c1:]
+    add_party_list(tags, strip)
     return write_movie((header, tags))
 
 
@@ -248,11 +428,12 @@ def with_party_hud(game, layers, out):
     source = hud_source(game, layers)
     try:
         data = source.read_bytes()
-        digest = hashlib.sha256(data).hexdigest()[:16]
+        strip = HUD_ICONS.read_bytes() if HUD_ICONS.is_file() else None
+        digest = hashlib.sha256(data + (strip or b'')).hexdigest()[:16]
         folder = Path(out) / 'party-hud' / digest
         target = folder / FE
         if not target.is_file():
-            patched = patch_fe(data)
+            patched = patch_fe(data, strip)
             target.parent.mkdir(parents=True, exist_ok=True)
             partial = target.with_suffix('.part')
             partial.write_bytes(patched)
