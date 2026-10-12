@@ -96,7 +96,7 @@ LETHAL_FALL = ["hurt self 1", "rise 25"]
 # lunges the hitter on, out of reach (2.5 m) after one, so it steps back beside it before each.
 # Revive hits until the downed member is up: how many depends on the striker's weapon (party death
 # takes its attack rating in damage).
-REVIVE_HITS = ["revive-downed 60"]
+REVIVE_HITS = ["revive-downed 150"]  # real hits: an unarmed rig hunter needs about 24 landed punches
 
 
 def only_kill(handle: str) -> list[str]:
@@ -1118,7 +1118,7 @@ SCENARIOS = {
                       "expect-session 2"],
         },
         "expect": {
-            "host": [r"party death: revive hit on"],
+            "host": [r"party death: (real )?revive hit on"],
             "guest": [r"party death: down \d+ on map 0x18010000",
                       r"party death: revived from down"],
         },
@@ -1200,7 +1200,7 @@ SCENARIOS = {
                       "wait 3", "snapshot", "expect-hp self > 1", "expect-session 2"],
         },
         "expect": {
-            "host": [r"party death: revive hit on"],
+            "host": [r"party death: (real )?revive hit on"],
             "guest": [r"party death: down \d+ on map 0x18010000",
                       r"party death: enemies forgot \d+ target\(s\) on downed players "
                       r"\(self down=true",
@@ -1228,9 +1228,9 @@ SCENARIOS = {
         "expect": {
             "guest": [r"party death: down \d+ on map 0x18010000",
                       r"party death: revived from down"],
-            "guest2": [r"party death: revive hit on"],
+            "guest2": [r"party death: (real )?revive hit on"],
         },
-        "forbid": {"host": SESSION_HOLDS + [r"party death: revive hit on"],
+        "forbid": {"host": SESSION_HOLDS + [r"party death: (real )?revive hit on"],
                    "guest": SESSION_HOLDS, "guest2": SESSION_HOLDS},
         "timeout": 900,
     },

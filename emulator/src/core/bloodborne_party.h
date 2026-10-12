@@ -2287,10 +2287,16 @@ u32 ReviveDamageNeeded(u32 downs, s32 max);
 // What one revive hit deals: the striker's attack rating for the weapon in its right hand (the
 // equipment menu's), half again for R2 (`heavy`); at least 1.
 u32 ReviveHitDamage(s32 attack_rating, bool heavy);
+// What a real hit on a downed body counts for its revive: what it dealt, and never less than the
+// weapon's attack rating (ReviveHitDamage): the body's own defences cut a teammate's hit, and the
+// revive's damage is sized by attack ratings (rig 2026-10-12: bare fists dealt 2 to 3).
+u32 RealReviveHitDamage(u32 dealt, s32 attack_rating, bool heavy);
 // The share of a revive done, 0 to 1 (the panel's ring and text).
 float ReviveShare(u32 landed, u32 needed);
 // The HP a revived player gets up with: half its max, at least 1.
 s32 RevivedHp(s32 max);
+// How long a revived player takes no damage (the party's last swings, rig 2026-10-12).
+constexpr s64 ReviveGraceMs = 2'000;
 // The HP a downed player shows while it is struck back up: 1, rising with the share of the revive
 // done to just under its max (the revive sets the real HP), so the game's own HP bar and the
 // nameplate bar the others see over it (RemotePCTag, fed by the synced HP) fill with the revive.
@@ -2301,6 +2307,40 @@ s32 DownedHp(s32 max, u32 landed, u32 needed);
 constexpr u64 SetTextEffectOffset = 0x013360B0;
 constexpr std::array<u8, 6> SetTextEffectStart{0x8D, 0x46, 0xFF, 0x83, 0xF8, 0x10};
 constexpr s32 DownedBannerTextEffect = 17;
+
+// The party HUD's nameplates: the game's tag over each remote player (fe.gfx RemotePCTag0-6). The
+// HUD tick updates each tag from a TagData (0x01B59E20: rdi the tag, rsi its data), and its one
+// exit (0x01B5A3AE, `add rsp, 0xC8`, r14 the tag and r13 the data still) is where the role line can
+// be written over: the game sets every line again on the next frame.
+constexpr u64 HudTagUpdateExitOffset = 0x01B5A3AE;
+constexpr std::array<u8, 7> HudTagUpdateExit{0x48, 0x81, 0xC4, 0xC8, 0x00, 0x00, 0x00};
+// FeData, the HUD's per-frame snapshot (static): the remote players' TagData from +0xBA8, 0xA8
+// each.
+constexpr u64 HudFeDataOffset = 0x0553EA20;
+constexpr u64 HudRemoteTagsAt = 0xBA8;
+constexpr u64 HudTagDataSize = 0xA8;
+constexpr int HudRemoteTagCount = 7;
+constexpr u64 HudTagNameAt = 0x60;      // TagData: the player's name (a game HUD string)
+constexpr u64 HudTagRoleLineAt = 0x250; // tag: Post/Value, the blue role line ("Co-operator")
+// An element of a tag (a 0x58-byte wrapper): its GFx::Value's object interface at +0x38, type at
+// +0x40 (& 0x8F nonzero when it is set) and data at +0x48; the interface's vtable slot 0x130 is
+// SetText(data, UTF-8 text, html).
+constexpr u64 HudElementInterfaceAt = 0x38;
+constexpr u64 HudElementTypeAt = 0x40;
+constexpr u64 HudElementDataAt = 0x48;
+constexpr u64 HudSetTextUtf8Slot = 0x130;
+// A game HUD string (UTF-16): the characters at +0x08, in place while the capacity (+0x20) is
+// below 8, else behind the pointer there.
+constexpr size_t GameHudStringSize = 0x28;
+// Its characters as ASCII ('?' for the others), at most 64; `read(address, count)` reads count
+// UTF-16 characters from guest memory for a string kept out of place.
+std::string GameHudString(std::span<const u8, GameHudStringSize> raw,
+                          const std::function<std::vector<char16_t>(u64, size_t)>& read);
+// The role line of the nameplate over `name` (an online id, or a board name without one): its
+// revive, in red html, while that member is down; nothing for anyone else (the game's line stays).
+std::optional<std::string> NameplateRoleLine(const struct PartyPanel& panel, std::string_view name);
+// Which remote player's tag (0 to 6) a TagData address is, from FeData's address.
+std::optional<int> RemoteTagIndex(u64 tag_data, u64 fe_data);
 
 // The local player's side of party death. Times are steady milliseconds.
 class DownedState {
@@ -2459,6 +2499,8 @@ public:
 
     // An attack press dealing `damage` at `now_ms` on `target`'s down `down`: true if it counts.
     bool Press(std::string_view target, u32 down, u32 damage, s64 now_ms);
+    // A real hit on `target`'s body (down `down`) that dealt `damage` (DownedTeams makes it one).
+    void Hit(std::string_view target, u32 down, u32 damage);
     // The totals to post: the damage on downs still current on the board (the rest is dropped).
     std::vector<ReviveHitTotal> Totals(std::span<const MemberVitals> board);
 
@@ -2470,6 +2512,38 @@ struct DownedMember {
     std::string member;
     u32 down = 0;
 };
+
+// Real revive hits. A character's team is ChrIns +0x88; the game's relation tables
+// ([my team][other's]: hit an enemy 0x04731560, hit a friend 0x04731960, hostile 0x05127B90)
+// let the host (19) and co-op guests (20) lock on to and hit Hostile (21, the invaders') and keep
+// it no friend of theirs, while the enemies' AI (23-25) leaves it be. So on the others' screens a
+// downed member's body takes team 21 until it is up; the game itself sets a team on type changes
+// (SetTeamTypeDefault, vtable +0x1A0) and never changes a team of 6.
+constexpr u64 CharacterTeamOffset = 0x88;
+struct CopyTeam {
+    u32 handle = 0;
+    s32 team = 0;
+    bool operator==(const CopyTeam&) const = default;
+};
+class DownedTeams {
+public:
+    static constexpr s32 Hostile = 21;
+    static constexpr s32 Unchangeable = 6;
+    // `downed`: the bodies of downed members in this world, with their team now; `present`: all
+    // the other players' bodies in this world. Returns the teams to write.
+    std::vector<CopyTeam> Tick(const std::vector<CopyTeam>& downed,
+                               const std::vector<CopyTeam>& present);
+
+private:
+    std::vector<CopyTeam> saved; // each taken body's own team
+};
+// The game's hit, where its final damage is stored (`mov [rcx + 0x22C], eax`, 0x01A2A770's): rcx
+// the hit record, eax the damage, r14 the victim's damage module (+0x08 the victim), [rbp - 0x318]
+// the attacker (null for none). Before any HP changes, and also for a hit on a remote player (whose
+// HP its own game takes).
+constexpr u64 HitDamageStoredOffset = 0x01A2BCA3;
+constexpr std::array<u8, 6> HitDamageStored{0x89, 0x81, 0x2C, 0x02, 0x00, 0x00};
+constexpr s64 HitAttackerFrameOffset = -0x318;
 std::optional<DownedMember> ReviveTarget(std::span<const MemberVitals> board, std::string_view self,
                                          u32 map, const LampPosition& me);
 

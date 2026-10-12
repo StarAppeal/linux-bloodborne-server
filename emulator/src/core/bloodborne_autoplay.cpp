@@ -762,8 +762,12 @@ bool AutoplayApproachDowned(const AutoplayStep& step) {
 }
 
 // revive-downed [<timeout>]: strikes the nearest downed party member on this map until nobody
-// is down (how many hits depends on the weapon): every 1.5 s a metre from it, then R1.
+// is down (how many hits depends on the weapon): from each side in turn, turned to it, as
+// `attack` does (AttackStanceFor), since only a swing that lands counts for its revive.
 bool AutoplayReviveDowned(const AutoplayStep& step) {
+    if (!step.begun) {
+        autoplay_run.attack_placed.reset();
+    }
     const VitalsView view = ReadVitalsBoard();
     const auto me = LocalPlayerPosition();
     std::optional<LampPosition> downed;
@@ -783,11 +787,27 @@ bool AutoplayReviveDowned(const AutoplayStep& step) {
                  step.elapsed);
         return true;
     }
-    const double phase = std::fmod(step.elapsed, 1.5);
-    if (phase < 0.1) {
-        TeleportLocalPlayer({(*downed)[0] + 1.0f, (*downed)[1] + 0.2f, (*downed)[2]});
+    // The body itself (the other player nearest to where the board has it), not the board's
+    // position, which lags: swings aimed at it missed (rig 2026-10-12, one hit in 7 s).
+    float nearest = 4.0f;
+    for (const OtherPlayer& other : OtherPlayers()) {
+        if (other.at) {
+            const float d =
+                std::hypot((*other.at)[0] - (*downed)[0], (*other.at)[2] - (*downed)[2]);
+            if (d < nearest) {
+                nearest = d;
+                downed = *other.at;
+            }
+        }
     }
-    autoplay_buttons.store(phase >= 0.6 && phase < 0.75 ? AutoplayButton("r1") : 0);
+    const u32 cycle = AttackCycleAt(step.elapsed);
+    if (autoplay_run.attack_placed != cycle) {
+        const AttackStance stance = AttackStanceFor((*downed)[0], (*downed)[2], cycle);
+        TeleportLocalPlayer({stance.x, (*downed)[1] + 0.2f, stance.z},
+                            HeadingTowards(stance.x, stance.z, (*downed)[0], (*downed)[2]));
+        autoplay_run.attack_placed = cycle;
+    }
+    autoplay_buttons.store(AttackHoldsR1(step.elapsed) ? AutoplayButton("r1") : 0);
     if (step.elapsed > step.Number(0, 60)) {
         autoplay_buttons.store(0);
         step.failure = fmt::format("still down after {:.0f} s of revive hits", step.elapsed);

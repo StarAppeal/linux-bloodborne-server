@@ -111,6 +111,14 @@ TEST(BloodbornePartyDeath, AReviveHitDealsTheWeaponsAttackRating) {
     EXPECT_EQ(ReviveHitDamage(-5, true), 1u);
 }
 
+// A real hit counts what it dealt, but never less than the weapon's attack rating.
+TEST(BloodbornePartyDeath, ARealHitCountsAtLeastTheAttackRating) {
+    EXPECT_EQ(RealReviveHitDamage(373, 300, false), 373u);
+    EXPECT_EQ(RealReviveHitDamage(3, 25, false), 25u) << "bare fists";
+    EXPECT_EQ(RealReviveHitDamage(3, 25, true), 37u);
+    EXPECT_EQ(RealReviveHitDamage(0, 0, false), 1u);
+}
+
 TEST(BloodbornePartyDeath, AHeavyAttackIsR2GoingDownWithoutR1) {
     EXPECT_TRUE(HeavyAttackPressed(0, PadR2));
     EXPECT_FALSE(HeavyAttackPressed(0, PadR1));
@@ -149,6 +157,102 @@ TEST(BloodbornePartyDeath, DownedHpShowsTheReviveProgress) {
     EXPECT_EQ(DownedHp(1000, 7, 0), 1);
     EXPECT_EQ(DownedHp(2'000'000'000, 1'999'999'999, 2'000'000'000), 1'999'999'999)
         << "no overflow";
+}
+
+// The game's HUD strings (a remote player's nameplate name, TagData +0x60): UTF-16 kept in the
+// struct while it is shorter than 8 (capacity +0x20 below 8), else behind the pointer at +0x08.
+TEST(BloodbornePartyHud, ReadsTheGamesHudString) {
+    std::array<u8, GameHudStringSize> inline_name{};
+    const char16_t shortname[] = u"rig_1";
+    std::memcpy(inline_name.data() + 0x08, shortname, sizeof(shortname));
+    const u64 small = 7;
+    std::memcpy(inline_name.data() + 0x20, &small, sizeof(small));
+    EXPECT_EQ(GameHudString(inline_name, [](u64, size_t) { return std::vector<char16_t>{}; }),
+              "rig_1");
+
+    std::array<u8, GameHudStringSize> long_name{};
+    const u64 pointer = 0x1234'5000, capacity = 15;
+    std::memcpy(long_name.data() + 0x08, &pointer, sizeof(pointer));
+    std::memcpy(long_name.data() + 0x20, &capacity, sizeof(capacity));
+    const auto read = [&](u64 at, size_t count) {
+        EXPECT_EQ(at, pointer);
+        std::u16string text = u"rig_guest2";
+        text.resize(count, u'\0');
+        return std::vector<char16_t>(text.begin(), text.end());
+    };
+    EXPECT_EQ(GameHudString(long_name, read), "rig_guest2");
+    // Characters outside ASCII are kept as '?' (online ids are ASCII; this only names the tag).
+    const char16_t accented[] = u"h\u00e9";
+    std::memcpy(inline_name.data() + 0x08, accented, sizeof(accented));
+    EXPECT_EQ(GameHudString(inline_name, read), "h?");
+}
+
+// The nameplate over a downed member says so, with its revive, in the tag's own red; the others
+// keep the game's role line.
+TEST(BloodbornePartyHud, TheNameplateOfADownedMemberShowsItsRevive) {
+    PartyPanel panel;
+    panel.members.push_back(PanelMember{.member = "a",
+                                        .name = "rig_guest",
+                                        .vital = Vital::Down,
+                                        .here = true,
+                                        .landed = 640,
+                                        .needed = 1000});
+    panel.members.push_back(
+        PanelMember{.member = "b", .name = "rig_host", .vital = Vital::Up, .here = true});
+    EXPECT_EQ(NameplateRoleLine(panel, "rig_guest"), "<font color=\"#e74141\">Downed 64%</font>");
+    EXPECT_EQ(NameplateRoleLine(panel, "rig_host"), std::nullopt);
+    EXPECT_EQ(NameplateRoleLine(panel, "someone"), std::nullopt);
+    EXPECT_EQ(NameplateRoleLine(panel, ""), std::nullopt);
+    panel.members[0].name = "";
+    EXPECT_EQ(NameplateRoleLine(panel, "a"), "<font color=\"#e74141\">Downed 64%</font>")
+        << "a member without an online id goes by its board name";
+}
+
+// Which remote player's nameplate the game is updating: its TagData among FeData's seven.
+TEST(BloodbornePartyHud, FindsTheRemotePlayersTag) {
+    const u64 fe_data = 0x1000'0000;
+    EXPECT_EQ(RemoteTagIndex(fe_data + 0xBA8, fe_data), 0);
+    EXPECT_EQ(RemoteTagIndex(fe_data + 0xBA8 + 6 * 0xA8, fe_data), 6);
+    EXPECT_EQ(RemoteTagIndex(fe_data + 0xBA8 + 7 * 0xA8, fe_data), std::nullopt);
+    EXPECT_EQ(RemoteTagIndex(fe_data + 0x668, fe_data), std::nullopt) << "an enemy's tag";
+    EXPECT_EQ(RemoteTagIndex(fe_data + 0xBA8 + 4, fe_data), std::nullopt);
+}
+
+// A real hit on a downed member's body counts what it dealt, every hit (no gap between presses).
+TEST(BloodbornePartyDeath, CountsRealHitsOnTheBodyAsReviveDamage) {
+    ReviveHits hits;
+    hits.Hit("a", 4, 120);
+    hits.Hit("a", 4, 80);
+    hits.Hit("b", 2, 300);
+    hits.Hit("a", 5, 50); // a new down of the same member starts over
+    hits.Hit("b", 2, 0);  // a hit for nothing changes nothing
+    const std::vector<MemberVitals> board{
+        MemberVitals{.member = "a", .vital = Vital::Down, .down = 5},
+        MemberVitals{.member = "b", .vital = Vital::Down, .down = 2}};
+    EXPECT_EQ(hits.Totals(board), (std::vector<ReviveHitTotal>{{"a", 5, 50}, {"b", 2, 300}}));
+}
+
+// On the others' screens a downed member's body takes the invaders' team (Hostile, 21) so they can
+// lock on to it and strike it; its own team comes back once it is up, and a copy that left is
+// forgotten.
+TEST(BloodbornePartyDeath, ADownedBodyTakesTheInvadersTeamUntilItIsUp) {
+    DownedTeams teams;
+    EXPECT_EQ(teams.Tick({{7, 20}}, {{7, 20}, {8, 20}}),
+              (std::vector<CopyTeam>{{7, DownedTeams::Hostile}}));
+    EXPECT_EQ(teams.Tick({{7, DownedTeams::Hostile}}, {{7, DownedTeams::Hostile}, {8, 20}}),
+              std::vector<CopyTeam>{});
+    // The game set it back (a type change): it is taken again, and its own team stays known.
+    EXPECT_EQ(teams.Tick({{7, 20}}, {{7, 20}}), (std::vector<CopyTeam>{{7, DownedTeams::Hostile}}));
+    EXPECT_EQ(teams.Tick({}, {{7, DownedTeams::Hostile}, {8, 20}}),
+              (std::vector<CopyTeam>{{7, 20}}));
+    EXPECT_EQ(teams.Tick({}, {{7, 20}}), std::vector<CopyTeam>{}) << "given back once";
+    // A host's body (19) gets 19 back; one that left the world is forgotten.
+    EXPECT_EQ(teams.Tick({{9, 19}}, {{9, 19}}), (std::vector<CopyTeam>{{9, DownedTeams::Hostile}}));
+    EXPECT_EQ(teams.Tick({}, {}), std::vector<CopyTeam>{});
+    EXPECT_EQ(teams.Tick({}, {{9, DownedTeams::Hostile}}), std::vector<CopyTeam>{})
+        << "a new body under an old handle is not touched";
+    // A team of 6 is one the game never changes: left alone.
+    EXPECT_EQ(teams.Tick({{10, 6}}, {{10, 6}}), std::vector<CopyTeam>{});
 }
 
 TEST(BloodbornePartyDeath, GoesDownWithANewDownEachTime) {

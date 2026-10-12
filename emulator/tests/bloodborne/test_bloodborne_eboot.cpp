@@ -172,6 +172,26 @@ TEST_F(BloodborneEboot, TheDownedBannerIsQueuedBySetTextEffect) {
     EXPECT_EQ(0x013427F5 + ReadAt<s32>(*text, 0x013427F1), SetTextEffectOffset);
 }
 
+// The party HUD's nameplate hook is the HUD tag update's one exit (`add rsp, 0xC8; pop rbx...`),
+// with the tag update's own start where the comment says (it keeps the tag in r14, data in r13).
+TEST_F(BloodborneEboot, TheNameplateHookIsTheTagUpdatesExit) {
+    EXPECT_EQ(Bytes(HudTagUpdateExitOffset, HudTagUpdateExit.size()),
+              std::vector<u8>(HudTagUpdateExit.begin(), HudTagUpdateExit.end()));
+    EXPECT_EQ(Bytes(HudTagUpdateExitOffset + HudTagUpdateExit.size(), 1), std::vector<u8>{0x5B});
+    // mov r13, rsi; mov r14, rdi in the update's prologue.
+    EXPECT_EQ(Bytes(0x01B59E34, 6), (std::vector<u8>{0x49, 0x89, 0xF5, 0x49, 0x89, 0xFE}));
+}
+
+// A hit's final damage is stored at the hit record's +0x22C (`mov [rcx+0x22C], eax`), before any
+// HP changes; the remote-player flag and the attacker are in the hit's frame.
+TEST_F(BloodborneEboot, TheReviveHitHookIsWhereTheHitsDamageIsStored) {
+    EXPECT_EQ(Bytes(HitDamageStoredOffset, HitDamageStored.size()),
+              std::vector<u8>(HitDamageStored.begin(), HitDamageStored.end()));
+    // The team setter (SetTeamType): mov [rax + 0x88], ebx.
+    EXPECT_EQ(Bytes(0x01334C73, 6), (std::vector<u8>{0x89, 0x98, 0x88, 0x00, 0x00, 0x00}));
+    EXPECT_EQ(CharacterTeamOffset, 0x88u);
+}
+
 // The calls the patches and hooks are about are where the comments say.
 TEST_F(BloodborneEboot, ThePatchedCallsGoWhereTheCommentsSay) {
     // Ghost death: SetEventFlag(4047) twice, then CustomLuaCallStart(4063).

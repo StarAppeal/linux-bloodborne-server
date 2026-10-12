@@ -703,6 +703,12 @@ struct PartyDeathRun {
     u8 hide_before = 0;
     u8 silence_before = 0;
     u32 targets_forgotten = 0; // since the last log line
+    DownedTeams downed_teams;  // the downed members' bodies here, struck back up
+    // After a revive the player takes no damage for ReviveGraceMs: the party's last swings, still
+    // landing on its body as the invaders' team on their screens, would put it straight down again.
+    std::optional<s64> grace_until;
+    u8 grace_flags = 0;
+    u32 real_hits_logged = 0;
 };
 extern PartyDeathRun party_death_run;
 void InstallPartyDeath(u64 base, u64 image_size);

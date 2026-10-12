@@ -458,7 +458,7 @@ SUITES = {
                      "guest": ["godmode off", *LETHAL_FALL, "wait-vital down 30", "shot down",
                                "expect-hp self == 1", "wait-vital up 90", "expect-hp self > 1",
                                "godmode"]},
-                    expect={"host": [r"party death: revive hit on"],
+                    expect={"host": [r"party death: (real )?revive hit on"],
                             "guest": [r"party death: down \d+ on map 0x18010000",
                                       r"party death: revived from down"]},
                     forbid={"host": SESSION_HOLDS,
@@ -470,7 +470,7 @@ SUITES = {
                      "guest": ["godmode off", "hurt self 1", f"approach {ENEMY}",
                                "wait-vital down 90", "wait 20", "expect-hp self == 1",
                                "wait-vital up 90", "expect-hp self > 1", "godmode"]},
-                    expect={"host": [r"party death: revive hit on"],
+                    expect={"host": [r"party death: (real )?revive hit on"],
                             "guest": [r"party death: enemies forgot \d+ target\(s\) on downed "
                                       r"players \(self down=true", r"party death: revived from down"]},
                     forbid={"host": SESSION_HOLDS,
@@ -791,8 +791,8 @@ SUITES = {
                      "host": ["wait-member-vital down 180"]},
                     expect={"guest": [r"party death: down \d+ on map 0x18010000",
                                       r"party death: revived from down"],
-                            "guest2": [r"party death: revive hit on"]},
-                    forbid={"host": SESSION_HOLDS + [r"party death: revive hit on"],
+                            "guest2": [r"party death: (real )?revive hit on"]},
+                    forbid={"host": SESSION_HOLDS + [r"party death: (real )?revive hit on"],
                             "guest": SESSION_HOLDS, "guest2": SESSION_HOLDS}),
             chapter("crash3", "one guest's game dies; host and the other guest stay together and "
                               "both still pick up items, and the party is three again once it is "

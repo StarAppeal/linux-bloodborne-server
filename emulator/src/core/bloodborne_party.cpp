@@ -3930,6 +3930,10 @@ u32 ReviveHitDamage(s32 attack_rating, bool heavy) {
     return heavy ? std::max(rating * 3 / 2, 1u) : rating;
 }
 
+u32 RealReviveHitDamage(u32 dealt, s32 attack_rating, bool heavy) {
+    return std::max(dealt, ReviveHitDamage(attack_rating, heavy));
+}
+
 float ReviveShare(u32 landed, u32 needed) {
     return needed == 0 ? 0.0f
                        : std::min(static_cast<float>(landed) / static_cast<float>(needed), 1.0f);
@@ -3937,6 +3941,53 @@ float ReviveShare(u32 landed, u32 needed) {
 
 s32 RevivedHp(s32 max) {
     return std::max(max / 2, 1);
+}
+
+std::string GameHudString(std::span<const u8, GameHudStringSize> raw,
+                          const std::function<std::vector<char16_t>(u64, size_t)>& read) {
+    constexpr size_t MaxChars = 64;
+    u64 capacity = 0;
+    std::memcpy(&capacity, raw.data() + 0x20, sizeof(capacity));
+    std::vector<char16_t> chars;
+    if (capacity < 8) {
+        chars.resize(8);
+        std::memcpy(chars.data(), raw.data() + 0x08, 16);
+    } else {
+        u64 pointer = 0;
+        std::memcpy(&pointer, raw.data() + 0x08, sizeof(pointer));
+        chars = read(pointer, static_cast<size_t>(std::min<u64>(capacity, MaxChars)));
+    }
+    std::string text;
+    for (const char16_t c : chars) {
+        if (c == 0 || text.size() == MaxChars) {
+            break;
+        }
+        text += c < 0x80 ? static_cast<char>(c) : '?';
+    }
+    return text;
+}
+
+std::optional<std::string> NameplateRoleLine(const PartyPanel& panel, std::string_view name) {
+    if (name.empty()) {
+        return std::nullopt;
+    }
+    for (const PanelMember& member : panel.members) {
+        const std::string_view id = member.name.empty() ? member.member : member.name;
+        if (id == name && member.vital == Vital::Down) {
+            return fmt::format("<font color=\"#e74141\">Downed {}%</font>",
+                               std::lround(ReviveShare(member.landed, member.needed) * 100.0f));
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<int> RemoteTagIndex(u64 tag_data, u64 fe_data) {
+    const u64 first = fe_data + HudRemoteTagsAt;
+    if (tag_data < first || (tag_data - first) % HudTagDataSize != 0) {
+        return std::nullopt;
+    }
+    const u64 index = (tag_data - first) / HudTagDataSize;
+    return index < HudRemoteTagCount ? std::optional<int>{static_cast<int>(index)} : std::nullopt;
 }
 
 s32 DownedHp(s32 max, u32 landed, u32 needed) {
@@ -4979,6 +5030,47 @@ bool ReviveHits::Press(std::string_view target, u32 down, u32 damage, s64 now_ms
         total->damage += damage;
     }
     return true;
+}
+
+void ReviveHits::Hit(std::string_view target, u32 down, u32 damage) {
+    if (damage == 0) {
+        return;
+    }
+    const auto total = std::ranges::find(totals, target, &ReviveHitTotal::target);
+    if (total == totals.end()) {
+        totals.push_back(ReviveHitTotal{std::string{target}, down, damage});
+    } else if (total->down != down) {
+        *total = ReviveHitTotal{std::string{target}, down, damage};
+    } else {
+        total->damage += damage;
+    }
+}
+
+std::vector<CopyTeam> DownedTeams::Tick(const std::vector<CopyTeam>& downed,
+                                        const std::vector<CopyTeam>& present) {
+    std::vector<CopyTeam> writes;
+    for (const CopyTeam& body : downed) {
+        if (body.team == Unchangeable) {
+            continue;
+        }
+        if (std::ranges::find(saved, body.handle, &CopyTeam::handle) == saved.end()) {
+            saved.push_back(body);
+        }
+        if (body.team != Hostile) {
+            writes.push_back(CopyTeam{body.handle, Hostile});
+        }
+    }
+    std::erase_if(saved, [&](const CopyTeam& own) {
+        if (std::ranges::find(downed, own.handle, &CopyTeam::handle) != downed.end()) {
+            return false;
+        }
+        const auto body = std::ranges::find(present, own.handle, &CopyTeam::handle);
+        if (body != present.end() && body->team == Hostile) {
+            writes.push_back(own);
+        }
+        return true;
+    });
+    return writes;
 }
 
 std::vector<ReviveHitTotal> ReviveHits::Totals(std::span<const MemberVitals> board) {

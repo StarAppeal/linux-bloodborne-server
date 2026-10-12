@@ -640,6 +640,131 @@ std::vector<u32> DownedPlayerHandles(u64 player, bool down,
     return handles;
 }
 
+// A downed member's body in this world: the other player character nearest to where it posted
+// (within 4 m), as DownedPlayerHandles finds them.
+struct DownedBody {
+    DownedMember member;
+    u64 character = 0;
+    u32 handle = 0;
+};
+std::vector<DownedBody> DownedBodies(std::span<const MemberVitals> board, std::string_view self,
+                                     u32 map, std::span<const OtherPlayer> players) {
+    std::vector<DownedBody> bodies;
+    for (const MemberVitals& entry : board) {
+        if (map == 0 || entry.member == self || entry.map != map || entry.vital != Vital::Down) {
+            continue;
+        }
+        const OtherPlayer* nearest = nullptr;
+        float nearest_distance = 4.0f;
+        for (const OtherPlayer& other : players) {
+            if (!other.at) {
+                continue;
+            }
+            const float distance =
+                std::hypot((*other.at)[0] - entry.at[0], (*other.at)[1] - entry.at[1],
+                           (*other.at)[2] - entry.at[2]);
+            if (distance <= nearest_distance) {
+                nearest_distance = distance;
+                nearest = &other;
+            }
+        }
+        if (nearest != nullptr) {
+            bodies.push_back(DownedBody{DownedMember{entry.member, entry.down}, nearest->character,
+                                        ReadValue<u32>(nearest->character, 0x08)});
+        }
+    }
+    return bodies;
+}
+
+// What the pad reader saw (FilterPartyDeathPad): the buttons held before the downed filter, the
+// attack presses so far and whether the last one was heavy (R2).
+std::atomic<u32> party_pad_buttons{};
+std::atomic<u32> party_attack_presses{};
+std::atomic<bool> party_attack_heavy{};
+
+// Real revive hits (SHADPS4_BLOODBORNE_REVIVE_HITS=presses keeps counting attack presses instead):
+// the hit hook queues what the local player's hits dealt to a downed body; the party tick counts
+// it.
+std::mutex real_hits_mutex;
+std::vector<u32> real_hit_bodies;           // the downed bodies' handles, as of the last tick
+std::vector<std::pair<u32, u32>> real_hits; // (body handle, damage)
+std::atomic<bool> real_hits_installed{};
+
+void PS4_SYSV_ABI RecordReviveHit(u64, const GuestRegisterSnapshot* registers) {
+    const s32 damage = static_cast<s32>(registers->rax & 0xFFFFFFFF);
+    const u64 module = registers->r14;
+    if (damage <= 0 || module < 0x10000) {
+        return;
+    }
+    const u64 attacker = ReadValue<u64>(registers->rbp + HitAttackerFrameOffset, 0);
+    const u64 victim = ReadValue<u64>(module, 0x08);
+    if (attacker < 0x10000 || victim < 0x10000 || attacker != GetLocalPlayer()) {
+        return;
+    }
+    const u32 handle = ReadValue<u32>(victim, 0x08);
+    std::scoped_lock lock{real_hits_mutex};
+    if (std::ranges::find(real_hit_bodies, handle) != real_hit_bodies.end() &&
+        real_hits.size() < 64) {
+        real_hits.emplace_back(handle, static_cast<u32>(damage));
+    }
+}
+
+// Each tick: the downed bodies here take the invaders' team (DownedTeams) and give it back once up;
+// the hits the local player landed on them count for their revive.
+void StrikeDownedBodies(PartyDeathRun& run, std::span<const MemberVitals> board,
+                        std::string_view self, u32 map, bool in_session) {
+    if (!real_hits_installed.load(std::memory_order_relaxed)) {
+        return;
+    }
+    const std::vector<OtherPlayer> players = OtherPlayers();
+    const std::vector<DownedBody> bodies =
+        in_session ? DownedBodies(board, self, map, players) : std::vector<DownedBody>{};
+    std::vector<CopyTeam> downed, present;
+    for (const DownedBody& body : bodies) {
+        downed.push_back(
+            CopyTeam{body.handle, ReadValue<s32>(body.character, CharacterTeamOffset)});
+    }
+    for (const OtherPlayer& other : players) {
+        present.push_back(CopyTeam{ReadValue<u32>(other.character, 0x08),
+                                   ReadValue<s32>(other.character, CharacterTeamOffset)});
+    }
+    for (const CopyTeam& write : run.downed_teams.Tick(downed, present)) {
+        for (const OtherPlayer& other : players) {
+            if (ReadValue<u32>(other.character, 0x08) == write.handle &&
+                HasMemoryAccess(other.character + CharacterTeamOffset, 4, MemoryProt::CpuWrite)) {
+                WriteValue(other.character, CharacterTeamOffset, write.team);
+                LOG_INFO(Debug, "Bloodborne party death: body {:#x} takes team {}", write.handle,
+                         write.team);
+            }
+        }
+    }
+    std::vector<std::pair<u32, u32>> hits;
+    {
+        std::scoped_lock lock{real_hits_mutex};
+        real_hit_bodies.clear();
+        for (const DownedBody& body : bodies) {
+            real_hit_bodies.push_back(body.handle);
+        }
+        hits.swap(real_hits);
+    }
+    for (const auto& [handle, damage] : hits) {
+        const auto body = std::ranges::find(bodies, handle, &DownedBody::handle);
+        if (body == bodies.end() || run.downed.Current() != Vital::Up) {
+            continue;
+        }
+        const s32 rating = ReadAttackRatings(GetLocalPlayer()).Held();
+        const u32 counted = RealReviveHitDamage(damage, rating, party_attack_heavy.load());
+        run.revive_hits.Hit(body->member.member, body->member.down, counted);
+        if (run.real_hits_logged < 16) {
+            ++run.real_hits_logged;
+            LOG_INFO(Debug,
+                     "Bloodborne party death: real revive hit on {} (down {}) for {} damage "
+                     "(dealt {}, attack rating {})",
+                     body->member.member, body->member.down, counted, damage, rating);
+        }
+    }
+}
+
 // The fall damage step (0x01A35C33) takes a fall into the void as a fixed lethal height while
 // [[character +0x58] +0x38] +0x48 bit 1 is set. Such a fall stays a real death: nobody could
 // reach the player down there.
@@ -706,12 +831,6 @@ const s32 downed_animation = [] {
     }
     return animation;
 }();
-
-// What the pad reader saw (FilterPartyDeathPad): the buttons held before the downed filter, the
-// attack presses so far and whether the last one was heavy (R2).
-std::atomic<u32> party_pad_buttons{};
-std::atomic<u32> party_attack_presses{};
-std::atomic<bool> party_attack_heavy{};
 
 } // namespace
 
@@ -887,6 +1006,10 @@ void EndDown(PartyDeathRun& run, u64 data) {
 
 void GetUp(PartyDeathRun& run, u64 data, s64 now_ms) {
     EndDown(run, data);
+    const u8 flags = ReadValue<u8>(data, 0x200);
+    run.grace_flags = DownedNoDamageFlags & static_cast<u8>(~flags);
+    WriteValue(data, 0x200, static_cast<u8>(flags | DownedNoDamageFlags));
+    run.grace_until = now_ms + ReviveGraceMs;
     const s32 hp = RevivedHp(ReadValue<s32>(data, 0xFC));
     WriteValue(data, 0xF8, hp);
     run.downed.GetUp(now_ms);
@@ -968,6 +1091,12 @@ void TickPartyDeath() {
         run.downed.ClearPenalty();
     }
 
+    if (run.grace_until && (now >= *run.grace_until || run.downed.Current() != Vital::Up)) {
+        WriteValue(data, 0x200, static_cast<u8>(ReadValue<u8>(data, 0x200) & ~run.grace_flags));
+        run.grace_until.reset();
+        run.grace_flags = 0;
+    }
+
     switch (run.downed.Current()) {
     case Vital::Off:
     case Vital::Up: {
@@ -987,7 +1116,8 @@ void TickPartyDeath() {
             break;
         }
         const u32 attacks = party_attack_presses.load();
-        const bool attacked = attacks != run.seen_attacks;
+        const bool attacked =
+            attacks != run.seen_attacks && !real_hits_installed.load(std::memory_order_relaxed);
         run.seen_attacks = attacks;
         const auto at = LocalPlayerPosition();
         const auto target = attacked && in_session && at
@@ -1076,6 +1206,8 @@ void TickPartyDeath() {
         run.targets_forgotten = 0;
     }
 
+    StrikeDownedBodies(run, board, view.member, map, in_session);
+
     const auto at = LocalPlayerPosition();
     PostVitals(
         MemberVitals{
@@ -1101,6 +1233,91 @@ void TickPartyDeath() {
     SetPartyPanel(std::move(panel));
 }
 
+} // namespace Coop
+
+namespace {
+
+#ifdef BLOODBORNE_PARTY_HUD
+// The name on a remote player's nameplate (its TagData's), "" when it cannot be read.
+std::string NameplateName(u64 tag_data) {
+    std::array<u8, GameHudStringSize> raw{};
+    if (!HasMemoryAccess(tag_data + HudTagNameAt, raw.size(), MemoryProt::CpuRead)) {
+        return {};
+    }
+    std::memcpy(raw.data(), reinterpret_cast<const void*>(tag_data + HudTagNameAt), raw.size());
+    return GameHudString(raw, [](u64 at, size_t count) {
+        std::vector<char16_t> chars(count);
+        if (at < 0x10000 || !HasMemoryAccess(at, count * 2, MemoryProt::CpuRead)) {
+            return std::vector<char16_t>{};
+        }
+        std::memcpy(chars.data(), reinterpret_cast<const void*>(at), count * 2);
+        return chars;
+    });
+}
+
+// Each nameplate name seen once, in the log (the rig checks that the names are the members').
+void NoteNameplate(int index, const std::string& name) {
+    static std::mutex mutex;
+    static std::unordered_set<std::string> seen;
+    std::scoped_lock lock{mutex};
+    if (seen.size() < 32 && seen.insert(fmt::format("{}:{}", index, name)).second) {
+        LOG_INFO(Debug, "Bloodborne party HUD: nameplate {} is \"{}\"", index, name);
+    }
+}
+
+// The HUD tag update's exit (HudTagUpdateExit): over a downed member's nameplate the role line says
+// its revive, in the tag's own text field (the game writes it again every frame).
+void PS4_SYSV_ABI WriteNameplateRoleLine(u64, const GuestRegisterSnapshot* registers) {
+    const u64 tag = registers->r14, data = registers->r13;
+    const auto index = RemoteTagIndex(data, image_base + HudFeDataOffset);
+    PartyPanel panel;
+    if (!index || !ReadPartyPanel(panel)) {
+        return;
+    }
+    const std::string name = NameplateName(data);
+    NoteNameplate(*index, name);
+    const auto line = NameplateRoleLine(panel, name);
+    const u64 element = tag + HudTagRoleLineAt;
+    if (!line || !HasMemoryAccess(element, 0x50, MemoryProt::CpuRead) ||
+        (ReadValue<u32>(element, HudElementTypeAt) & 0x8F) == 0) {
+        return;
+    }
+    const u64 object = ReadValue<u64>(element, HudElementInterfaceAt);
+    const u64 vtable = object >= 0x10000 ? ReadValue<u64>(object, 0) : 0;
+    const u64 set_text = vtable >= 0x10000 ? ReadValue<u64>(vtable, HudSetTextUtf8Slot) : 0;
+    if (set_text < 0x10000) {
+        return;
+    }
+    reinterpret_cast<void PS4_SYSV_ABI (*)(u64, u64, const char*, bool)>(set_text)(
+        object, ReadValue<u64>(element, HudElementDataAt), line->c_str(), true);
+}
+#endif
+
+// The party HUD's nameplates (the port's, BB_PARTY_HUD not 0): a downed member's says its revive.
+void InstallPartyNameplates(u64 base, u64 image_size) {
+#ifdef BLOODBORNE_PARTY_HUD
+    const char* setting = std::getenv("BB_PARTY_HUD");
+    if (setting != nullptr && std::string_view{setting} == "0") {
+        return;
+    }
+    if (HudTagUpdateExitOffset + HudTagUpdateExit.size() > image_size ||
+        !InstallCoopHook(reinterpret_cast<void*>(base + HudTagUpdateExitOffset), HudTagUpdateExit,
+                         0, WriteNameplateRoleLine)) {
+        coop_features.Skipped("party nameplates",
+                              SiteFailure(base, image_size, HudTagUpdateExitOffset));
+        return;
+    }
+    coop_features.On("party nameplates");
+#else
+    (void)base;
+    (void)image_size;
+#endif
+}
+
+} // namespace
+
+namespace Coop {
+
 // Party death needs a party (SHADPS4_BLOODBORNE_PARTY) and the setting.
 void InstallPartyDeath(u64 base, u64 image_size) {
     if (!party_death_enabled || !party_controller) {
@@ -1115,6 +1332,19 @@ void InstallPartyDeath(u64 base, u64 image_size) {
     }
     party_death_hook_installed = true;
     coop_features.On("party death");
+    InstallPartyNameplates(base, image_size);
+    const char* hits = std::getenv("SHADPS4_BLOODBORNE_REVIVE_HITS");
+    if (hits != nullptr && std::string_view{hits} == "presses") {
+        coop_features.Skipped("real revive hits", "SHADPS4_BLOODBORNE_REVIVE_HITS=presses");
+    } else if (HitDamageStoredOffset + HitDamageStored.size() <= image_size &&
+               InstallCoopHook(reinterpret_cast<void*>(base + HitDamageStoredOffset),
+                               HitDamageStored, 0, RecordReviveHit)) {
+        real_hits_installed.store(true);
+        coop_features.On("real revive hits");
+    } else {
+        coop_features.Skipped("real revive hits",
+                              SiteFailure(base, image_size, HitDamageStoredOffset));
+    }
     LOG_INFO(Debug, "Bloodborne party death: a lethal hit puts a party member down while another "
                     "stands on its map (damage revives it, holding Circle gives up)");
 }
