@@ -2356,6 +2356,24 @@ constexpr u64 HudTagUpdateOffset = 0x01B59E20;
 constexpr u64 HudSetVisibleOffset = 0x01ACB760;
 constexpr u64 HudTagSize = 0x6E0;
 constexpr u64 HudPathRefSize = 0x60;
+// A PathRef's value (Scaleform's GFx::Value, at +0x30: list links, the object interface at +0x40,
+// the type at +0x48, the object at +0x50). One that holds a HUD object (type bit 0x40) is linked
+// into the HUD movie's value list until the interface's release (vtable slot 3: interface, value,
+// object) unlinks it, as the game does after each tag it makes (0x01BF528B). The movie's
+// destructor (0x0001DEE0) releases every value still linked (0x0001E304), so a linked value's
+// storage must outlive the HUD (rig wipe3 2026-10-12: the icons' PathRefs were left linked on the
+// stack, and a guest's world teardown crashed there on a dead one, eboot+0x1E312).
+constexpr u64 HudPathRefValueAt = 0x30;
+constexpr u64 HudPathRefInterfaceAt = 0x40;
+constexpr u64 HudPathRefTypeAt = 0x48;
+constexpr u64 HudPathRefObjectAt = 0x50;
+constexpr u32 HudValueLinkedBit = 0x40;
+enum class HudValueKeep {
+    Drop,          // nothing linked: the storage may go
+    Release,       // linked: release it before the storage goes
+    KeepForTheHud, // linked and kept: storage that outlives the HUD, never freed
+};
+HudValueKeep HudValueFate(u32 type, bool kept_for_the_hud);
 constexpr u64 HudTicksTagsDoneOffset = 0x01BF8A50;
 constexpr std::array<u8, 7> HudTicksTagsDone{0x49, 0x8B, 0xBF, 0xF8, 0x00, 0x00, 0x00};
 constexpr s64 HudFrameTimeFrameOffset = -0x6C8;

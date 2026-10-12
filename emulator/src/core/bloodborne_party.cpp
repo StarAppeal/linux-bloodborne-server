@@ -4053,6 +4053,13 @@ std::optional<int> RemoteTagIndex(u64 tag_data, u64 fe_data) {
     return index < HudRemoteTagCount ? std::optional<int>{static_cast<int>(index)} : std::nullopt;
 }
 
+HudValueKeep HudValueFate(u32 type, bool kept_for_the_hud) {
+    if ((type & HudValueLinkedBit) == 0) {
+        return HudValueKeep::Drop;
+    }
+    return kept_for_the_hud ? HudValueKeep::KeepForTheHud : HudValueKeep::Release;
+}
+
 s32 DownedHp(s32 max, u32 landed, u32 needed) {
     if (max <= 1 || needed == 0) {
         return 1;

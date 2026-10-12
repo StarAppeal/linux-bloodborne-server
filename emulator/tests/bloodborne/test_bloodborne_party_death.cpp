@@ -338,6 +338,21 @@ TEST(BloodbornePartyHud, FindsTheRemotePlayersTag) {
     EXPECT_EQ(RemoteTagIndex(fe_data + 0xBA8 + 4, fe_data), std::nullopt);
 }
 
+// A child lookup's PathRef whose value holds a HUD object is linked into the HUD's value list
+// until it is released, and the HUD's destructor releases whatever is still there: one kept for
+// the HUD's life must be stored where it outlives the HUD, any other released before its storage
+// goes (rig wipe3 2026-10-12: the icons' PathRefs died on the stack still linked, and a guest's
+// world teardown crashed in the HUD's destructor at eboot+0x1E312).
+TEST(BloodbornePartyHud, AReferencedHudValueOutlivesItsStorageOnlyWhenKept) {
+    constexpr u32 DisplayObject = 0x4A; // managed (0x40) display object
+    EXPECT_EQ(HudValueFate(DisplayObject, false), HudValueKeep::Release);
+    EXPECT_EQ(HudValueFate(DisplayObject, true), HudValueKeep::KeepForTheHud);
+    EXPECT_EQ(HudValueFate(0, true), HudValueKeep::Drop) << "not found: nothing linked";
+    EXPECT_EQ(HudValueFate(0, false), HudValueKeep::Drop);
+    EXPECT_EQ(HudValueFate(0x05, true), HudValueKeep::Drop) << "a plain value is not linked";
+    EXPECT_EQ(HudValueFate(0x40, false), HudValueKeep::Release) << "linked, whatever it holds";
+}
+
 // A real hit on a downed member's body counts what it dealt, every hit (no gap between presses).
 TEST(BloodbornePartyDeath, CountsRealHitsOnTheBodyAsReviveDamage) {
     ReviveHits hits;

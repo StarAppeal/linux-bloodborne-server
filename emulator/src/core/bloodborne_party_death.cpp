@@ -1340,29 +1340,41 @@ bool MakePartyListTags(u64 hud) {
         auto* tag = new (std::align_val_t{16}) u8[HudTagSize]{};
         reinterpret_cast<Construct>(image_base + HudTagConstructorOffset)(tag, path.data(), 0, 0);
         native_list.tags[i] = tag;
-        if ((type & 0x40) != 0) {
+        // The tag holds its own value; this one is released before the stack goes, as the game's
+        // own init does (see HudValueFate).
+        if (HudValueFate(type, false) == HudValueKeep::Release) {
             u64 object = 0, data = 0;
-            std::memcpy(&object, path.data() + 0x40, sizeof(object));
-            std::memcpy(&data, path.data() + 0x50, sizeof(data));
+            std::memcpy(&object, path.data() + HudPathRefInterfaceAt, sizeof(object));
+            std::memcpy(&data, path.data() + HudPathRefObjectAt, sizeof(data));
             reinterpret_cast<Release>(ReadValue<u64>(ReadValue<u64>(object, 0), 0x18))(
-                object, path.data() + 0x30, data);
+                object, path.data() + HudPathRefValueAt, data);
         }
     }
     for (int i = 0; i < PartyListSize; ++i) {
-        alignas(16) std::array<u8, HudPathRefSize> path{};
-        reinterpret_cast<Lookup>(image_base + HudChildLookupOffset)(path.data(), hud,
-                                                                    "CoopPartyIcon%d", i);
+        // The icon's value stays referenced while the HUD lasts, so it lives on the heap and is
+        // never freed: the HUD's destructor releases it there (a stack PathRef left a dead value
+        // in the HUD's list, rig wipe3 2026-10-12). One per icon per HUD, as the tags.
+        auto* path = new (std::align_val_t{16}) u8[HudPathRefSize]{};
+        reinterpret_cast<Lookup>(image_base + HudChildLookupOffset)(path, hud, "CoopPartyIcon%d",
+                                                                    i);
         u32 type = 0;
-        std::memcpy(&type, path.data() + 0x48, sizeof(type));
-        if ((type & 0x8F) == 0) {
+        std::memcpy(&type, path + HudPathRefTypeAt, sizeof(type));
+        const bool found = (type & 0x8F) != 0;
+        if (found) {
+            std::memcpy(&native_list.icons[i].first, path + HudPathRefInterfaceAt, 8);
+            std::memcpy(&native_list.icons[i].second, path + HudPathRefObjectAt, 8);
+        }
+        if (HudValueFate(type, found) == HudValueKeep::Drop) {
+            ::operator delete[](path, std::align_val_t{16});
+        }
+        if (!found) {
             native_list.icons = {};
             break;
         }
-        // The value stays referenced (never released) while the HUD lasts, as the tags' do.
-        std::memcpy(&native_list.icons[i].first, path.data() + 0x40, 8);
-        std::memcpy(&native_list.icons[i].second, path.data() + 0x50, 8);
     }
-    LOG_INFO(Debug, "Bloodborne party HUD: the party list is the HUD's own ({} tags, icons {})",
+    LOG_INFO(Debug,
+             "Bloodborne party HUD: the party list is the HUD's own ({} tags, icons {}; their "
+             "values kept on the heap)",
              PartyListSize, native_list.icons[0].first != 0 ? "too" : "none");
     return true;
 }
