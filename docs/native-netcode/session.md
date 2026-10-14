@@ -137,7 +137,14 @@ The port does the same without a summon (bloodborne_join.cpp):
   +0x30 bytes written), freed 0x00C90520.
 - **Guest** (`JoinTeamSession`): the param made 0x00C8FBF0 and read 0x00C90DD0 from the game's
   memory reader (vtable 0x053B2BE0; +0x08 size, +0x10 data, +0x18 position, +0x24 = 1), GameMan
-  +0x16F0/+0x16F4 set, NetSync JoinSession 0x01789010(NetSync, param), then the summon's placement
-  as 0x01873A26 writes it from the sign, with the guest's own spot (GameMan +0x14A0..+0x1648,
-  FrpgNetMan +0xA98 = 1, 0x01FF58B0).
+  +0x16F0/+0x16F4 set, NetSync JoinSession 0x01789010(NetSync, param). No summon placement and
+  no reload: when the host's world comes in (state 2, 0x01785236) the join's start event
+  0x01317780 (Lua "OnBeJoinStart_*", which starts the summon reload) is skipped, and on the next
+  tick 0x0178D9C0 (what the world load's end 0x01939470 calls after a summon reload) finishes the
+  join: state 4, ch 0x0A to the members. The guest stays in its world, which took the team's
+  world as its save loaded.
+- **Not from the title:** NetSync JoinSession asserts the map's event object ([0x0553B0C8],
+  made with the world); joining through the session manager's own JoinSession (0x01ED0670)
+  joined the room but NetSync never left state 0 and the game left the room after 20 s: the
+  game's session layer runs only with a world.
 - The server carries the join data between them (`bbcoop::TeamSession`).

@@ -366,6 +366,9 @@ Each phase: red-green tests first, all CI checks, rig scenarios named below, mer
      sends the join data a summon would send (`TeamSession`, coop protocol 4); the server relays
      it; each guest joins with the game's own JoinSession in place. Rig: join, join3, team-join3,
      trip pass with no `/summon_messenger` request at all; join x25 for the stalls.
+   - **One load** (Kaniel: "load directly to the game"): a guest loads its save once and joins in
+     its world without the summon reload (the join's start event skipped, the join finished as a
+     load's end finishes it). Not from the title: the game's session layer needs a world.
    - **Launcher:** no party name/password or role; "host" only says which PC runs the server.
      The team is made on the team screen. The System menu's Co-op Team page is gone.
    - **Rig:** the runner makes every scenario's team on the title (`team_prelude`), so every

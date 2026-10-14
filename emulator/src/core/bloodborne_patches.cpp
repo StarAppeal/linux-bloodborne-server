@@ -844,6 +844,13 @@ bool PS4_SYSV_ABI HoldTitleLoad(u64, const GuestRegisterSnapshot*) {
     return HoldTitleLoadForTeam(slot < 0 ? 0u : static_cast<u32>(slot));
 }
 
+constexpr u64 JoinStartEventOffset = 0x01317780;
+constexpr std::array<u8, 7> JoinStartEventBytes{0x48, 0x8B, 0x7F, 0x08, 0x48, 0x85, 0xFF};
+
+bool PS4_SYSV_ABI SkipJoinStartEvent(u64, const GuestRegisterSnapshot*) {
+    return SkipJoinReload();
+}
+
 void PS4_SYSV_ABI NoteTitleMenu(u64, const GuestRegisterSnapshot*) {
     TeamBackAtTitle();
 }
@@ -867,7 +874,9 @@ void InstallTeamLobby(u64 base, u64 image_size) {
     coop_features.On("team lobby");
     LOG_INFO(Debug, "Bloodborne team lobby: a save's load waits for the team's Start");
     // Phase 6: the team joins its host's session without signs or a bell.
-    if (CoopSitesMatch(base, image_size, "team join", "the team cannot join its host")) {
+    if (CoopSitesMatch(base, image_size, "team join", "the team cannot join its host") &&
+        InstallCoopHook(reinterpret_cast<void*>(base + JoinStartEventOffset), JoinStartEventBytes,
+                        0, GuestFunctionOverride{SkipJoinStartEvent})) {
         team_join_ready = true;
         coop_features.On("team join");
     }

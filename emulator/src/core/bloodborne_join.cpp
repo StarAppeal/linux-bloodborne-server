@@ -1505,10 +1505,14 @@ constexpr u64 JoinParamWriteOffset = 0x00C90B00; // param, writer
 constexpr u64 JoinParamInitOffset = 0x00C8FBF0;  // param: constructs an empty one
 constexpr u64 JoinParamReadOffset = 0x00C90DD0;  // param, reader
 constexpr u64 JoinParamFreeOffset = 0x00C90520;  // param
-constexpr u64 SummonedNoticeOffset = 0x01FF58B0; // after a guest's join (the summon manager's)
 constexpr u64 StreamWriterVtableOffset = 0x053B2C80;
 constexpr u64 StreamReaderVtableOffset = 0x053B2BE0;
+constexpr u64 WorldLoadedOffset = 0x0178D9C0; // NetSync: the join's world is in (state 4)
 constexpr float SummonSessionSeconds = 55.0F;
+// A guest's join in its world waits for the host's world (NetSync state 2) to finish it there
+// without the summon reload (SkipJoinReload, FinishInPlaceJoin).
+std::atomic<bool> in_place_join_due{false};
+std::atomic<bool> join_reload_skipped{false};
 constexpr size_t JoinParamSize = 0x1A8; // the summon manager's frame holds it at rbp-0x1A8
 constexpr size_t JoinDataCapacity = 0x200;
 
@@ -1534,6 +1538,35 @@ void ReceiveSeamlessPlacement(const SummonPlacementDescriptor& placement) {
         seamless_received_host_placement_life.Received();
     }
     seamless_received_host_placement = placement;
+}
+
+bool SkipJoinReload() {
+    // The join's start event (0x01317780, from the host's world coming in at state 2): its Lua
+    // event starts the summon reload. A team's guest is in its world already, with the team's
+    // world taken as it loaded (phase 5b): nothing to reload.
+    if (!in_place_join_due.exchange(false)) {
+        return false;
+    }
+    join_reload_skipped = true;
+    LOG_INFO(Debug, "Bloodborne team join: the host's world is in: no summon reload");
+    return true;
+}
+
+void FinishInPlaceJoin() {
+    if (!join_reload_skipped.load()) {
+        return;
+    }
+    const u64 netsync = image_base != 0 ? ReadValue<u64>(image_base + NetSyncPointerOffset, 0) : 0;
+    if (netsync < 0x10000 || ReadValue<s32>(netsync, 0x84) != 2) {
+        return;
+    }
+    join_reload_skipped = false;
+    // What the world load's end does after a summon reload (0x01939470): state 4, ch 0x0A to the
+    // members, the join's result.
+    using Loaded = void PS4_SYSV_ABI (*)(u64);
+    reinterpret_cast<Loaded>(image_base + WorldLoadedOffset)(netsync);
+    LOG_INFO(Debug, "Bloodborne team join: joined in place (NetSync state {})",
+             ReadValue<s32>(netsync, 0x84));
 }
 
 bool OpenTeamSession() {
@@ -1606,7 +1639,6 @@ bool JoinTeamSession(std::span<const u8> join, u32 kind, u32 sign) {
     using ParamRead = bool PS4_SYSV_ABI (*)(void*, void*);
     using ParamFree = void PS4_SYSV_ABI (*)(void*);
     using Join = bool PS4_SYSV_ABI (*)(u64, void*);
-    using Notice = void PS4_SYSV_ABI (*)();
     alignas(16) std::array<u8, JoinParamSize + 0x58> param{};
     alignas(16) std::array<u8, JoinDataCapacity> data{};
     std::copy(join.begin(), join.end(), data.begin());
@@ -1623,24 +1655,13 @@ bool JoinTeamSession(std::span<const u8> join, u32 kind, u32 sign) {
     if (read) {
         WriteValue(state, 0x16F0, kind);
         WriteValue(state, 0x16F4, static_cast<u8>(sign));
+        // No summon placement (0x01873A26 writes the sign's for the summon reload): the guest
+        // joins in its world as it stands, and no reload follows (see SkipJoinReload).
+        in_place_join_due = true;
         joined = reinterpret_cast<Join>(image_base + JoinSessionOffset)(netsync, param.data());
-        // The summon's placement, as the summon manager writes it from the sign (0x01873A26).
-        const std::array<float, 4> position{own.x, own.y, own.z, 1.0F};
-        const std::array<float, 4> orientation{0.0F, own.heading, 0.0F, 0.0F};
-        WriteValue(state, 0x14C0, own.packed_region);
-        WriteValue(state, 0x14A0, position);
-        WriteValue(state, 0x14B0, orientation);
-        WriteValue(state, 0x14C4, own.packed_region);
-        WriteValue(state, 0x14D0, position);
-        WriteValue(state, 0x14E0, orientation);
-        WriteValue(state, 0x1620, position);
-        WriteValue(state, 0x1630, orientation);
-        WriteValue(state, 0x1640, own.area);
-        WriteValue(state, 0x1644, own.packed_region);
-        WriteValue(state, 0x1648, u8{1});
-        WriteValue(manager_root, 0xA98, u32{1});
-        reinterpret_cast<Notice>(image_base + SummonedNoticeOffset)();
-        ReceiveSeamlessPlacement(own);
+        if (!joined) {
+            in_place_join_due = false;
+        }
     }
     reinterpret_cast<ParamFree>(image_base + JoinParamFreeOffset)(param.data());
     LOG_INFO(Debug,

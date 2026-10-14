@@ -973,6 +973,7 @@ bool TickTeamJoin(bool ready) {
         envelope.mutable_team_session()->set_session(number);
         Queue(std::move(envelope));
     };
+    FinishInPlaceJoin();
     switch (team_join.Tick(frame)) {
     case TeamJoin::Action::None:
         break;

@@ -295,8 +295,11 @@ inline constexpr auto CoopSites = std::to_array<CoopSite>({
      "55 48 89 E5 41 57 41 56 41 55 41 54"},
     {"JoinParamFree", "team join", CoopSiteKind::Call, 0x00C90520,
      "55 48 89 E5 41 57 41 56 41 55 41 54"},
-    {"SummonedNotice", "team join", CoopSiteKind::Call, 0x01FF58B0,
-     "55 48 89 E5 41 57 41 56 53 48 81 EC"},
+    {"WorldLoaded", "team join", CoopSiteKind::Call, 0x0178D9C0,
+     "55 48 89 E5 41 57 41 56 41 55 41 54"},
+    // The join's start event (the host's world in, state 2): its Lua event starts the summon
+    // reload, which a team's guest does without (SkipJoinReload).
+    {"join start event", "team join", CoopSiteKind::Hook, 0x01317780, "48 8B 7F 08 48 85 FF"},
 
     {"leave limit", "host leaves", CoopSiteKind::Hook, 0x0138A4A0, "55 48 89 E5 53 50"},
 

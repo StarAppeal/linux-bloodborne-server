@@ -711,6 +711,10 @@ bool TeamModeOn();
 bool OpenTeamSession();
 std::optional<std::vector<u8>> TeamSessionJoinData();
 bool JoinTeamSession(std::span<const u8> join, u32 kind, u32 sign);
+// The guest's join without the summon reload: the join's start event skipped (true: skip it),
+// then the join finished in place on the next tick.
+bool SkipJoinReload();
+void FinishInPlaceJoin();
 // Each party controller tick in team mode (bloodborne_server_world.cpp): opens, announces or
 // joins the team's session (`ready`: the controller's go, where it would ring the bell).
 // False when not in team mode (the bell and signs then).
