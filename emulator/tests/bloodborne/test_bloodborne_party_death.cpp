@@ -473,7 +473,7 @@ TEST(BloodbornePartyDeath, CountsRealHitsOnTheBodyAsReviveDamage) {
 }
 
 // A swing at a downed body whose hit never lands still counts, as a press did before real hits:
-// a kneeling body others see kneel took no hits at all (playtest 2026-10-13, Lisara had to give
+// a kneeling body others see kneel took no hits at all (playtest 2026-10-13, Ada had to give
 // up). A swing whose hit lands counts once, as that hit.
 TEST(BloodbornePartyDeath, ASwingWhoseHitNeverLandsCountsAsAPress) {
     RevivePressFallback fallback;

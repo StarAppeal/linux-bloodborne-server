@@ -141,7 +141,7 @@ Windows only for now. Prerequisites:
   [bbport/packaging/windows/README.md](bbport/packaging/windows/README.md), and a python.org
   Python 3.10+ (it freezes the launcher);
 - the server and emulator: VS 2022 Build Tools (C++ workload, Windows SDK), LLVM **20.1.8**
-  (clang-cl; 23 breaks googletest), CMake, Ninja, Qt 6.8.3 `msvc2022_64` in `C:\Qt` (via `aqt`);
+  (clang-cl; 23 breaks the unit-test build), CMake, Ninja, Qt 6.8.3 `msvc2022_64` in `C:\Qt` (via `aqt`);
 - checks: Python 3.12 with `clang-format==19.1.7` and `reuse`; [jj](https://jj-vcs.github.io/jj/)
   for the local CI script.
 

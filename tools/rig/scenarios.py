@@ -1263,7 +1263,7 @@ SCENARIOS = {
     },
     "down-kneel": {
         "about": "party death: the guest goes down and kneels while nobody strikes it for 12 s "
-                 "(playtest 2026-10-13: the others saw Lisara kneel and no strike landed, so he had "
+                 "(playtest 2026-10-13: the others saw Ada kneel and no strike landed, so she had "
                  "to give up); then the host strikes it and it gets up",
         "settings": PARTY_DEATH,
         "roles": {

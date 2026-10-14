@@ -45,7 +45,7 @@ class AnswersTests(unittest.TestCase):
         self.assertFalse(coop.valid_ip('127.0.0.1'), 'the guests cannot reach loopback')
         self.assertFalse(coop.valid_ip('300.1.1.1'))
         self.assertFalse(coop.valid_ip('host'))
-        self.assertTrue(coop.valid_name('Lisara'))
+        self.assertTrue(coop.valid_name('Ada'))
         self.assertFalse(coop.valid_name('ab'))
         self.assertFalse(coop.valid_name('with space'))
         self.assertTrue(coop.valid_secret('pass_1'))
@@ -57,7 +57,7 @@ class AnswersTests(unittest.TestCase):
     def test_missing_answers_are_named(self):
         # One party password, no party name (Kaniel 2026-10-13: just the password field).
         self.assertNotIn('party_name', coop.DEFAULTS)
-        settings = dict(coop.DEFAULTS, game='', role='guest', host_ip='', account='Lisara', password='', party_secret='s')
+        settings = dict(coop.DEFAULTS, game='', role='guest', host_ip='', account='Ada', password='', party_secret='s')
         self.assertEqual(coop.missing(settings), ['game', 'host_ip', 'password'])
         self.assertEqual(coop.missing(dict(settings, party_secret='')), ['game', 'host_ip', 'password', 'party_secret'])
         settings.update(game='G', host_ip='26.1.2.3', password='x')
@@ -82,9 +82,9 @@ class AnswersTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             install = Path(folder)
             self.assertEqual(coop.load_settings(install), coop.DEFAULTS)
-            coop.save_settings(install, dict(coop.DEFAULTS, account='Lisara'))
-            self.assertEqual(json.loads((install / 'user' / 'coop.json').read_text('utf-8'))['account'], 'Lisara')
-            self.assertEqual(coop.load_settings(install)['account'], 'Lisara')
+            coop.save_settings(install, dict(coop.DEFAULTS, account='Ada'))
+            self.assertEqual(json.loads((install / 'user' / 'coop.json').read_text('utf-8'))['account'], 'Ada')
+            self.assertEqual(coop.load_settings(install)['account'], 'Ada')
 
 
 class FindGameTests(unittest.TestCase):
@@ -153,7 +153,7 @@ class EventFilesTests(unittest.TestCase):
 class PlayTests(unittest.TestCase):
     def test_the_game_starts_as_2_play_started_it(self):
         install = Path('C:/Co-op')
-        settings = dict(coop.DEFAULTS, role='guest', host_ip='26.1.2.3', account='Lisara', password='pw',
+        settings = dict(coop.DEFAULTS, role='guest', host_ip='26.1.2.3', account='Ada', password='pw',
                         party_secret='s', harder='3,1.5,3')
         env = coop.game_environment({'BB_FPS': 'uncap', 'BB_FPS_LIMIT': '240', 'KEEP': '1'}, settings, install,
                                     Path('C:/Co-op/coop-game'))
@@ -165,7 +165,7 @@ class PlayTests(unittest.TestCase):
         self.assertEqual(env['BB_USER_DIR'], str(install / 'user'))
         self.assertEqual(env['BB_SHADNET_SERVER'], '26.1.2.3:31313')
         self.assertEqual(env['BB_SHADNET_WEBAPI'], 'http://26.1.2.3:31315')
-        self.assertEqual((env['BB_SHADNET_NPID'], env['BB_SHADNET_PASSWORD']), ('Lisara', 'pw'))
+        self.assertEqual((env['BB_SHADNET_NPID'], env['BB_SHADNET_PASSWORD']), ('Ada', 'pw'))
         self.assertEqual(env['SHADPS4_BLOODBORNE_SEAMLESS_COOP'], '1')
         self.assertEqual(env['SHADPS4_BLOODBORNE_PARTY'], 'party:s')
         self.assertEqual(env['SHADPS4_BLOODBORNE_PARTY_ROLE'], 'guest')
@@ -180,9 +180,9 @@ class PlayTests(unittest.TestCase):
                          {'https://ss4.scej-network.jp:20443': 'http://26.1.2.3:20443'})
 
     def test_the_account_registers_itself_on_the_hosts_server(self):
-        command = coop.register_command(Path('C:/Co-op'), '26.1.2.3', 'Lisara', 'pw')
+        command = coop.register_command(Path('C:/Co-op'), '26.1.2.3', 'Ada', 'pw')
         self.assertEqual(command, [str(Path('C:/Co-op/server/clientsample/shadnet-sample.exe')), '26.1.2.3', '31313',
-                                   'register', 'Lisara', 'pw', 'Lisara.pw@p2p.db'])
+                                   'register', 'Ada', 'pw', 'Ada.pw@p2p.db'])
         self.assertTrue(coop.registered('[connect] OK\n[create] Account created successfully.\n', 0))
         self.assertTrue(coop.registered('[create] FAILED: CreationExistingUsername\n', 0), 'made before')
         self.assertFalse(coop.registered('[connect] FAILED: refused\n', 1))

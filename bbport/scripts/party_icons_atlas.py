@@ -3,7 +3,7 @@
 """Draws the party death icons (gpu/art/party_icons.svg) into the atlas the overlay embeds (gpu/art/party_icons.bin)
 and the strip the party HUD's list shows (scripts/party_hud_icons.bin, hud_patch.py puts it in the game's HUD):
 'BBIC', width, height and icon count (little-endian u16 each), then the RGBA pixels, zlib-compressed. A developer
-tool, run after editing the drawing: it needs a Chromium browser (Edge or Chrome) to draw the SVG and Pillow."""
+tool, run after editing the drawing: it needs a Chromium-based browser (Edge by default) to draw the SVG and Pillow."""
 import argparse
 import io
 from pathlib import Path
@@ -22,8 +22,8 @@ ICON, COUNT = 128, 7
 # ring filled red to 0%, 10%, ... 100%; last the portraits' frame (h-frame, hud_patch.FRAME_PIXELS).
 DOWNED_STEPS = 11
 HUD_COUNT = 4 + DOWNED_STEPS + 1
-BROWSERS = (r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
-            r'C:\Program Files\Google\Chrome\Application\chrome.exe', 'chromium', 'google-chrome')
+BROWSERS = (r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe', 'msedge', 'chromium',
+            'chromium-browser')
 
 
 def encode(width, height, rgba, count=COUNT):
@@ -77,7 +77,7 @@ def draw(browser, svg_text, png, count):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--browser', help='a Chromium browser (default: Edge, then Chrome)')
+    parser.add_argument('--browser', help='a Chromium-based browser (default: Edge, then Chromium)')
     args = parser.parse_args()
     browser = args.browser or next((b for b in BROWSERS if Path(b).is_file() or shutil.which(b)), None)
     if not browser:

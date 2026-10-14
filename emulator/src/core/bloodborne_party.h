@@ -3296,7 +3296,7 @@ struct DownedMember {
     u32 down = 0;
 };
 // Swings at a downed body whose hit never lands, counted as the attack presses were before real
-// hits: a body that others saw kneel took no hits at all (playtest 2026-10-13, Lisara had to give
+// hits: a body that others saw kneel took no hits at all (playtest 2026-10-13, Ada had to give
 // up), so a swing near a downed member (ReviveTarget) waits WaitMs for its hit, and counts its
 // press damage when none landed on that member's body (a charged R2 lands within it).
 class RevivePressFallback {
