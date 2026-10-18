@@ -23,6 +23,7 @@
 #include "bbport_game_art.h"
 #include "bbport_coop_art.h"
 #include "bbport_map_charts.h"
+#include "bbport_pad_rebind.h"
 #include "bbport_party_icons.h"
 #include "bbport_party_layout.h"
 #include "bbport_save_editor.h"
@@ -1744,7 +1745,24 @@ void ControlsTab() {
     // A press that came for the input waiting for one, or the wait running out.
     if (capture.input >= 0 && capture.done) {
         const char* name = runtime_pad_input_name(capture.input);
-        if (name) {
+        if (name && capture.kind == "pad") {
+            // The input that had the button takes this input's old ones (bbport_pad_rebind.h).
+            std::vector<BbPadRebind::Input> inputs;
+            std::size_t target = 0;
+            for (int i = 0; i < runtime_pad_input_count(); ++i) {
+                if (!runtime_pad_input_takes_pad(i)) {
+                    continue;
+                }
+                char pads[160];
+                runtime_pad_binding_text(i, 1, pads, sizeof(pads));
+                target = i == capture.input ? inputs.size() : target;
+                inputs.push_back({runtime_pad_input_name(i), pads});
+            }
+            for (const auto& [input, buttons] : BbPadRebind::Assign(inputs, target, capture.name)) {
+                BbSettings::SetLine("pad." + input, buttons);
+            }
+            SaveControls();
+        } else if (name) {
             BbSettings::SetLine(capture.kind + "." + name, capture.name);
             SaveControls();
         }

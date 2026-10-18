@@ -322,3 +322,28 @@ class CoopSettingsTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+@unittest.skipUnless(sys.platform == 'win32', 'the Windows launcher')
+class WheelTests(unittest.TestCase):
+    """Kaniel 2026-10-18: Cross did nothing and R2 drank a vial. The wheel over the Controls page's gamepad
+    dropdowns had picked another button for each one the pointer passed (pad.cross=b, pad.circle=x,
+    pad.triangle=righttrigger): Tk's dropdown takes the wheel, and the page stopped scrolling over it."""
+    setUp = LookTests.setUp
+    settle = LookTests.settle
+
+    def test_the_wheel_over_a_gamepad_dropdown_scrolls_the_page_not_the_button(self):
+        self.app.show('controls', animate=False)
+        self.settle(0.2)
+        page = self.app.pages['controls']
+        scrolled = []
+        with mock.patch.object(page, 'scroll', side_effect=scrolled.append):
+            for name in ('cross', 'circle', 'triangle'):
+                box = self.app.control_rows[name]['pad']
+                before = box.current()
+                for delta in (-120, -120, 120):
+                    box.event_generate('<MouseWheel>', delta=delta)
+                self.settle(0.1)
+                self.assertEqual(box.current(), before, name)
+                self.assertNotIn(f'pad.{name}', self.app.ini, name)
+        self.assertEqual(scrolled, [1, 1, -1] * 3, 'the page scrolls instead')

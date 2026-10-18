@@ -472,6 +472,8 @@ static void load_bindings(void) {
         if (input<0 || (pad && input>=IN_MOVE_UP)) { printf("Runtime: controls: unknown input %s\n",line); continue; }
         Binding *b=&bindings[input];
         if (keyboard) b->key_count=0; else b->pad_count=0;
+        /* The log tells a remapped gamepad from a broken one (Kaniel 2026-10-18). */
+        if (pad) printf("Runtime: controls: gamepad %s=%.*s\n",line+4,(int)strcspn(eq+1,"\r\n"),eq+1);
         for (char *name=strtok(eq+1,",\r\n"); name; name=strtok(NULL,",\r\n")) {
             while (*name==' ') ++name;
             for (char *end=name+strlen(name); end>name && end[-1]==' ';) *--end=0;

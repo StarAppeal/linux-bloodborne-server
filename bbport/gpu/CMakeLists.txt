@@ -520,6 +520,12 @@ add_executable(trade-rows-test EXCLUDE_FROM_ALL ../tests/test_trade_rows.cpp shi
 target_compile_options(trade-rows-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
 target_include_directories(trade-rows-test PRIVATE .. shim)
 
+# bbport: a gamepad button pressed in the Controls tab swaps with the input that had it
+# (shim/bbport_pad_rebind.h).
+add_executable(pad-rebind-test EXCLUDE_FROM_ALL ../tests/test_pad_rebind.cpp shim/bbport_pad_rebind.cpp)
+target_compile_options(pad-rebind-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
+target_include_directories(pad-rebind-test PRIVATE .. shim)
+
 add_executable(spec-drop-test EXCLUDE_FROM_ALL ../tests/test_spec_drop.cpp)
 target_compile_options(spec-drop-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
 target_include_directories(spec-drop-test PRIVATE shim)

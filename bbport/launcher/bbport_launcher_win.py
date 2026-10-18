@@ -3096,6 +3096,10 @@ class Launcher:
         self.build_log()
         if COOP_INSTALL:
             self.build_coop_popup()
+        # A closed dropdown leaves the wheel to the page: Tk's own binding picked another value for each
+        # dropdown the pointer passed while scrolling (Kaniel 2026-10-18: the Controls page's gamepad
+        # buttons moved, Cross did nothing and R2 drank a vial). An open one's list still scrolls.
+        self.root.unbind_class('TCombobox', '<MouseWheel>')
         self.root.bind_all('<MouseWheel>', self.wheel)
         self.root.bind_all('<Motion>', self.pointer_moved, add='+')
         self.refresh_game_line()
@@ -3182,7 +3186,7 @@ class Launcher:
 
     def wheel(self, event):
         page = self.pages.get(self.current_page)
-        if hasattr(page, 'scroll') and not isinstance(event.widget, (self.tk.Text, self.ttk.Combobox)) \
+        if hasattr(page, 'scroll') and not isinstance(event.widget, self.tk.Text) \
                 and 'popdown' not in str(event.widget):
             page.scroll(int(-event.delta / 120))
 
