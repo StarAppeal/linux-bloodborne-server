@@ -806,6 +806,15 @@ def migrate_display_settings(ini, lines, app):
         ini['hdr'] = '1' if app.get('hdr') else '0'
 
 
+def launcher_ini(app):
+    """(ini, saved) as the launcher opens: bbport.ini with the old display switches moved in, and what
+    the file held for the keys the launcher writes (collect writes only what differs from it)."""
+    ini, lines = load_ini()
+    saved = ini_values(ini)
+    migrate_display_settings(ini, lines, app)
+    return ini, saved
+
+
 def save_ini(values, lines):
     """Rewrites the edited keys in place, appends missing ones, keeps comments and other keys. A key
     whose value is None is removed (a control back to its default)."""
@@ -823,6 +832,17 @@ def save_ini(values, lines):
         out.append('# bbport settings (in-game menu: Insert / L3+R3)')
     out += [f'{key}={value}' for key, value in values.items() if key not in written and value is not None]
     ini_path().write_text('\n'.join(out) + '\n', encoding='utf-8')
+
+
+def save_ini_changes(saved, values):
+    """Writes onto bbport.ini as it is now the keys whose value differs from `saved` (what the launcher
+    read or last wrote) and the launcher's own keys the file has none of. A remap or setting changed
+    since then in the game's menu, another launcher or by hand is kept (Kaniel 2026-10-18: remaps must
+    never be overwritten)."""
+    lines = load_ini()[1]
+    present = {line.split('=', 1)[0].strip() for line in lines if '=' in line and not line.lstrip().startswith('#')}
+    save_ini({key: value for key, value in values.items()
+              if value != saved.get(key) or (key in INI_DEFAULTS and key not in present)}, lines)
 
 
 def ini_values(ini):
@@ -2592,8 +2612,7 @@ class Launcher:
         self.tk, self.ttk, self.filedialog, self.messagebox, self.tkfont = tk, ttk, filedialog, messagebox, tkfont
         self.root = root
         self.app = {**APP_DEFAULTS, **load_json(CONFIG_FILE, {})}
-        self.ini, self.ini_lines = load_ini()
-        migrate_display_settings(self.ini, self.ini_lines, self.app)
+        self.ini, self.ini_saved = launcher_ini(self.app)
         self.vars = {}
         # The ReShade preset lives in bin/reshade/ReShade.ini (the game's menu changes it too), not in settings.json.
         self.reshade_preset = tk.StringVar(value=get_reshade_preset() if reshade_ready() else '')
@@ -4904,8 +4923,9 @@ class Launcher:
                 self.app[key] = value
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         CONFIG_FILE.write_text(json.dumps(self.app, indent=2, ensure_ascii=False), encoding='utf-8')
-        save_ini(ini_values(self.ini), self.ini_lines)
-        self.ini, self.ini_lines = load_ini()
+        values = ini_values(self.ini)
+        save_ini_changes(self.ini_saved, values)
+        self.ini_saved = values
         preset = self.reshade_preset.get()
         if reshade_ready() and preset and preset != self.reshade_started:  # not undoing a change made in the game
             set_reshade_preset(preset)

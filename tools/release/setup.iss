@@ -142,7 +142,9 @@ Name: "norwegiannynorsk"; MessagesFile: "languages\NorwegianNynorsk.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; The player's own files are never installed over (check_release.py keeps them out of a release as well):
+; an update leaves the settings, key and pad remaps (bbport.ini), mods and patch choices as they are.
+Source: "{#SourceDir}\*"; DestDir: "{app}"; Excludes: "bbport.ini,mods.json,patches.json"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\BLauncher.exe"; WorkingDir: "{app}"
