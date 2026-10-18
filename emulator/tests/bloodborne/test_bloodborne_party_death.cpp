@@ -1306,3 +1306,42 @@ TEST(PartyDeath, ADownAloneInItsSessionIsOutOfIt) {
     EXPECT_FALSE(DownHasThePartyAround(true, 1));
     EXPECT_FALSE(DownHasThePartyAround(false, 3));
 }
+
+// Kaniel's playtest 2026-10-18: enemies kept the HP they had when the party wiped. The last member
+// to die took the party's wipe for its own: by its respawn (after the death's animation) the member
+// that died first already stood again at the lamp. Who stood is read when the death comes, and the
+// respawn takes that call once.
+TEST(PartyDeath, AWipeIsThePartysByWhoStoodWhenTheDeathCame) {
+    DeathResetCall call;
+    EXPECT_EQ(call.TakeAtRespawn(), DeathReset::None);
+    call.Died(true, false);
+    EXPECT_EQ(call.TakeAtRespawn(), DeathReset::PartyWipe)
+        << "the others got up before this respawn; nobody stood when it died";
+    EXPECT_EQ(call.TakeAtRespawn(), DeathReset::None) << "taken once";
+    // Kaniel 2026-10-16: down alone in the Dream while another stood in Central Yharnam.
+    call.Died(true, true);
+    EXPECT_EQ(call.TakeAtRespawn(), DeathReset::OwnMap);
+    call.Died(false, false);
+    EXPECT_EQ(call.TakeAtRespawn(), DeathReset::None);
+    // Up again after the death: its respawn came and went.
+    call.Died(true, false);
+    call.Cancel();
+    EXPECT_EQ(call.TakeAtRespawn(), DeathReset::None);
+}
+
+// Kaniel's playtest 2026-10-18 (a follower took the owner's HP from the log after a wipe: the same
+// damaged values as before it). Until the wipe's trip has loaded the map again, the game's enemy
+// copies are the ones from before the wipe: the owner reports none of their HP and a follower takes
+// none. The trip (party_trips_started) ends the hold; a wipe with no trip after it holds a while.
+TEST(PartyDeath, AWipeHoldsEnemyHpUntilItsTripLoadedTheMap) {
+    WipeHpHold hold;
+    EXPECT_FALSE(hold.Holds(7, 1'000));
+    hold.Wiped(7, 1'000);
+    EXPECT_TRUE(hold.Holds(7, 1'000));
+    EXPECT_TRUE(hold.Holds(7, 1'000 + WipeHpHoldMs - 1)) << "still the map from before the wipe";
+    EXPECT_FALSE(hold.Holds(8, 1'200)) << "the wipe's trip loaded the map again";
+    EXPECT_FALSE(hold.Holds(7, 1'000 + WipeHpHoldMs)) << "no trip came";
+    hold.Wiped(9, 50'000);
+    EXPECT_TRUE(hold.Holds(9, 50'000));
+    EXPECT_FALSE(hold.Holds(10, 50'001));
+}

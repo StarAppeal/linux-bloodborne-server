@@ -3353,6 +3353,52 @@ constexpr bool DownHasThePartyAround(bool in_session, size_t session_members) {
 // Whether a real death in a party session resets its map (see ChooseDeathRespawn): a wipe, or a
 // death with nobody else standing on the map (a wipe of one), as a solo death would.
 bool DeathResetsMap(bool wiped, bool someone_else_stands);
+// What a death's respawn resets: nothing, this member's own map (another member stood anywhere:
+// the party's kills stay, Kaniel 2026-10-16), or the party's whole world (a wipe).
+enum class DeathReset : u8 { None, OwnMap, PartyWipe };
+// Kaniel's playtest 2026-10-18 (enemies kept the HP they had when the party wiped): who stands is
+// read when the death comes, not at its respawn. By then (after the death's animation) a member
+// that died first already stood again at the lamp, and the last one to die took the party's wipe
+// for its own. Written by the party death tick, taken by the respawn hook.
+class DeathResetCall {
+public:
+    // A death came: `reset`, its respawn resets the map (DeathResetsMap); `others_stand`, another
+    // member stands anywhere now (SomeoneElseStandsAnywhere).
+    void Died(bool reset, bool others_stand) {
+        call.store(!reset         ? DeathReset::None
+                   : others_stand ? DeathReset::OwnMap
+                                  : DeathReset::PartyWipe);
+    }
+    // Up again: that death's respawn came and went.
+    void Cancel() {
+        call.store(DeathReset::None);
+    }
+    // At the death's respawn (once).
+    DeathReset TakeAtRespawn() {
+        return call.exchange(DeathReset::None);
+    }
+
+private:
+    std::atomic<DeathReset> call{DeathReset::None};
+};
+// Kaniel's playtest 2026-10-18 (a follower took the owner's HP from the log after a wipe: the same
+// damaged values as before it). Until the wipe's trip has loaded the map again this game's enemy
+// copies are the ones from before the wipe: the area's owner reports none of their HP (the party's
+// new log would keep it) and a follower takes none. `trips` is party_trips_started: the wipe's trip
+// ends the hold; a wipe with no trip after it holds WipeHpHoldMs at most.
+constexpr s64 WipeHpHoldMs = 30'000;
+class WipeHpHold {
+public:
+    void Wiped(u64 trips, s64 now_ms) {
+        wiped = std::pair{trips, now_ms};
+    }
+    bool Holds(u64 trips, s64 now_ms) const {
+        return wiped && wiped->first == trips && now_ms - wiped->second < WipeHpHoldMs;
+    }
+
+private:
+    std::optional<std::pair<u64, s64>> wiped; // (trips, when)
+};
 
 // Enemies forget a downed player at once. Hide and Silence only stop them noticing it again; one
 // that already targets it keeps a node in its targeting system ([[[enemy +0x3B8] +0xB0] +0x560],

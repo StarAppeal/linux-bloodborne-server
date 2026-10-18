@@ -1614,6 +1614,15 @@ std::atomic<bool> party_hp_reset{};
 // while (PostsShownState) and the load starts that wait again.
 [[maybe_unused]] const bool shown_wipe_registered = RegisterLifecycleReset(
     "shown state", {Lifecycle::Wipe}, [] { world_changed_ms.store(SteadyMilliseconds()); });
+// Until the wipe's trip has loaded the map again, the owner's HP reports and a follower's copies
+// are from before the wipe (see WipeHpHold).
+std::mutex wipe_hp_hold_mutex;
+WipeHpHold wipe_hp_hold;
+[[maybe_unused]] const bool wipe_hp_hold_registered =
+    RegisterLifecycleReset("enemy hp until the wipe's trip", {Lifecycle::Wipe}, [] {
+        std::scoped_lock lock{wipe_hp_hold_mutex};
+        wipe_hp_hold.Wiped(party_trips_started.load(), SteadyMilliseconds());
+    });
 
 // The HP data (+0xF8) of each standing copy, by handle (for the writes).
 using EnemyHpData = std::unordered_map<u32, std::pair<u64, s32>>; // handle -> (data, hp)
@@ -1624,10 +1633,24 @@ void ShareEnemyHpByOwner(EnemyRole role, u32 map, u64 source, std::span<const En
     const s64 now_ms = SteadyMilliseconds();
     std::vector<EnemyHp> hurt;
     std::vector<EnemyWrite> writes;
+    bool wipe_held = false;
+    {
+        std::scoped_lock lock{wipe_hp_hold_mutex};
+        wipe_held = wipe_hp_hold.Holds(party_trips_started.load(), now_ms);
+    }
+    static bool logged_held = false;
+    if (wipe_held != logged_held) {
+        logged_held = wipe_held;
+        LOG_INFO(Debug, "Bloodborne party: enemy HP {} on map {:#x} (t={:.1f})",
+                 wipe_held ? "held until the wipe's trip loads the map again (no reports, no "
+                             "copies lowered)"
+                           : "no longer held for a wipe",
+                 map, now_ms / 1000.0);
+    }
     // The owner's copy is the enemy: its HP goes as read, at once (rig hit3 2026-10-14: two reads
     // agreeing made the others' bars 0.4 s late).
     for (const EnemyCopy& copy : standing) {
-        if (role == EnemyRole::Owner && copy.hp < copy.max) {
+        if (role == EnemyRole::Owner && !wipe_held && copy.hp < copy.max) {
             hurt.push_back({copy.handle, copy.hp, copy.max});
         }
     }
@@ -1664,7 +1687,7 @@ void ShareEnemyHpByOwner(EnemyRole role, u32 map, u64 source, std::span<const En
     // copy of the map, and a follower's copy kept its own HP (rig hp-together 2026-10-14). Lower
     // only, so a follower's own hit, which also reaches the owner, counts once.
     const bool takeover = now_ms - became_owner_ms.load() < EnemyOwnerTakeoverMs;
-    if (role == EnemyRole::Follower || takeover) {
+    if (!wipe_held && (role == EnemyRole::Follower || takeover)) {
         const std::vector<EnemyCopy> taking{standing.begin(), standing.end()};
         std::vector<EnemyHpReport> copies;
         for (const MemberMapState& state : others) {

@@ -141,11 +141,23 @@ WIPE_SPOT = {"host": "-199.74 -50.56 182.42", "guest": "-196.74 -50.56 179.42",
 GUEST_FALL = [f"teleport {WIPE_SPOT['guest']}", "wait 2", *LETHAL_FALL]
 
 
-def wipe(roles, name: str = "wipe", guests_point: int | None = None) -> dict:
+# Every game of a party wipe runs the wipe: kills, enemy HP and the world log start over
+# (Kaniel's playtest 2026-10-18: the last member to die took the party's wipe for its own, the
+# first one already up again by its respawn, and the enemies kept their HP).
+WIPE_RAN = r"Co-op lifecycle: wipe, session epoch \d+ \(reset: .*enemy hp"
+WIPE_TAKEN_AS_OWN = r"this death is no party wipe"
+
+
+def wipe(roles, name: str = "wipe", guests_point: int | None = None,
+         hurt_first: bool = False) -> dict:
     """Party death's wipe, last in its suite (the map reloads): every guest goes down, then the
     host falls with nobody standing; all die, wake at their lamps with the map reset (Kaniel
     2026-10-11: after the wipe 16 enemies stayed hidden and the mob showed three HPs), each with
-    its own bloodstain and no enemy taking it."""
+    its own bloodstain and no enemy taking it.
+
+    `hurt_first`: the host hurts ENEMY first and every game sees it hurt; after the wipe it
+    is whole again in every game (Kaniel's playtest 2026-10-18: enemies kept the HP they had
+    when the party wiped)."""
     players = len(roles)
     # Each falls on its own spot a few metres from the lamp, so nobody lands on another member's
     # body (rig 2026-10-12: a body under the fall took its damage and guest2 never went down; the
@@ -154,6 +166,11 @@ def wipe(roles, name: str = "wipe", guests_point: int | None = None) -> dict:
               for role in roles}
     steps = {"host": ["godmode off", f"sync {name}-guests-down", *spread["host"], *LETHAL_FALL,
                       "wait-vital dead 30", "wait-vital up 150"]}
+    if hurt_first:
+        # Godmode until the guests are down: the hurt enemy comes for the host.
+        steps["host"] = [f"hit {ENEMY} 30", "wait 3", f"sync {name}-hurt", "wait 5",
+                         "census 40", f"expect-hp {ENEMY} < {ENEMY_MAX_HP}",
+                         f"sync {name}-guests-down", "godmode off", *steps["host"][2:]]
     for guest in roles[1:]:
         # `guests_point`: the guests rest elsewhere first (a return point that stood 10 s,
         # ReturnPointSettleMs), so the wipe shows where they wake: where the host does.
@@ -161,6 +178,9 @@ def wipe(roles, name: str = "wipe", guests_point: int | None = None) -> dict:
         steps[guest] = ["godmode off", *own_point, *spread[guest], *LETHAL_FALL,
                         "wait-vital down 30", f"sync {name}-guests-down", "wait-vital dead 90",
                         "wait-vital up 150"]
+        if hurt_first:
+            steps[guest] = [f"sync {name}-hurt", "wait 5", "census 40",
+                            f"expect-hp {ENEMY} < {ENEMY_MAX_HP}", *steps[guest]]
     for role in roles:
         steps[role] += [f"wait-members {players} 300", f"sync {name}-woken", "wait 15",
                         "census 60", f"expect-hp {ENEMY} == {ENEMY_MAX_HP}",
@@ -173,13 +193,13 @@ def wipe(roles, name: str = "wipe", guests_point: int | None = None) -> dict:
     return chapter(
         name, "a party wipe resets the map for everyone, the same in every game", steps,
         expect={"host": [r"party death: died for real on map 0x18010000 \(reset=true\)",
-                         r"travelling there \(reset=true\)", BLOODSTAIN_DROPPED],
+                         r"travelling there \(reset=true\)", BLOODSTAIN_DROPPED, WIPE_RAN],
                 **{guest: [r"party death: wipe \d+ ends down \d+; dies \(reset=true",
-                           r"travelling there \(reset=true\)", BLOODSTAIN_DROPPED,
+                           r"travelling there \(reset=true\)", BLOODSTAIN_DROPPED, WIPE_RAN,
                            *([rf"respawn at the host's point {CENTRAL_YHARNAM_LAMP} "
                               rf"\(own {guests_point}\)"] if guests_point else [])]
                    for guest in roles[1:]}},
-        forbid={role: SESSION_HOLDS + [BLOODSTAIN_STOLEN] for role in roles})
+        forbid={role: SESSION_HOLDS + [BLOODSTAIN_STOLEN, WIPE_TAKEN_AS_OWN] for role in roles})
 
 
 def hits_in_turn(roles, target: str, prefix: str, ready: str | None = None) -> dict[str, list]:
@@ -809,8 +829,9 @@ SUITES = {
                     expect={"guest": [r"party death: (?:the party session ending|wipe \d+) ends "
                                       r"down \d+; dies"]},
                     allow=CRASH_CLEANUP),
-            # Kaniel 2026-10-13: after a wipe everyone wakes where the host does.
-            wipe(PARTY2, guests_point=2412951),
+            # Kaniel 2026-10-13: after a wipe everyone wakes where the host does. Kaniel
+            # 2026-10-18: the enemy the host hurt before it is whole again.
+            wipe(PARTY2, guests_point=2412951, hurt_first=True),
             chapter("stain-after-wipe", "after the wipe the guest's game dies and comes back: "
                                         "in the host's world it sees its own bloodstain from "
                                         "the wipe, with its echoes",

@@ -273,11 +273,17 @@ std::atomic<bool> party_death_armed{};
 std::atomic<bool> party_death_down{};
 // Lethal hits the hook kept from killing the armed player: each change puts it down.
 std::atomic<u32> party_death_catches{};
-// The next death respawn resets the map (see DeathResetsMap).
-std::atomic<bool> party_death_reset{};
 // Kaniel 2026-10-16: another member stood (anywhere) at this member's last tick: its death's reset
 // is its own map's, not the party's wipe.
 std::atomic<bool> party_death_others_stand{};
+// What the next death respawn resets (see DeathResetsMap), called when the death came.
+DeathResetCall party_death_reset;
+// The death this tick: its respawn resets the map if `reset`, the party's wipe unless another
+// member stands now.
+bool DiesWithReset(bool reset) {
+    party_death_reset.Died(reset, party_death_others_stand.load());
+    return reset;
+}
 // This player's GlobalState +0x1528 from before a death (party death tick, while it is up), to
 // tell a special death by (see PartyRespawnPoint). Another character starts over.
 std::mutex own_point_mutex;
@@ -338,11 +344,13 @@ namespace Coop {
 // A guest in a party session wakes at the host's point instead, unless its death was special (see
 // PartyDeathPoint): the party wakes together.
 void MoveToRespawnPoint(bool arriving_from_trip) {
-    const bool reset = !arriving_from_trip && party_death_reset.exchange(false);
-    if (reset && party_death_others_stand.load()) {
-        LOG_INFO(Debug, "Bloodborne party death: another member stands: this death is no party "
-                        "wipe (the party's kills stay)");
-    } else if (reset) {
+    const DeathReset call =
+        arriving_from_trip ? DeathReset::None : party_death_reset.TakeAtRespawn();
+    const bool reset = call != DeathReset::None;
+    if (call == DeathReset::OwnMap) {
+        LOG_INFO(Debug, "Bloodborne party death: another member stood when this member died: this "
+                        "death is no party wipe (the party's kills stay)");
+    } else if (call == DeathReset::PartyWipe) {
         OnLifecycle(Lifecycle::Wipe); // kills and enemy HP, see their RegisterLifecycleReset
     }
     const u64 global = GetGlobalState();
@@ -1137,7 +1145,7 @@ void GetUp(PartyDeathRun& run, u64 data, s64 now_ms) {
 void DieFromDown(PartyDeathRun& run, u64 player, u64 data, bool reset, std::string_view why) {
     EndDown(run, data);
     run.downed.Died();
-    party_death_reset.store(reset);
+    DiesWithReset(reset);
     static constexpr std::array<u8, 6> KillPrologue{0x55, 0x48, 0x89, 0xE5, 0x41, 0x57};
     const bool killed =
         IsCharacter(player, "DieFromDown kill") &&
@@ -1212,9 +1220,9 @@ void TickStanding(PartyDeathRun& run, const DeathTick& tick) {
     if (!tick.alive) {
         // A real death: one of the game's kills, or a lethal hit with nobody else standing.
         run.downed.Died();
-        party_death_reset.store(tick.in_session && DeathResetsMap(false, tick.armed));
+        const bool reset = DiesWithReset(tick.in_session && DeathResetsMap(false, tick.armed));
         LOG_INFO(Debug, "Bloodborne party death: died for real on map {:#x} (reset={})", tick.map,
-                 party_death_reset.load());
+                 reset);
         return;
     }
     const u32 attacks = party_attack_presses.load();
@@ -1270,9 +1278,9 @@ void TickDown(PartyDeathRun& run, const DeathTick& tick) {
         // Killed anyway (a fall into the void, an event's kill).
         EndDown(run, tick.data);
         run.downed.Died();
-        party_death_reset.store(tick.in_session && DeathResetsMap(false, tick.armed));
+        const bool reset = DiesWithReset(tick.in_session && DeathResetsMap(false, tick.armed));
         LOG_INFO(Debug, "Bloodborne party death: killed while down {} (reset={})",
-                 run.downed.DownId(), party_death_reset.load());
+                 run.downed.DownId(), reset);
         return;
     }
     const auto wipe = tick.view.Fresh() ? WipeFor(tick.view.board, tick.view.member) : std::nullopt;
@@ -1447,7 +1455,7 @@ void TickPartyDeath() {
     case Vital::Dead:
         if (tick.alive) {
             run.downed.Alive(tick.now);
-            party_death_reset.store(false);
+            party_death_reset.Cancel();
             LOG_INFO(Debug, "Bloodborne party death: up again after a real death");
         }
         break;
