@@ -315,7 +315,7 @@ class GuestsOpenChaliceBossDoors(unittest.TestCase):
                (2003, 22, struct.pack('<iii', 12906660, 12906725, 0))]
 
     def test_a_guest_gets_the_door_effect(self):
-        patched, count = tool.patch_chalice_door_effect(build_emevd({0: self.OPENING}))
+        patched, count = tool.patch_host_door_effect(build_emevd({0: self.OPENING}))
         events = read_events(patched)[0]
         self.assertEqual(events[0][2][:2], bytes([1, tool.NEVER]))
         self.assertEqual(events[2][2][:2], bytes([1, 0]), "the host's own skip stays")
@@ -324,7 +324,44 @@ class GuestsOpenChaliceBossDoors(unittest.TestCase):
     def test_only_the_skip_before_the_effect(self):
         other = [(1003, 5, struct.pack('<BBxx', 1, 1)), (2004, 8, struct.pack('<iii', 10000, 1, 0))]
         original = build_emevd({0: other})
-        self.assertEqual(tool.patch_chalice_door_effect(original), (original, 0))
+        self.assertEqual(tool.patch_host_door_effect(original), (original, 0))
+
+
+class GuestsOpenTheResearchHallDoor(unittest.TestCase):
+    """Kaniel 2026-10-19: every door and gate should open for anyone in the party. The Research
+    Hall's door and device (ObjActParam 3500020, 3500110) are the only ones outside the chalice
+    dungeons that say "Only the beckoner can open this door". They ask for SpEffect 9920, which
+    m35's event 0 gives only when the player is alive in its own world (4:3 15 10000 0, then
+    1000:1 skips the 2004:8 for anyone else). The skip skips nothing now."""
+
+    OPENING = [(2000, 0, struct.pack('<iii', 0, 13501810, 0)),
+               (4, 3, struct.pack('<iiBxxx', 15, 10000, 0)),
+               (1000, 1, struct.pack('<BBbx', 1, 0, 15)),
+               (2004, 8, struct.pack('<iii', 10000, 9920, 0)),
+               (1003, 5, struct.pack('<BBxx', 2, 1))]
+
+    def test_a_guest_gets_the_door_effect(self):
+        edits = []
+        patched, count = tool.patch_host_door_effect(build_emevd({0: self.OPENING}), edits)
+        events = read_events(patched)[0]
+        self.assertEqual(events[2][2][:3], bytes([0, 0, 15]), 'the skip skips nothing')
+        self.assertEqual(events[1], self.OPENING[1], 'the alive check stays')
+        self.assertEqual(events[4][2][:2], bytes([2, 1]), 'the client skip after it stays')
+        self.assertEqual(count, 1)
+        self.assertEqual([(edit['instruction'], edit['bank'], edit['id']) for edit in edits],
+                         [(2, 1000, 1)])
+
+    def test_a_skip_on_another_group_stays(self):
+        other = list(self.OPENING)
+        other[2] = (1000, 1, struct.pack('<BBbx', 1, 0, 14))
+        original = build_emevd({0: other})
+        self.assertEqual(tool.patch_host_door_effect(original), (original, 0))
+
+    def test_another_effect_stays(self):
+        other = list(self.OPENING)
+        other[3] = (2004, 8, struct.pack('<iii', 10000, 4150, 0))
+        original = build_emevd({0: other})
+        self.assertEqual(tool.patch_host_door_effect(original), (original, 0))
 
 
 class GuestsSeeTheNightFall(unittest.TestCase):

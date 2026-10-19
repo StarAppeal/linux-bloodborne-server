@@ -23,7 +23,8 @@ game only (2000:2 0, below).
 A chalice dungeon's multiplayer fog walls (m29 event 12907600, the common wall event 7600 again,
 started per block) never show: their multiplayer checks never match (Kaniel 2026-10-19).
 Its boss doors open for guests too: the SpEffect they ask for (9920, event 0) is no longer skipped
-for a client.
+for a client. The Research Hall's door and device (m35) ask for the same effect, which its event 0
+skipped for anyone not alive in their own world: no longer skipped either.
 
 Boss fogs (open_boss_fog_for_guests): a white phantom's fog event waited for the host's
 "entered" flag, so a party guest could not enter a boss fog first (nor after a world reset). It
@@ -204,16 +205,21 @@ def patch_chalice_walls(emevd: bytes, edits: list | None = None,
     return bytes(data), patched
 
 
-# A chalice dungeon's boss door (ObjActParam 2901900-2901920: "Only the beckoner can open this
-# door") asks for SpEffect 9920, which m29's event 0 gives the player after skipping that line for
-# a client (1003:5 lines 1, state 1). That skip never matches: every party member gets the effect.
-CHALICE_DOOR_EFFECT = {'m29.emevd.dcx': 9920}
+# The only doors and devices in the game that say "Only the beckoner can open this door" (or
+# "operate this device"): a chalice dungeon's boss door (ObjActParam 2901900-2901920) and the
+# Research Hall's door and device (3500020, 3500110). Each asks for SpEffect 9920, which the map's
+# event 0 puts on the player (2004:8 10000 9920) after a skip: m29's skips that line for a client
+# (1003:5 lines 1, state 1), m35's unless the player is alive in its own world (1000:1 lines 1 on
+# a condition group holding 4:3 10000 0). The skip never matches (state NEVER) or skips nothing
+# (0 lines): every party member gets the effect.
+HOST_DOOR_EFFECT = {'m29.emevd.dcx': 9920, 'm35_00_00_00.emevd.dcx': 9920}
 SKIP_IF_MULTIPLAYER_STATE = (1003, 5)
+SKIP_IF_CONDITION_GROUP = (1000, 1)
 SET_SP_EFFECT = (2004, 8)
 
 
-def patch_chalice_door_effect(emevd: bytes, edits: list | None = None,
-                              effect: int = 9920) -> tuple[bytes, int]:
+def patch_host_door_effect(emevd: bytes, edits: list | None = None,
+                           effect: int = 9920) -> tuple[bytes, int]:
     data = bytearray(emevd)
     fields = struct.unpack_from('<16q', data, 16)
     event_count, event_offset, instruction_offset, args_offset = (fields[0], fields[1], fields[3],
@@ -226,18 +232,28 @@ def patch_chalice_door_effect(emevd: bytes, edits: list | None = None,
             continue
         records = [struct.unpack_from('<iiqqq', data, instruction_offset + first + k * 32)
                    for k in range(count)]
+        alive_groups = {data[args_offset + offset] for bank, ident, length, offset, _ in records
+                        if (bank, ident) == (4, 3) and length >= 9 and
+                        struct.unpack_from('<i', data, args_offset + offset + 4)[0] ==
+                        LOCAL_PLAYER and data[args_offset + offset + 8] == ALIVE}
         for k in range(count - 1):
             bank, ident, length, offset, _ = records[k]
             next_bank, next_ident, next_length, next_offset, _ = records[k + 1]
             at = args_offset + offset
-            if ((bank, ident) != SKIP_IF_MULTIPLAYER_STATE or length < 2 or data[at] != 1 or
-                    data[at + 1] != 1 or (next_bank, next_ident) != SET_SP_EFFECT or
-                    next_length < 8):
+            if (next_bank, next_ident) != SET_SP_EFFECT or next_length < 8 or length < 3:
                 continue
-            target, sp_effect = struct.unpack_from('<ii', data, args_offset + next_offset)
-            if target == 10000 and sp_effect == effect:
+            if struct.unpack_from('<ii', data, args_offset + next_offset) != (LOCAL_PLAYER,
+                                                                             effect):
+                continue
+            if ((bank, ident) == SKIP_IF_MULTIPLAYER_STATE and data[at] == 1 and
+                    data[at + 1] == 1):
                 data[at + 1] = NEVER
-                note(edits, event, k, bank, ident, 'chalice boss door effect for a client too')
+                note(edits, event, k, bank, ident, 'host door effect for a client too')
+                patched += 1
+            elif ((bank, ident) == SKIP_IF_CONDITION_GROUP and data[at] == 1 and
+                  data[at + 2] in alive_groups):
+                data[at] = 0
+                note(edits, event, k, bank, ident, 'host door effect for a phantom too')
                 patched += 1
     return bytes(data), patched
 
@@ -720,7 +736,7 @@ def patch_file(name: str, original: bytes) -> tuple[bytes | None, list, dict]:
     edits: list = []
     counts = {'boss event checks': 0, 'boss fog checks': 0, 'insight event checks': 0,
               'client event ends': 0, 'local events': 0, 'chalice wall checks': 0,
-              'item pickup checks': 0, 'chalice door effects': 0}
+              'item pickup checks': 0, 'host door effects': 0}
     try:
         if name.startswith('m'):
             emevd, counts['boss event checks'] = patch_events(emevd, edits)
@@ -735,9 +751,9 @@ def patch_file(name: str, original: bytes) -> tuple[bytes | None, list, dict]:
         if name in CHALICE_WALL_EVENTS:
             emevd, counts['chalice wall checks'] = patch_chalice_walls(
                 emevd, edits, CHALICE_WALL_EVENTS[name])
-        if name in CHALICE_DOOR_EFFECT:
-            emevd, counts['chalice door effects'] = patch_chalice_door_effect(
-                emevd, edits, CHALICE_DOOR_EFFECT[name])
+        if name in HOST_DOOR_EFFECT:
+            emevd, counts['host door effects'] = patch_host_door_effect(
+                emevd, edits, HOST_DOOR_EFFECT[name])
         # Last: validate names changed instructions by their number in the game's event, which
         # only inserts move.
         if name in LOCAL_EVENTS:
