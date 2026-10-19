@@ -29,6 +29,10 @@ no longer waits, and it sets the host's flag too, which starts the boss; the emu
 flag to the host (IsBossFogEntryFlag). Boss entrances triggered by walking into the arena accept
 a phantom too.
 
+Items picked up with the action button at a glowing spot (ACTION_PICKUP_EVENTS: the Abandoned
+Old Workshop's Small Hair Ornament, Third Umbilical Cord and Old Hunter Bone, and seven more) ended
+for a party guest and gave a client nothing; each player now picks up its own copy.
+
 Events are kept in step between the players of a session unless they start with 2000:2 (network
 sync) 0, as the first visit does. The Hunter's Dream messengers' gift events (m21_00
 12101020-12101028) get that instruction, so one player's gift pick no longer finishes the other's
@@ -222,6 +226,85 @@ def patch_client_events(emevd: bytes, wanted: set[int],
     return bytes(data), patched
 
 
+# Items picked up with the action button at a glowing spot (2006:4 its sparkle, 3:24 the button,
+# 2003:4 the item lot), per file: event -> (lot, the lot's pickup flag, ItemLotParam
+# getItemFlagId). Each ends for a client (1003:6 state 1) or unless the local player is alive
+# (4:3 player 10000 type 0, a white phantom is type 1), awards nothing to a client (2003:4) and
+# ends once its own event flag is on, a map flag a guest takes from the host's world. So a party
+# guest never saw them (Kaniel 2026-10-19: the Abandoned Old Workshop's Small Hair Ornament, Third
+# Umbilical Cord and Old Hunter Bone). Patched, the event runs for a guest (the client end never
+# matches, the alive check moves to a condition group nothing tests), awards the lot to a client
+# too (2003:36), ends once the player's own pickup flag is on instead of its event flag (the
+# pickups are each character's own list, IsMapPickupFlag; m32's 13200400 already ends so) and
+# runs in each player's own game (2000:2 0).
+ACTION_PICKUP_EVENTS = {
+    'm21_01_00_00.emevd.dcx': {12110300: (2110800, 52110800),   # Small Hair Ornament
+                               12110301: (2110810, 52110810),   # Third Umbilical Cord
+                               12110302: (2110000, 52110000)},  # Old Hunter Bone
+    'm23_00_00_00.emevd.dcx': {12300130: (2300170, 52300170)},
+    'm24_01_00_00.emevd.dcx': {12410510: (2410990, 52410990)},
+    'm25_00_00_00.emevd.dcx': {12500600: (2500910, 52500910), 12501803: (2502000, 52502000)},
+    # Its lot (2600570) is the parameter of its only start, slot 0.
+    'm26_00_00_00.emevd.dcx': {12600125: (0, 52600570)},
+    'm32_00_00_00.emevd.dcx': {13200400: (3200810, 53200810)},
+    'm35_00_00_00.emevd.dcx': {13501803: (3501800, 53501800)},
+}
+END_IF_FLAG = (1003, 2)
+THIS_EVENT = 1
+THIS_EVENT_SLOT = 2
+EXPLICIT_FLAG = 0
+AWARD_ITEM_LOT = (2003, 4)
+# Instructions a patch may swap for one with the same arguments (a started event's parameter may
+# still write them).
+SAME_ARGUMENTS = {((2003, 4), (2003, AWARD_ITEM_LOT_INCLUDING_CLIENTS))}
+
+
+def let_guests_pick_up_items(emevd: bytes, wanted: dict[int, tuple[int, int]],
+                             edits: list | None = None) -> tuple[bytes, int]:
+    data = bytearray(emevd)
+    fields = struct.unpack_from('<16q', data, 16)
+    event_count, event_offset, instruction_offset, args_offset = (fields[0], fields[1], fields[3],
+                                                                  fields[13])
+    patched = 0
+    for index in range(event_count):
+        event, count, first, _, _, _, _ = struct.unpack_from('<qqqqqii', data,
+                                                             event_offset + index * 48)
+        if event not in wanted:
+            continue
+        expected_lot, pickup = wanted[event]
+        for k in range(count):
+            record = instruction_offset + first + k * INSTRUCTION_SIZE
+            bank, ident, length, offset, _ = struct.unpack_from('<iiqqq', data, record)
+            at = args_offset + offset
+            if bank == 1003 and ident == 6 and length >= 2 and data[at + 1] == 1:
+                data[at + 1] = NEVER
+                note(edits, event, k, bank, ident, 'client end never matches')
+                patched += 1
+            if (bank == 4 and ident == 3 and length >= 9 and data[at] != UNUSED_GROUP and
+                    struct.unpack_from('<i', data, at + 4)[0] == LOCAL_PLAYER and
+                    data[at + 8] == ALIVE):
+                data[at] = UNUSED_GROUP
+                note(edits, event, k, bank, ident, 'alive check no longer waited on')
+                patched += 1
+            # 1003:2 (end type, state, flag type, flag): flag type 1 is this event's own flag, 2
+            # its slot's.
+            if ((bank, ident) == END_IF_FLAG and length >= 8 and data[at + 1] == 1 and
+                    data[at + 2] in (THIS_EVENT, THIS_EVENT_SLOT)):
+                data[at + 2] = EXPLICIT_FLAG
+                struct.pack_into('<i', data, at + 4, pickup)
+                note(edits, event, k, bank, ident, 'ends once the own pickup flag is on')
+                patched += 1
+            if (bank, ident) == AWARD_ITEM_LOT and length >= 4:
+                lot = struct.unpack_from('<i', data, at)[0]
+                if lot != expected_lot:
+                    raise EventPatchError(f'event {event} awards lot {lot}, not {expected_lot}')
+                struct.pack_into('<i', data, record + 4, AWARD_ITEM_LOT_INCLUDING_CLIENTS)
+                note(edits, event, k, bank, AWARD_ITEM_LOT_INCLUDING_CLIENTS,
+                     'item for clients too')
+                patched += 1
+    return bytes(data), patched
+
+
 # Events that get 2000:2 0 (no network sync) as their first instruction, per file.
 # m21_00 12107100 (a slot per ritual altar) warps into the chalice dungeon picked at that altar.
 # m21_00 12101000 (slots 0-9) unlocks the messengers' shop lines from the player's own items
@@ -230,6 +313,8 @@ LOCAL_EVENTS = {
     'm21_00_00_00.emevd.dcx': {12101000, 12101020, 12101021, 12101022, 12101024, 12101026,
                                12101028, 12107100},
 }
+for _name, _events in ACTION_PICKUP_EVENTS.items():
+    LOCAL_EVENTS[_name] = LOCAL_EVENTS.get(_name, set()) | set(_events)
 NETWORK_SYNC = (2000, 2)
 INSTRUCTION_SIZE = 32
 PARAMETER_SIZE = 32  # instruction index, target byte, source byte, length (q q q i i)
@@ -575,7 +660,10 @@ def validate(original: bytes, patched: bytes, intended_edits: list, name: str = 
                 # A started event copying its argument over the patched bytes would undo the
                 # patch, and over a rewritten instruction would corrupt it.
                 new_args, old_args = new_list[moved[k]][4], old_list[k][4]
-                rewritten = (new_list[moved[k]][:3] != old_list[k][:3] or
+                old, new = old_list[k], new_list[moved[k]]
+                same_arguments = (((old[0], old[1]), (new[0], new[1])) in SAME_ARGUMENTS and
+                                  new[2] == old[2])
+                rewritten = ((new[:3] != old[:3] and not same_arguments) or
                              any(new_args[at] != old_args[at]
                                  for at in range(target, target + length)))
                 if rewritten:
@@ -591,7 +679,8 @@ def patch_file(name: str, original: bytes) -> tuple[bytes | None, list, dict]:
     emevd = load_dcx(original)
     edits: list = []
     counts = {'boss event checks': 0, 'boss fog checks': 0, 'insight event checks': 0,
-              'client event ends': 0, 'local events': 0, 'chalice wall checks': 0}
+              'client event ends': 0, 'local events': 0, 'chalice wall checks': 0,
+              'item pickup checks': 0}
     try:
         if name.startswith('m'):
             emevd, counts['boss event checks'] = patch_events(emevd, edits)
@@ -600,6 +689,9 @@ def patch_file(name: str, original: bytes) -> tuple[bytes | None, list, dict]:
         if name in CLIENT_EVENTS:
             emevd, counts['client event ends'] = patch_client_events(emevd, CLIENT_EVENTS[name],
                                                                      edits)
+        if name in ACTION_PICKUP_EVENTS:
+            emevd, counts['item pickup checks'] = let_guests_pick_up_items(
+                emevd, ACTION_PICKUP_EVENTS[name], edits)
         if name in CHALICE_WALL_EVENTS:
             emevd, counts['chalice wall checks'] = patch_chalice_walls(
                 emevd, edits, CHALICE_WALL_EVENTS[name])

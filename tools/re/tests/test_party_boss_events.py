@@ -14,6 +14,7 @@ import party_boss_events as tool  # noqa: E402
 
 HOST_ENTERED = 12414700
 GUEST_ENTERED = 12414701
+DCX_HEADER = b'DCX\0' + bytes(0x48)  # a DCX header (save_dcx fills in the sizes)
 
 
 def flag_condition(group: int, flag: int) -> tuple[int, int, bytes]:
@@ -332,6 +333,72 @@ class GuestsSeeTheNightFall(unittest.TestCase):
         # Only the host's press starts it: a guest's own press must not (its alive check stays).
         self.assertEqual(events[7], before[7])
         self.assertEqual(events[:6] + events[7:], before[:6] + before[7:])
+
+
+class GuestsPickUpGlowingItems(unittest.TestCase):
+    """Kaniel 2026-10-19: in the Abandoned Old Workshop the guests never saw the Small Hair
+    Ornament, Third Umbilical Cord and Old Hunter Bone. Their events (m21_01 12110300-12110302:
+    the sparkle, the action button, the item lot) end for a client and once their own event flag
+    is on (the host's world), and award nothing to a client."""
+
+    WORKSHOP = 'm21_01_00_00.emevd.dcx'
+
+    def ornament_event(self) -> list[tuple[int, int, bytes]]:
+        return [(1003, 2, struct.pack('<BBBxi', 0, 1, 1, 0)),
+                (1003, 6, struct.pack('<BBxx', 0, 1)),
+                (2006, 4, struct.pack('<iii', 2111100, 200, 900201)),
+                (3, 24, struct.pack('<bxxxii', 0, 2110010, 2111100)),
+                (2003, 18, struct.pack('<iii', 10000, 101140, 0)),
+                (2003, 4, struct.pack('<i', 2110800)),
+                (2006, 5, struct.pack('<ii', 2111100, 1))]
+
+    def test_a_guest_gets_the_item_by_its_own_pickup(self):
+        original = build_emevd({12110300: self.ornament_event()})
+        patched, count = tool.let_guests_pick_up_items(
+            original, tool.ACTION_PICKUP_EVENTS[self.WORKSHOP])
+        events, before = read_events(patched)[12110300], read_events(original)[12110300]
+        self.assertEqual(events[0], (1003, 2, struct.pack('<BBBxi', 0, 1, 0, 52110800)))
+        self.assertEqual(events[1][2][:2], bytes([0, tool.NEVER]))
+        self.assertEqual(events[5], (2003, 36, struct.pack('<i', 2110800)))
+        self.assertEqual(events[2:5] + events[6:], before[2:5] + before[6:])
+        self.assertEqual(count, 3)
+
+    def test_a_phantoms_alive_check_no_longer_ends_it(self):
+        # m24_01 12410510: 4:3 (group 15, player 10000, alive), then 1000:2 ends unless group 15.
+        key = [(4, 3, struct.pack('<bxxxiBxxx', 15, 10000, 0)),
+               (1000, 2, struct.pack('<BBBx', 0, 0, 15)),
+               (1003, 2, struct.pack('<BBBxi', 0, 1, 1, 0)),
+               (3, 24, struct.pack('<bxxxii', 0, 2410060, 2411200)),
+               (2003, 4, struct.pack('<i', 2410990))]
+        patched, count = tool.let_guests_pick_up_items(
+            build_emevd({12410510: key}), tool.ACTION_PICKUP_EVENTS['m24_01_00_00.emevd.dcx'])
+        events = read_events(patched)[12410510]
+        self.assertEqual(events[0][2][0], tool.UNUSED_GROUP)
+        self.assertEqual(events[2][2], struct.pack('<BBBxi', 0, 1, 0, 52410990))
+        self.assertEqual(count, 3)
+
+    def test_another_lot_is_refused(self):
+        event = self.ornament_event()
+        event[5] = (2003, 4, struct.pack('<i', 2110810))
+        with self.assertRaises(tool.EventPatchError):
+            tool.let_guests_pick_up_items(build_emevd({12110300: event}),
+                                          tool.ACTION_PICKUP_EVENTS[self.WORKSHOP])
+
+    def test_each_player_picks_up_its_own(self):
+        self.assertTrue({12110300, 12110301, 12110302} <= tool.LOCAL_EVENTS[self.WORKSHOP])
+
+    def test_a_started_events_lot_still_reaches_the_award(self):
+        # m26 12600125 is started with its lot as a parameter (into 2003:4's bytes 0-3).
+        event = self.ornament_event()
+        event[0] = (1003, 2, struct.pack('<BBBxi', 0, 1, 2, 0))
+        event[5] = (2003, 4, struct.pack('<i', 0))
+        original = tool.save_dcx(DCX_HEADER, build_emevd({12600125: event},
+                                                         {12600125: [(5, 0, 4, 4)]}))
+        output, edits, counts = tool.patch_file('m26_00_00_00.emevd.dcx', original)
+        self.assertEqual(counts['item pickup checks'], 3)
+        events = read_events(tool.load_dcx(output))[12600125]
+        self.assertEqual(events[6][:2], (2003, 36))
+        self.assertEqual(parameters_of(tool.load_dcx(output), 12600125), [(6, 0, 4, 4)])
 
 
 class LocalEventsKeepTheirParameters(unittest.TestCase):
