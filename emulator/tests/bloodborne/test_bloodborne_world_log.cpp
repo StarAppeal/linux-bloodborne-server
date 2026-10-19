@@ -319,6 +319,23 @@ TEST(WorldLogWipe, AMemberProposesAgainOnlyAfterItsOwnWipe) {
     EXPECT_FALSE(elsewhere.HoldsProposals(100'000 + WorldLogWipeGraceMs));
 }
 
+// Kaniel's play test 2026-10-19: the session's host ran the Blood-starved Beast when the party
+// wiped. It heard the server's new log before its own wipe ran and sent the boss's HP from before
+// the wipe into it (5589 of 10410); after the wipe's trip every game took it. On the server's
+// world its HP waits for its own wipe as a guest's does.
+TEST(WorldLogWipe, HpReportsWaitForTheMembersOwnWipe) {
+    WorldLogWipeHold hold;
+    EXPECT_FALSE(HoldsHpReports(hold, true, false, 0));
+    hold.HostWiped(1'000);
+    EXPECT_TRUE(HoldsHpReports(hold, true, false, 1'100)) << "the host on the server's world";
+    EXPECT_TRUE(HoldsHpReports(hold, true, true, 1'100)) << "a guest on the server's world";
+    EXPECT_TRUE(HoldsHpReports(hold, false, true, 1'100)) << "a guest on the host's log";
+    EXPECT_FALSE(HoldsHpReports(hold, false, false, 1'100))
+        << "the host of its own log: the log is its own";
+    hold.OwnWipe(1'300);
+    EXPECT_FALSE(HoldsHpReports(hold, true, false, 1'300)) << "its own wipe ran: it reports again";
+}
+
 // Rig smoke 2026-10-12, run 191219, in order: the host killed 0x1001400b; the party wiped; the
 // host's new log stood it again from the kept sets (seq 2) and took it back (seq 3); after the
 // wipe's trip a member's proposal stood it a third time (seq 4) and every game showed it dead.

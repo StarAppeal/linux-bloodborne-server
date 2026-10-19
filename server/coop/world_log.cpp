@@ -1039,6 +1039,10 @@ bool WorldLogWipeHold::BoardStale(s64 now_ms) const {
     return recent(own_wipe_ms) || recent(host_wiped_ms);
 }
 
+bool HoldsHpReports(const WorldLogWipeHold& hold, bool server_world, bool guest, s64 now_ms) {
+    return (server_world || guest) && hold.HoldsProposals(now_ms);
+}
+
 WorldLogHost::Taken WorldLogHost::Propose(const WorldLogProposal& proposal) {
     Taken taken;
     const auto known = members.find(proposal.member);

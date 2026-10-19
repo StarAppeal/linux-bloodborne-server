@@ -712,6 +712,12 @@ private:
     std::optional<s64> host_wiped_ms;
     std::optional<s64> own_wipe_ms;
 };
+// Whether this member's enemy HP reports wait as its kill proposals do (WorldLogWipeHold): a
+// guest's to the host's log, and every member's to the server's world, the session's host too.
+// Kaniel's play test 2026-10-19: the host's game ran the Blood-starved Beast when the party wiped;
+// it heard the server's new log before its own wipe ran and sent the boss's HP from before the
+// wipe into it, and after the wipe's trip every game took that HP: the boss came back hurt.
+bool HoldsHpReports(const WorldLogWipeHold& hold, bool server_world, bool guest, s64 now_ms);
 std::optional<std::pair<u64, bool>> DecodeWorldLogStart(std::span<const u8> payload);
 // A host's Show on a trace record: the map (u32) and the characters (EncodeShownCharacters).
 std::vector<u8> EncodeWorldLogShow(u32 map, std::span<const CharacterShown> characters);
