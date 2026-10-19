@@ -1409,7 +1409,7 @@ void SetPartyWorldChanges(bool sharing) {
             ++set;
         }
     }
-    LOG_INFO(Debug, "Bloodborne party: set {} of {} lamp flags from the party", set,
+    LOG_INFO(Debug, "Bloodborne party: set {} of {} shared flags from the party", set,
              pending.size());
     // An altar record comes in several frames: its altar loads again once it is all there.
     for (const auto& [flag, on] : pending) {

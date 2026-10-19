@@ -159,7 +159,9 @@ CLINIC = "0x10014000"  # 573 HP, by Iosefka's door 32 m from the first lamp, 10 
 # and Lisara's playtest 2026-10-15). The first lamp is 110 m away.
 GILBERT = "0x1001400c"
 GILBERT_SEEN = r"watched 0x1001400c drawn"
-OTHER_MAP_FLAG = 12700131
+OTHER_MAP_FLAG = 12700999  # no door's (DoorFlags are shared with the party)
+OLD_YHARNAM_GATE = 12800201  # the object act flag of Old Yharnam's gate (m28 event 12800480)
+OLD_YHARNAM_GATE_DONE = 12800480  # that gate's event done: a load sets the gate open
 THIS_MAP_FLAG = 12410999
 FORBIDDEN_WOODS_LAMP_LIT = 12707810  # a lamp neither rig character has lit (see LampOfActiveFlag)
 START = f"ensure-map {CENTRAL_YHARNAM} {CENTRAL_YHARNAM_LAMP}"
@@ -1042,6 +1044,20 @@ SCENARIOS = {
             # reads as part of that load and is not shared, so the lamp is lit after it.
             "guest": [START, "wait-session 2 300", "wait 30",
                       f"set-flag {FORBIDDEN_WOODS_LAMP_LIT} 1", "wait 30", "snapshot"],
+        },
+        "timeout": 300,
+    },
+    "door-share": {
+        "about": "a door the guest opens on another map (Old Yharnam's gate) is open in the "
+                 "host's world too",
+        "roles": {
+            "host": [START, f"expect-flag {OLD_YHARNAM_GATE} 0",
+                     f"expect-flag {OLD_YHARNAM_GATE_DONE} 0", "wait-session 2 300",
+                     f"wait-flag {OLD_YHARNAM_GATE} 1 90",
+                     f"wait-flag {OLD_YHARNAM_GATE_DONE} 1 30", "snapshot"],
+            # As in lamp-share: set after the guest's world loads again following the join.
+            "guest": [START, "wait-session 2 300", "wait 30", f"set-flag {OLD_YHARNAM_GATE} 1",
+                      f"set-flag {OLD_YHARNAM_GATE_DONE} 1", "wait 30", "snapshot"],
         },
         "timeout": 300,
     },

@@ -37,8 +37,9 @@ Every flag not in the table is **Host, carried home** (quest steps, NPCs, the Dr
 | 12101020-12101029 | Per player | carried home | the Dream messengers' gifts: what one player got is not given to the other |
 | 21 boss fog "host entered" flags (12414700 Gascoigne, ...) | Shared | | a guest's fog event sets it to start the boss; holds for one map visit |
 | the flag after each of those | Session | | "a phantom entered" (local music) |
+| the maps' door flags (`DoorFlags`, 390: each object act's flag, its event's "done" flag, the flags it sets on; listed by `tools/re/door_flags.py`) | Shared | carried home, host's map value | the game only syncs an object act (a door, gate, lever, kicked ladder) to players on the same map: a door a teammate opened elsewhere stayed shut (Kaniel 2026-10-19) |
 | a lamp's active flag and the one after (10007810 + map x 10000 + lamp x 20, maps 210-399) | Shared | carried home, host's map value | the game does not sync a lamp lit by another player |
-| 12000000-13999999 (the rest) | Host | carried home, host's map value | the maps' flags: doors, shortcuts, bosses, enemies |
+| 12000000-13999999 (the rest) | Host | carried home, host's map value | the maps' flags: switches, bosses, enemies |
 | 50000000-52899999, 53000000-53999999 | Host | the guest's own pickup list | map item pickups (kept in their own file, not carried with the rest; never in a team's world: each character keeps its own, as it keeps the items) |
 | 52900000-52999999 | Host | carried home | chalice dungeon item flags: not pickups |
 | 72101000-72101099 | Per player | carried home | the pick in the Dream messengers' talk |
@@ -48,7 +49,7 @@ Every flag not in the table is **Host, carried home** (quest steps, NPCs, the Dr
 
 Rows are looked up in order, most specific first: a flag takes the first row that holds it. Two
 rows only overlap when the later one holds the earlier one whole (the maps' flags hold the boss
-fogs and the lamps' active flags); `RowsNestOrStayApart` checks that.
+fogs, the doors and the lamps' active flags); `RowsNestOrStayApart` checks that.
 
 ## Tests
 

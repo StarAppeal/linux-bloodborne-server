@@ -61,6 +61,9 @@ std::vector<s32> FlagSample() {
     for (const s32 flag : BossFogEntryFlags) {
         AddAround(sample, flag);
     }
+    for (const s32 flag : DoorFlags) {
+        AddAround(sample, flag);
+    }
     for (const EncounterInsight& boss : EncounterInsights()) {
         AddAround(sample, boss.kill_event);
         AddAround(sample, boss.once_flag);
@@ -230,6 +233,31 @@ TEST(BloodborneFlagRules, SessionFlagsAreNeitherKeptNorShared) {
             EXPECT_FALSE(row.rule.Has(FlagTakesHostMap)) << row.why;
         }
     }
+}
+
+// Kaniel 2026-10-19: a door one member opened stayed shut for a teammate on another map. The game
+// syncs an object act only to players on the same map, so a door's flags go to the whole party,
+// as a lamp's do: Old Yharnam's gates (m28 12800480: object act flags 12800201..., done flags
+// 12800480 + slot), Cathedral Ward's doors (12400130: 12400112, 12400130...) and its gate
+// (12400760 sets 12400160).
+TEST(BloodborneFlagRules, DoorsOneMemberOpenedOpenForTheParty) {
+    for (const s32 flag : {12800201, 12800202, 12800209, 12800480, 12800481, 12800484, 12400112,
+                           12400130, 12400190, 12400760, 12400160}) {
+        EXPECT_TRUE(SharedWithParty(flag)) << flag;
+        EXPECT_FALSE(SharesClearsWithParty(flag)) << flag;
+        EXPECT_TRUE(CarriesToGuestWorld(flag)) << flag;
+        EXPECT_TRUE(TakesHostMapFlag(flag)) << flag;
+    }
+    const auto shared = FlagsToShare(FlagChanges{{12800201, 12800200}, {12400112}});
+    EXPECT_EQ(shared, (std::vector<std::pair<s32, bool>>{{12800201, true}}));
+    for (const s32 flag : DoorFlags) {
+        EXPECT_TRUE(flag >= 12000000 && flag < 14000000) << flag;
+        EXPECT_FALSE(IsBossFogEntryFlag(flag)) << flag;
+        EXPECT_FALSE(LampOfActiveFlag(flag).has_value()) << flag;
+        EXPECT_EQ(RuleFor(flag).owner, FlagOwner::Shared) << flag;
+    }
+    EXPECT_TRUE(std::ranges::is_sorted(DoorFlags));
+    EXPECT_EQ(std::ranges::adjacent_find(DoorFlags), DoorFlags.end());
 }
 
 TEST(BloodborneFlagRules, BossFoundFlagsArePerPlayer) {
