@@ -1705,7 +1705,10 @@ struct SeenCharacter {
 // Whether a death on this member's copy is another member's kill: with the hit hooks in
 // (`hooks`), the last hit on it was another player's, or nobody's hit was seen and this member
 // is not the host (the world's kill is the host's to post). Without the hooks every death counts.
-bool KilledByAnother(bool hooks, std::optional<bool> last_hit_mine, bool hosting);
+// Nor when this game runs the map's enemies (`runs_enemies`, phase 4): shadNet takes new kills
+// there only from it, so every death on its copies is its to post (play test 2026-10-19).
+bool KilledByAnother(bool hooks, std::optional<bool> last_hit_mine, bool hosting,
+                     bool runs_enemies = false);
 
 // How long a character's death is only seen, not posted, after this member took it over or
 // handed it back (ClaimEnemiesWhenAlone): its own world's state settles on it then (a boss it

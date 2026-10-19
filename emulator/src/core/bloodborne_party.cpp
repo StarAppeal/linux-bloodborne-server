@@ -2357,8 +2357,9 @@ bool CopyJustMade(s64 now_ms, s64 seen_ms) {
     return now_ms - seen_ms < NewCopySettlesMs;
 }
 
-bool KilledByAnother(bool hooks, std::optional<bool> last_hit_mine, bool hosting) {
-    if (!hooks) {
+bool KilledByAnother(bool hooks, std::optional<bool> last_hit_mine, bool hosting,
+                     bool runs_enemies) {
+    if (!hooks || runs_enemies) {
         return false;
     }
     return last_hit_mine ? !*last_hit_mine : !hosting;

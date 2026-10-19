@@ -1734,6 +1734,14 @@ TEST(BloodborneSharedKills, ADeathByAnotherPlayersHitIsTheirKill) {
     EXPECT_FALSE(KilledByAnother(true, std::nullopt, true)) << "the world's kill: the host's";
     EXPECT_TRUE(KilledByAnother(true, std::nullopt, false));
     EXPECT_FALSE(KilledByAnother(false, false, false)) << "no hit hooks: as before";
+
+    // Kaniel's play test 2026-10-19: Lisara's last hit killed an enemy on the Ward, which
+    // Kaniel's game runs. shadNet takes new kills there only from Kaniel's game, which left it
+    // to Lisara's: the kill never reached the log, and krolebord, arriving, had it alive and got
+    // no drop. The game running the map's enemies posts every death on them.
+    EXPECT_FALSE(KilledByAnother(true, false, true, true)) << "the owner's copy: its kill";
+    EXPECT_FALSE(KilledByAnother(true, std::nullopt, false, true)) << "a guest that owns";
+    EXPECT_TRUE(KilledByAnother(true, false, true, false)) << "a follower: the hitter's";
 }
 
 // Kaniel 2026-10-11: the host and Ada went to the Dream and back while Brom stayed in

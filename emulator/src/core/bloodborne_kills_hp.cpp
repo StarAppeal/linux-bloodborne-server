@@ -2135,7 +2135,8 @@ SeenCharacter SeeCharacter(u64 character) {
             character,
             false,
             IsUntouchedBoss(character, hp),
-            KilledByAnother(hit_hooks_installed, last_hit_mine, !IsPartyGuestRole())};
+            KilledByAnother(hit_hooks_installed, last_hit_mine, !IsPartyGuestRole(),
+                            Coop::CurrentEnemyRole() == EnemyRole::Owner)};
 }
 
 // A death respawn reset the map: this member's kills are taken back (VisitKills::Forget).
