@@ -2109,4 +2109,125 @@ bool ReadPartyPanel(PartyPanel& panel) {
     return !panel.members.empty() || panel.vital == Vital::Down;
 }
 
+namespace Coop {
+
+// Kaniel's play test 2026-10-19: the Blood-starved Beast never went for Lisara. On change, each
+// other player here with the first AI rule that leaves it out of the enemies' targets
+// (TargetCandidateBlock), and the live characters each enemy within 30 m holds as targets.
+void LogEnemyTargets() {
+    static std::string last;
+    static std::chrono::steady_clock::time_point checked{};
+    const auto now = std::chrono::steady_clock::now();
+    if (now - checked < std::chrono::seconds{1}) {
+        return;
+    }
+    checked = now;
+    const u64 world = ReadValue<u64>(image_base + CandidateLocalStatePointerOffset, 0);
+    const auto me = LocalPlayerPosition();
+    if (world < 0x10000 || !me) {
+        return;
+    }
+    std::vector<u64> listed;
+    if (const u64 search = ReadValue<u64>(image_base + AiTargetListPointerOffset, 0);
+        search >= 0x10000 && HasMemoryAccess(search, 0x18, MemoryProt::CpuRead)) {
+        const u64 begin = ReadValue<u64>(search, 0x08);
+        const u64 end = ReadValue<u64>(search, 0x10);
+        const bool readable = begin >= 0x10000 && end > begin && end - begin <= 256 * 8 &&
+                              HasMemoryAccess(begin, end - begin, MemoryProt::CpuRead);
+        for (u64 at = begin; readable && at < end; at += 8) {
+            listed.push_back(ReadValue<u64>(at, 0));
+        }
+    }
+    std::string text;
+    // This player too: the one the enemies here do go for, to hold the others against.
+    std::vector<std::pair<u64, s32>> players;
+    if (const u64 local = GetLocalPlayer(); local >= 0x10000) {
+        players.emplace_back(local, ReadValue<s32>(local, 0x78));
+    }
+    for (const OtherPlayer& other : OtherPlayers()) {
+        players.emplace_back(other.character, other.type);
+    }
+    for (const auto& [character, type] : players) {
+        const u64 entry = ReadValue<u64>(character, 0x30);
+        const u64 control = ReadValue<u64>(character, 0x18);
+        const u64 info = control >= 0x10000 ? ReadValue<u64>(control, 0x30) : 0;
+        const TargetCandidate candidate{
+            .state = entry >= 0x10000 ? ReadValue<s32>(entry, 0x18) : -1,
+            .built = ReadValue<u8>(character, 0x4B5) != 0,
+            .listed = std::ranges::contains(listed, character),
+            .control = control >= 0x10000 ? ReadValue<u8>(control, 0x20) : u8{0xFF},
+            .wake = control >= 0x10000 ? ReadValue<s32>(control, 0x10) : -1,
+            .has_info = info >= 0x10000,
+            .info_d = info >= 0x10000 ? ReadValue<u8>(info, 0x0D) : u8{0},
+            .info_18 = info >= 0x10000 ? ReadValue<u8>(info, 0x18) : u8{0},
+        };
+        const std::string block = TargetCandidateBlock(candidate);
+        text += fmt::format(" [player {:#x} type {} team {} info18 {:#x}: {}]",
+                            ReadValue<u32>(character, 0x08), type,
+                            ReadValue<s32>(character, CharacterTeamOffset), candidate.info_18,
+                            block.empty() ? "a target" : block);
+    }
+    std::vector<std::pair<float, std::string>> enemies;
+    ForEachWorldCharacter(world, [&](u64 character) {
+        if (character == GetLocalPlayer() || CharacterHp(character) <= 0) {
+            return;
+        }
+        const u64 modules = ReadValue<u64>(character, 0x3B0);
+        const u64 physics = modules >= 0x10000 ? ReadValue<u64>(modules, 0x68) : 0;
+        const u64 manager = ReadValue<u64>(character, 0x3B8);
+        const u64 ai = manager >= 0x10000 && HasMemoryAccess(manager, 0xB8, MemoryProt::CpuRead)
+                           ? ReadValue<u64>(manager, 0xB0)
+                           : 0;
+        const u64 targeting = ai >= 0x10000 && HasMemoryAccess(ai, 0x568, MemoryProt::CpuRead)
+                                  ? ReadValue<u64>(ai, 0x560)
+                                  : 0;
+        if (physics < 0x10000 || targeting < 0x10000 ||
+            !HasMemoryAccess(targeting, 0x20, MemoryProt::CpuRead)) {
+            return;
+        }
+        const u64 vtable = ReadValue<u64>(targeting, 0);
+        if (vtable != image_base + EnemyTargetingVtableOffset &&
+            vtable != image_base + BaseTargetingVtableOffset) {
+            return;
+        }
+        const float dx = ReadValue<float>(physics, 0x1E0) - (*me)[0];
+        const float dy = ReadValue<float>(physics, 0x1E4) - (*me)[1];
+        const float dz = ReadValue<float>(physics, 0x1E8) - (*me)[2];
+        const float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+        if (distance >= 30.0f) {
+            return;
+        }
+        std::vector<u32> targets;
+        u64 node = ReadValue<u64>(targeting, 0x18);
+        for (int count = 0;
+             count < 64 && node >= 0x10000 && HasMemoryAccess(node, 0x54, MemoryProt::CpuRead);
+             ++count, node = ReadValue<u64>(node, 0x08)) {
+            if ((ReadValue<u8>(node, 0x02) & 0x7F) == 1 && ReadValue<s32>(node, 0x28) == 1) {
+                targets.push_back(ReadValue<u32>(node, 0x50));
+            }
+        }
+        if (targets.empty()) {
+            return;
+        }
+        std::ranges::sort(targets);
+        std::string list;
+        for (const u32 target : targets) {
+            list += fmt::format(" {:#x}", target);
+        }
+        enemies.emplace_back(
+            distance, fmt::format(" [enemy {:#x}:{}]", ReadValue<u32>(character, 0x08), list));
+    });
+    std::ranges::sort(enemies);
+    for (size_t index = 0; index < std::min<size_t>(enemies.size(), 6); ++index) {
+        text += enemies[index].second;
+    }
+    if (text != last) {
+        last = text;
+        LOG_INFO(Debug, "Bloodborne enemy targets (map {:#x}, {} in the AI list):{}",
+                 CurrentPlace().map, listed.size(), text.empty() ? " none" : text);
+    }
+}
+
+} // namespace Coop
+
 } // namespace Core::Bloodborne

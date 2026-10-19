@@ -1293,6 +1293,40 @@ TEST(BloodbornePartyDeath, EnemiesForgetADownedPlayersTargetNode) {
     EXPECT_FALSE(ForgetsTargetNode(0x81, 1, 0x10068000, {}));
 }
 
+// Kaniel's play test 2026-10-19: the Blood-starved Beast never went for Lisara. Each other player
+// here is checked against the rules the enemies' AI uses to take a character as a target
+// (0x012A43B0's candidate list, 0x012ADC50's filter), and the first one it fails is named.
+TEST(BloodbornePartyDeath, NamesTheAiRuleThatLeavesAPlayerOut) {
+    const TargetCandidate ready{.state = 6,
+                                .built = true,
+                                .listed = true,
+                                .control = 0,
+                                .wake = 4,
+                                .has_info = true,
+                                .info_d = 0,
+                                .info_18 = 0};
+    EXPECT_EQ(TargetCandidateBlock(ready), "");
+    auto with = [&](auto change) {
+        TargetCandidate candidate = ready;
+        change(candidate);
+        return TargetCandidateBlock(candidate);
+    };
+    EXPECT_EQ(with([](auto& c) { c.state = 3; }), "state 3 (not 6)");
+    EXPECT_EQ(with([](auto& c) { c.built = false; }), "not built");
+    EXPECT_EQ(with([](auto& c) { c.listed = false; }), "not in the AI list");
+    EXPECT_EQ(with([](auto& c) { c.control = 1; }), "disabled");
+    EXPECT_EQ(with([](auto& c) { c.control = 4; }), "control 0x4");
+    EXPECT_EQ(with([](auto& c) { c.control = 2; }), "control 0x2 without info bit 0");
+    EXPECT_EQ(with([](auto& c) {
+                  c.control = 2;
+                  c.info_18 = 1;
+              }),
+              "");
+    EXPECT_EQ(with([](auto& c) { c.wake = 0; }), "wake 0 (not 4)");
+    EXPECT_EQ(with([](auto& c) { c.info_d = 0x10; }), "info 0xd bit 0x10");
+    EXPECT_EQ(with([](auto& c) { c.has_info = false; }), "") << "no info: those rules pass";
+}
+
 // The others down on this map, where the board has them (the game finds their characters there).
 TEST(BloodbornePartyDeath, FindsTheOthersDownOnThisMap) {
     const std::vector<MemberVitals> board{

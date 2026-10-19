@@ -81,6 +81,8 @@ constexpr std::array<u8, 16> StandardRbxPrologue{0x55, 0x48, 0x89, 0xE5, 0x53};
 constexpr std::array<u8, 16> ReturnAndPadding{0xC3, 0x66, 0x66, 0x66, 0x66, 0x66,
                                               0x66, 0x2E, 0x0F, 0x1F, 0x84};
 constexpr u64 CandidateLocalStatePointerOffset = 0x0553E878;
+// The enemies' AI target list (see TargetCandidate): characters from +0x08 to +0x10.
+constexpr u64 AiTargetListPointerOffset = 0x0553B098;
 
 // GameDataMan: +0x28 "has a bloodstain", +0x30 the bloodstain record UpDateBloodMark writes.
 constexpr u64 GameDataManPointerOffset = 0x0553B130;

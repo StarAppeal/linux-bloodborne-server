@@ -478,6 +478,8 @@ void PS4_SYSV_ABI TakeHandOut(u64, const GuestRegisterSnapshot* registers);
 // How many party ticks (frames) have run: the owner's packets a frame.
 u64 EnemyFrameSerial();
 void LogNearbyEnemyControl();
+// Which other players the enemies' AI can take as targets, and whom the enemies near hold.
+void LogEnemyTargets();
 void LogJoinTasksOnChange();
 void ReconcileMemberPresence();
 

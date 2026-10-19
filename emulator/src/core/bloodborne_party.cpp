@@ -5898,6 +5898,34 @@ bool ForgetsTargetNode(u8 slot, s32 kind, u32 handle, std::span<const u32> downe
     return (slot & 0x7F) == 1 && kind == 1 && std::ranges::find(downed, handle) != downed.end();
 }
 
+std::string TargetCandidateBlock(const TargetCandidate& candidate) {
+    if (candidate.state != 6) {
+        return fmt::format("state {} (not 6)", candidate.state);
+    }
+    if (!candidate.built) {
+        return "not built";
+    }
+    if (!candidate.listed) {
+        return "not in the AI list";
+    }
+    if ((candidate.control & 1) != 0) {
+        return "disabled";
+    }
+    if ((candidate.control & 4) != 0) {
+        return "control 0x4";
+    }
+    if ((candidate.control & 2) != 0 && !(candidate.has_info && (candidate.info_18 & 1) != 0)) {
+        return "control 0x2 without info bit 0";
+    }
+    if (candidate.wake != 4) {
+        return fmt::format("wake {} (not 4)", candidate.wake);
+    }
+    if (candidate.has_info && (candidate.info_d & 0x10) != 0) {
+        return "info 0xd bit 0x10";
+    }
+    return "";
+}
+
 std::vector<LampPosition> OthersDownOnMap(std::span<const MemberVitals> board,
                                           std::string_view self, u32 map) {
     std::vector<LampPosition> downed;

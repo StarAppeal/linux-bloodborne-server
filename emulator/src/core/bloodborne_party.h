@@ -3510,6 +3510,26 @@ private:
 // game's own update drops it the next frame (0x012A6AD0). Enemies after anyone else are left be.
 bool ForgetsTargetNode(u8 slot, s32 kind, u32 handle, std::span<const u32> downed);
 constexpr float ForgottenTargetTimer = 1.0e-4f;
+// Kaniel's play test 2026-10-19: the Blood-starved Beast never went for Lisara. What the enemies'
+// AI reads to take a character as a target: every ~5 s 0x012A43B0 lists WorldChrMan's players
+// (and the current block's characters) whose vtable +0x78 says so (players 0x018F4D70:
+// [+0x30] +0x18 is 6 and +0x4B5, the model, is built) in [0x0553B098] +0x08; a search
+// (0x012ADC50) then skips one whose control ([+0x18]) is disabled (+0x20 bit 0, or bit 2), has
+// +0x20 bit 1 without its info's ([control +0x30]) +0x18 bit 0, is not awake (+0x10 not 4), or
+// whose info +0x0D has bit 0x10. The search's mode (info +0x18 bit 0 set or clear) and the team
+// table (0x05127B90) are the searcher's side and are left out.
+struct TargetCandidate {
+    s32 state = 0;      // [character +0x30] +0x18
+    bool built = false; // character +0x4B5
+    bool listed = false;
+    u8 control = 0; // control +0x20
+    s32 wake = 0;   // control +0x10
+    bool has_info = false;
+    u8 info_d = 0;  // info +0x0D
+    u8 info_18 = 0; // info +0x18
+};
+// The first rule that leaves `candidate` out of the enemies' targets, "" when none does.
+std::string TargetCandidateBlock(const TargetCandidate& candidate);
 // Where the board has the other members down on `map` (their characters in this world are found
 // there: the enemies near a downed guest may be run by the host's game).
 std::vector<LampPosition> OthersDownOnMap(std::span<const MemberVitals> board,

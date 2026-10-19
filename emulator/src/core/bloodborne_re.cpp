@@ -903,6 +903,7 @@ void TickPartyController() {
         LogActionBlockingState();
         KeepBossHpInStep();
         LogNearbyEnemyControl();
+        LogEnemyTargets();
         LogJoinTasksOnChange();
         ReconcileMemberPresence();
     }
