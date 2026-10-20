@@ -93,10 +93,10 @@ def block(rig: pathlib.Path, lane: int, pids: list[int]):
 
 
 def max_lanes() -> int:
-    """How many lanes may play at once (Kaniel 2026-10-20, his PC froze: two rig runs at most).
-    BB_RIG_MAX_LANES changes it."""
+    """How many lanes may play at once: four (Kaniel 2026-10-20 22:40Z, after the reboot; it was
+    two while his PC froze). BB_RIG_MAX_LANES changes it."""
     value = os.environ.get("BB_RIG_MAX_LANES", "")
-    return int(value) if value.isdigit() and int(value) > 0 else 2
+    return int(value) if value.isdigit() and int(value) > 0 else 4
 
 
 def held_elsewhere(rig: pathlib.Path, lane: int, pid: int, alive=pid_alive) -> int:

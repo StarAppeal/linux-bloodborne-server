@@ -42,9 +42,15 @@ class LaneClaimTest(unittest.TestCase):
                          "every lane is taken")
         self.assertEqual(lanes.read_claim(self.rig, 2)["owner"], "phase8")
 
-    def test_two_lanes_at_most_play_at_once(self):
-        # Kaniel 2026-10-20 (his PC froze): no more than two rig runs at once.
+    def test_four_lanes_play_at_once_by_default(self):
+        # Kaniel 2026-10-20 22:40Z, after the reboot: "you can do more then 2 now".
         with unittest.mock.patch.dict(os.environ, {"BB_RIG_MAX_LANES": ""}):
+            self.assertEqual(lanes.max_lanes(), 4)
+            self.assertEqual(lanes.claim_free(self.rig, 4, "rig", 100, self.alive), [0, 1, 2, 3])
+
+    def test_the_cap_holds_when_set_lower(self):
+        # Kaniel 2026-10-20 (his PC froze): BB_RIG_MAX_LANES=2 keeps it to two runs.
+        with unittest.mock.patch.dict(os.environ, {"BB_RIG_MAX_LANES": "2"}):
             self.assertTrue(lanes.claim(self.rig, 1, "headstones", 100, self.alive))
             self.assertTrue(lanes.claim(self.rig, 2, "witch", 200, self.alive))
             self.assertFalse(lanes.claim(self.rig, 3, "mist", 300, self.alive), "a third waits")
@@ -66,7 +72,7 @@ class LaneClaimTest(unittest.TestCase):
             if len(naps) == 2:
                 lanes.release(self.rig, 1, 100)
 
-        with unittest.mock.patch.dict(os.environ, {"BB_RIG_MAX_LANES": ""}):
+        with unittest.mock.patch.dict(os.environ, {"BB_RIG_MAX_LANES": "2"}):
             self.assertTrue(lanes.claim_when_free(self.rig, 3, "mist", 300, self.alive,
                                                   sleep=nap, say=said.append))
         self.assertEqual(len(naps), 2)
@@ -89,7 +95,7 @@ class LaneClaimTest(unittest.TestCase):
             naps.append(seconds)
             lanes.release(self.rig, 2, 200)
 
-        with unittest.mock.patch.dict(os.environ, {"BB_RIG_MAX_LANES": ""}):
+        with unittest.mock.patch.dict(os.environ, {"BB_RIG_MAX_LANES": "2"}):
             self.assertEqual(lanes.claim_free_waiting(self.rig, 2, "mist", 300, self.alive,
                                                       sleep=nap, say=lambda text: None), [0])
         self.assertEqual(len(naps), 1)
