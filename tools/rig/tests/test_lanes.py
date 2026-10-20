@@ -42,10 +42,10 @@ class LaneClaimTest(unittest.TestCase):
                          "every lane is taken")
         self.assertEqual(lanes.read_claim(self.rig, 2)["owner"], "phase8")
 
-    def test_four_lanes_play_at_once_by_default(self):
-        # Kaniel 2026-10-20 22:40Z, after the reboot: "you can do more then 2 now".
+    def test_every_lane_plays_at_once_by_default(self):
+        # Kaniel 2026-10-20 22:45Z: "run as many as you want just keep track of memory".
         with unittest.mock.patch.dict(os.environ, {"BB_RIG_MAX_LANES": ""}):
-            self.assertEqual(lanes.max_lanes(), 4)
+            self.assertIsNone(lanes.max_lanes())
             self.assertEqual(lanes.claim_free(self.rig, 4, "rig", 100, self.alive), [0, 1, 2, 3])
 
     def test_the_cap_holds_when_set_lower(self):

@@ -55,9 +55,15 @@ class BuildLockTest(unittest.TestCase):
         self.assertTrue(build_lock.try_take("new", os.getpid(), self.lock))
         self.assertEqual(build_lock.holder(self.lock), ("new", os.getpid()))
 
-    def test_two_builds_run_at_once_by_default(self):
-        # Kaniel 2026-10-20 22:42Z: "we can try doing more builds at a time and during rig runs".
+    def test_any_number_of_builds_run_at_once_by_default(self):
+        # Kaniel 2026-10-20 22:45Z: "build as many as you want ... just keep track of memory".
         with unittest.mock.patch.dict(os.environ, {"BB_BUILD_SLOTS": ""}):
+            for pid in (os.getpid(), os.getppid(), self.sleeper()):
+                self.assertTrue(build_lock.try_take("build", pid, self.lock))
+            self.assertEqual(len(build_lock.holders(self.lock)), 3)
+
+    def test_builds_wait_past_a_set_cap(self):
+        with unittest.mock.patch.dict(os.environ, {"BB_BUILD_SLOTS": "2"}):
             build_lock.take("emu", os.getpid(), self.lock, games=lambda: [], sleep=self.fail)
             build_lock.take("port", os.getppid(), self.lock, games=lambda: [], sleep=self.fail)
             self.assertFalse(build_lock.try_take("server", self.sleeper(), self.lock),

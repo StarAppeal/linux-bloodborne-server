@@ -2,11 +2,12 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Builds on the PC take a build slot, and nothing starts while memory runs low.
 
-Kaniel 2026-10-20 22:20Z: one build at a time, never beside rig games (his PC froze). 22:42Z,
-after a reboot: the freeze was most likely leaked memory (crashed games leak commit), so up to
-two builds may run at once and beside games. Both limits stay one env var away:
+Kaniel 2026-10-20 22:20Z: one build at a time, never beside rig games (his PC froze). After a
+reboot he took the freeze for leaked memory (crashed games leak commit); 22:45Z: "build as many
+as you want and run as many as you want just keep track of memory". So by default nothing caps
+builds or games but the memory guard; the old limits stay one env var away:
 
-  BB_BUILD_SLOTS=N          builds at once (default 2; 1 = one at a time)
+  BB_BUILD_SLOTS=N          builds at once (default: no cap; 1 = one at a time)
   BB_BUILD_BESIDE_GAMES=0   a build waits for every game, and a game for every build (default 1)
   BB_MIN_FREE_RAM_GB=G      a build or rig game refuses to start below G GB free RAM (default 2)
   BB_MIN_FREE_COMMIT_GB=G   ... or below G GB of commit left (default 4)
@@ -37,9 +38,10 @@ HELD = "BB_BUILD_LOCK_HELD"
 POLL_SECONDS = 10
 
 
-def slots() -> int:
+def slots() -> int | None:
+    """Builds at once: no cap unless BB_BUILD_SLOTS=N (Kaniel 2026-10-20 22:45Z)."""
     value = os.environ.get("BB_BUILD_SLOTS", "")
-    return int(value) if value.isdigit() and int(value) > 0 else 2
+    return int(value) if value.isdigit() and int(value) > 0 else None
 
 
 def beside_games() -> bool:
@@ -135,7 +137,8 @@ def try_take(owner: str, pid: int, lock: pathlib.Path = LOCK) -> bool:
     """Takes a free or stale slot for `pid`; True when `pid` holds one."""
     if any(held[1] == pid for held in holders(lock)):
         return True
-    for slot in range(1, slots() + 1):
+    cap = slots()
+    for slot in range(1, (cap or len(holders(lock)) + 1) + 1):
         path = slot_path(lock, slot)
         if holder(path):
             continue
@@ -201,7 +204,8 @@ def main(argv: list[str]) -> int:
     if args.action == "status":
         held = holders()
         print(", ".join(f"held by {name} (pid {pid})" for name, pid in held) or "free",
-              f"({slots()} slot(s); beside games: {'yes' if beside_games() else 'no'})")
+              f"(builds at once: {slots() or 'no cap'}; "
+              f"beside games: {'yes' if beside_games() else 'no'})")
         print(memory_short() or "memory: fine")
         return 0
     command = args.command[1:] if args.command[:1] == ["--"] else args.command

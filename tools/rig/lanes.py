@@ -92,11 +92,12 @@ def block(rig: pathlib.Path, lane: int, pids: list[int]):
     (folder / BLOCKED_FILE).write_text(" ".join(map(str, pids)) + "\n", encoding="utf-8")
 
 
-def max_lanes() -> int:
-    """How many lanes may play at once: four (Kaniel 2026-10-20 22:40Z, after the reboot; it was
-    two while his PC froze). BB_RIG_MAX_LANES changes it."""
+def max_lanes() -> int | None:
+    """How many lanes may play at once: no cap (Kaniel 2026-10-20 22:45Z: "run as many as you
+    want just keep track of memory"; build_lock's memory guard does that). BB_RIG_MAX_LANES=N
+    caps it again (it was two while his PC froze)."""
     value = os.environ.get("BB_RIG_MAX_LANES", "")
-    return int(value) if value.isdigit() and int(value) > 0 else 4
+    return int(value) if value.isdigit() and int(value) > 0 else None
 
 
 def held_elsewhere(rig: pathlib.Path, lane: int, pid: int, alive=pid_alive) -> int:
@@ -119,7 +120,7 @@ def claim(rig: pathlib.Path, lane: int, owner: str, pid: int | None = None,
     pid = os.getpid() if pid is None else pid
     if blocked_by(rig, lane, alive):
         return False
-    if held_elsewhere(rig, lane, pid, alive) >= max_lanes():
+    if cap_reached(rig, lane, pid, alive):
         return False
     folder = lane_folder(rig, lane)
     folder.mkdir(parents=True, exist_ok=True)
@@ -146,7 +147,8 @@ WAIT_SECONDS = 15
 
 
 def cap_reached(rig: pathlib.Path, lane: int, pid: int, alive=pid_alive) -> bool:
-    return held_elsewhere(rig, lane, pid, alive) >= max_lanes()
+    cap = max_lanes()
+    return cap is not None and held_elsewhere(rig, lane, pid, alive) >= cap
 
 
 def playing(rig: pathlib.Path, alive=pid_alive) -> str:
