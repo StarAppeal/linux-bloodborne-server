@@ -1018,6 +1018,16 @@ std::optional<bool> HeldItemFlagFix(bool party_configured, bool flag_on, bool ho
     return holds;
 }
 
+std::optional<bool> HeadstoneLampsLit(s32 flag, const std::function<bool(s32)>& on) {
+    for (const HeadstoneLamps& headstone : DreamHeadstones) {
+        if (headstone.flag == flag) {
+            return std::ranges::any_of(headstone.lamps,
+                                       [&](s32 lamp) { return lamp != 0 && on(lamp); });
+        }
+    }
+    return std::nullopt;
+}
+
 std::vector<s32> GuestProgressFlags(bool guest, bool in_session, u32 map, bool dream_visited,
                                     bool workshop_opened) {
     constexpr u32 HuntersDream = 0x15000000;

@@ -808,6 +808,9 @@ bool RechecksShopLines(bool party_configured, int slot, bool done_for_slot, u32 
 // 2026-10-18: a save that took the host's "holds the Sword Hunter Badge" from a team world never
 // got its own badge from the Cleric Beast.
 std::optional<bool> HeldItemFlagFix(bool party_configured, bool flag_on, bool holds);
+// A Dream headstone's flag (DreamHeadstones) as this player's own lamps make it: on while one of
+// them is lit (`on` reads a flag); nullopt for any other flag.
+std::optional<bool> HeadstoneLampsLit(s32 flag, const std::function<bool(s32)>& on);
 // Whether a load of the guest's world gets the kept world changes before its map items and
 // events: at home, and on a party trip (its own world loads while the session stays up).
 bool SetsGuestWorldChangesOnLoad(bool in_session, bool on_trip);

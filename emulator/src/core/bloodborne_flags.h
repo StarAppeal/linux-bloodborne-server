@@ -176,6 +176,27 @@ inline constexpr std::array HeldItemFlags{
     HeldItemFlag{6649, 4117}, // Cainhurst Badge
 };
 
+// The Dream's headstones (m21_00 12105020-12105024, 01.09): each one's flag is on while any of
+// its lamps' active flags is (0 pads a list). Its talk (t210000-t210004) reads only that flag:
+// off, "no place to awaken". Each game works it out from its own lamps (HeadstoneLampsLit).
+struct HeadstoneLamps {
+    s32 flag;
+    std::array<s32, 12> lamps;
+};
+inline constexpr std::array DreamHeadstones{
+    HeadstoneLamps{12105030,
+                   {12417810, 12417830, 12417850, 12417870, 12407810, 12407830, 12427810, 12427830,
+                    12427850, 12307810, 12307830, 12307850}},
+    HeadstoneLamps{12105031, {12207810, 12207830, 12707810, 12707830, 13207810, 13207850}},
+    HeadstoneLamps{
+        12105032, {12807810, 12807830, 12807850, 12807870, 12507810, 12507830, 12507850, 12117810}},
+    HeadstoneLamps{
+        12105033, {13207830, 13207870, 13307810, 13307830, 12607810, 12607830, 12607850, 12607870}},
+    HeadstoneLamps{12105034,
+                   {13407810, 13407830, 13407850, 13407870, 13507810, 13507830, 13507850, 13607810,
+                    13607830, 13607850}},
+};
+
 namespace FlagTableDetail {
 
 constexpr FlagRange Range(s32 first, s32 last, FlagOwner owner, u32 behaviour,
@@ -216,13 +237,10 @@ inline constexpr std::array FirstRows{
     Range(12101020, 12101029, FlagOwner::PerPlayer, FlagCarriesHome,
           "the Dream messengers' gift events and flags: what one player received is not given "
           "to the other"),
-    Range(12100122, 12100122, FlagOwner::PerPlayer, 0,
-          "the Doll's talk line (12100121 sets it from the player's own goods 4300): each "
-          "game's own, the others' values flipped it about once a second"),
     Range(12105030, 12105034, FlagOwner::PerPlayer, 0,
-          "a Dream headstone's \"a lamp of mine is lit\" (12105020-12105024 set it from the "
-          "player's own lamps, the headstone talk reads it): the others' values flipped it and "
-          "the headstone said \"no place to awaken\" (Kaniel 2026-10-20)"),
+          "a Dream headstone's \"a lamp of mine is lit\" (DreamHeadstones; the headstone talk "
+          "reads it): from this player's own lamps, whatever the others send (theirs flipped it "
+          "and the headstone said \"no place to awaken\", Kaniel 2026-10-20)"),
 };
 
 // Rows after the boss fogs': the general ranges the earlier rows cut into.

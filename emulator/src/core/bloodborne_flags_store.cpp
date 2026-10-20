@@ -1126,6 +1126,18 @@ void PS4_SYSV_ABI KeepLocalFlagsFromOthers(u64, GuestRegisterSnapshot* registers
         LOG_INFO(Debug, "Bloodborne party: the other player sends flag {} = {}", flag,
                  registers->r15 & 0xFF);
     }
+    // A Dream headstone's flag: this game's own lamps decide, also for the message that carries
+    // this game's own event's set in a session (HeadstoneLampsLit).
+    if (const auto lit = party_controller ? HeadstoneLampsLit(flag, EventFlagOn) : std::nullopt) {
+        if (((registers->r15 & 0xFF) != 0) != *lit) {
+            LOG_INFO(Debug,
+                     "Bloodborne party: headstone flag {} {} by this player's lamps, "
+                     "against the other player's",
+                     flag, *lit ? "on" : "off");
+        }
+        registers->r15 = (registers->r15 & ~u64{0xFF}) | (*lit ? 1 : 0);
+        return;
+    }
     if (!KeepsLocalFlag(party_controller.has_value(), flag)) {
         return;
     }

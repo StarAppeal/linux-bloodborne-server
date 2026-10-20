@@ -1513,6 +1513,27 @@ void GiveBackPhantomKeyItems() {
     }
 }
 
+// See HeadstoneLampsLit: every second in a party, each Dream headstone's flag follows this
+// player's own lamps (in a session its own event's set reaches it only over a flag message).
+void KeepHeadstoneFlagsOwn() {
+    static s64 checked_ms = 0;
+    const s64 now_ms = SteadyMilliseconds();
+    if (!party_controller || now_ms - checked_ms < 1'000 || GetLocalPlayer() < 0x10000) {
+        return;
+    }
+    checked_ms = now_ms;
+    for (const HeadstoneLamps& headstone : DreamHeadstones) {
+        const bool lit = *HeadstoneLampsLit(headstone.flag, EventFlagOn);
+        if (EventFlagOn(headstone.flag) == lit) {
+            continue;
+        }
+        reinterpret_cast<bool PS4_SYSV_ABI (*)(u64, s32, bool)>(
+            image_base + PartyGhostSetEventFlagOffset)(0, headstone.flag, lit);
+        LOG_INFO(Debug, "Bloodborne party: headstone flag {} {}: this player's lamps",
+                 headstone.flag, lit ? "set" : "cleared");
+    }
+}
+
 void KeepHeldItemFlagsOwn() {
     static s64 checked_ms = 0;
     const s64 now_ms = SteadyMilliseconds();
@@ -1610,6 +1631,7 @@ void TickPlayersOnThisMap() {
     RecheckShopLinesOnce(IsUsablePackedMap(map) ? map : 0);
     GiveBackPhantomKeyItems();
     KeepHeldItemFlagsOwn();
+    KeepHeadstoneFlagsOwn();
     static RecreateAfterJoin recreate_after_join;
     if (recreate_after_join.Tick(IsPartyGuestRole(), in_session,
                                  in_session ? OtherSessionMembers().size() : 0,
