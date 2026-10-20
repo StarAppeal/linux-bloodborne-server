@@ -3349,6 +3349,10 @@ private:
 // and his AI went for nobody near. A boss-sized enemy is run by the member in its arena: the
 // nearest standing one within BossEnterMetres, kept while it stays within BossLeaveMetres (down
 // too); none: the game's own runner. Every game picks from the same vitals board, ties by name.
+// Kaniel 2026-10-20: a boss changing hands mid-fight (a runner kiting past BossLeaveMetres in a
+// big arena) restarts its AI on another game. The runner picked keeps it for the whole fight, at
+// any distance, until it leaves the map or is dead for good; BossLeaveMetres only says whether the
+// game's own runner is in the arena when the fight starts.
 constexpr float BossEnterMetres = 25.0f;
 constexpr float BossLeaveMetres = 45.0f;
 // Kaniel's playtest 2026-10-16 (later): krolebord joined in the middle of a boss fight and the
@@ -3374,6 +3378,7 @@ public:
 
 private:
     std::string current;
+    bool owner_holds = false; // the game's own runner (current "") took the fight
 };
 
 // Real revive hits. A character's team is ChrIns +0x88; the game's relation tables

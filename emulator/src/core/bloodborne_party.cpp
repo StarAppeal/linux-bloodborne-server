@@ -5564,22 +5564,28 @@ std::string BossRunnerPick::Tick(u32 map, const LampPosition& boss,
         }
         return std::sqrt(sum);
     };
-    const auto in_arena = [&](std::string_view name) {
+    // On the boss's map, standing or down (a fight it is still in), however far.
+    const auto holds = [&](std::string_view name) {
         const auto member = std::ranges::find(board, name, &MemberVitals::member);
         return member != board.end() && member->map == map &&
-               (member->vital == Vital::Up || member->vital == Vital::Down) &&
-               distance(*member) <= BossLeaveMetres;
+               (member->vital == Vital::Up || member->vital == Vital::Down);
     };
+    const auto in_arena = [&](std::string_view name) {
+        const auto member = std::ranges::find(board, name, &MemberVitals::member);
+        return holds(name) && distance(*member) <= BossLeaveMetres;
+    };
+    if (current.empty() && owner_holds) {
+        if (!owner.empty() && holds(owner)) {
+            return current; // the game's own runner keeps its fight
+        }
+        owner_holds = false;
+    }
     if (current.empty() && !owner.empty() && in_arena(owner)) {
+        owner_holds = true;
         return current; // the game's own runner fights it already
     }
-    if (!current.empty()) {
-        const auto kept = std::ranges::find(board, current, &MemberVitals::member);
-        if (kept != board.end() && kept->map == map &&
-            (kept->vital == Vital::Up || kept->vital == Vital::Down) &&
-            distance(*kept) <= BossLeaveMetres) {
-            return current;
-        }
+    if (!current.empty() && holds(current)) {
+        return current;
     }
     const MemberVitals* nearest = nullptr;
     for (const MemberVitals& member : board) {

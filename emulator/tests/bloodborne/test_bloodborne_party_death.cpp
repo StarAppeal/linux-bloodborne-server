@@ -832,7 +832,7 @@ TEST(BloodbornePartyDeath, ADownedBodyGetsNoEnemyBarDamage) {
 
 // Kaniel's playtest 2026-10-16: Lisara started Gascoigne alone; the host's game, far away, ran
 // him, so her copy only followed (lag) and his AI went for nobody. The member in the arena runs a
-// boss and keeps it while it stays near.
+// boss and keeps it for the whole fight.
 TEST(BloodbornePartyDeath, TheMemberInTheArenaRunsTheBoss) {
     constexpr u32 Yharnam = 0x18010000;
     const LampPosition boss{0.0f, 0.0f, 0.0f};
@@ -856,12 +856,18 @@ TEST(BloodbornePartyDeath, TheMemberInTheArenaRunsTheBoss) {
         pick.Tick(Yharnam, boss, std::vector{at("host", 5.0f), at("lisara", 10.0f, Vital::Down)}),
         "lisara")
         << "down in the arena: still hers";
-    EXPECT_EQ(pick.Tick(Yharnam, boss, std::vector{at("host", 5.0f), at("lisara", 60.0f)}), "host")
-        << "she left: the nearest one in it";
+    // Kaniel 2026-10-20: one owner for the whole fight, however far it runs in a big arena.
+    EXPECT_EQ(pick.Tick(Yharnam, boss, std::vector{at("host", 5.0f), at("lisara", 60.0f)}),
+              "lisara")
+        << "kiting far across the arena: still hers";
+    EXPECT_EQ(
+        pick.Tick(Yharnam, boss, std::vector{at("host", 5.0f), at("lisara", 60.0f, Vital::Dead)}),
+        "host")
+        << "dead for good: the nearest one in the arena";
     EXPECT_EQ(pick.Tick(Yharnam, boss,
                         std::vector{at("host", 5.0f, Vital::Up, 0x15000000), at("lisara", 60.0f)}),
               "")
-        << "nobody in the arena";
+        << "he left the map, nobody in the arena: as the game runs it";
     // krolebord joined in the middle of the host's fight: the boss stays with the host's game.
     BossRunnerPick fight;
     EXPECT_EQ(
@@ -869,8 +875,14 @@ TEST(BloodbornePartyDeath, TheMemberInTheArenaRunsTheBoss) {
         << "the game's own runner is in the arena";
     EXPECT_EQ(
         fight.Tick(Yharnam, boss, std::vector{at("host", 80.0f), at("krolebord", 3.0f)}, "host"),
+        "")
+        << "the host runs far across the arena: still its game's";
+    EXPECT_EQ(
+        fight.Tick(Yharnam, boss,
+                   std::vector{at("host", 5.0f, Vital::Up, 0x15000000), at("krolebord", 3.0f)},
+                   "host"),
         "krolebord")
-        << "the host left: the one in the arena";
+        << "the host left the map: the one in the arena";
     BossRunnerPick tie;
     EXPECT_EQ(tie.Tick(Yharnam, boss, std::vector{at("b", 10.0f), at("a", 10.0f)}), "a")
         << "a tie: by name, the same in every game";
