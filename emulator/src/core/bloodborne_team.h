@@ -207,6 +207,14 @@ WorldFlags WorldFlagsOf(const bbcoop::TeamWorld& world);
 // takes it, and its next load shows it. Never one back.
 inline constexpr std::array<s32, 3> TimeOfDayFlags{9800, 9801, 9802};
 std::vector<s32> TimeOfDayToFollow(const WorldFlags& team, const std::function<bool(s32)>& on);
+// The story the host moved on since `before` (quest steps, NPCs: Host flags outside the maps'
+// 12xxxxxx-13xxxxxx and the item flags) in the blocks both team worlds cover, as (flag, on): a
+// guest away from the host takes them as the host's reports bring them (Kaniel 2026-10-20: NPCs
+// showed up for guests on maps without the host), not only at its next trip. Only the host's
+// changes: what the guest's own game did to the others stays. Not the time of day
+// (TimeOfDayToFollow, never back). None when the blocks differ (loads take that world).
+std::vector<std::pair<s32, bool>> TeamStoryToFollow(const WorldFlags& before,
+                                                    const WorldFlags& after);
 
 // Phase 6: the team join without signs or a bell (docs/native-netcode/session.md, "Team join").
 // The team's host opens its game session itself (NetSync CreateSession) once it stands in its

@@ -21,6 +21,8 @@ so a new flag rule is a new table row, nothing else.
 - **Session**: only for this session or this map visit. Never carried home, never shared.
 
 Every flag not in the table is **Host, carried home** (quest steps, NPCs, the Dream).
+A guest in a team also follows the host's changes to these (outside the maps' 12xxxxxx-13xxxxxx
+and the item flags) as the host's world reports reach it, between loads (`TeamStoryToFollow`).
 
 ## The table
 

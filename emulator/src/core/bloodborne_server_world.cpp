@@ -107,6 +107,8 @@ bool team_host = false;
 bool personal_world_due = false;
 WorldFlags team_world_reported;
 s64 team_world_reported_ms = 0;
+// A guest: the team world its game last took or followed (TeamStoryToFollow's `before`).
+WorldFlags team_story_followed;
 constexpr s64 TeamWorldReportMs = 10'000;
 // A load held for the team's world after the Start gives up waiting after this long.
 constexpr s64 TeamWorldWaitMs = 10'000;
@@ -795,6 +797,7 @@ ServerWorldKills TickServerWorld(const WorldLogKills& mine, bool propose, s64 no
     }
     TickTeamWorld(now_ms);
     FollowTeamTimeOfDay(now_ms);
+    FollowTeamStory(now_ms);
     NoteCharacterName(now_ms);
     ServerWorldKills world;
     Taken taken = TakeInbox(now_ms);
@@ -1982,6 +1985,9 @@ void ApplyTeamWorldOnLoad(bool trip) {
     for (const FlagBlockBits& block : store->blocks) {
         team_world_blocks.insert(block.id);
     }
+    if (!team_host) {
+        team_story_followed = target;
+    }
     team_world_taken = true;
     LOG_INFO(Debug,
              "Co-op team world: the team's world is in this save{}: {} blocks, {} flags "
@@ -2058,6 +2064,51 @@ void FollowTeamTimeOfDay(s64 now_ms) {
         reinterpret_cast<SetFlag>(image_base + PartyGhostSetEventFlagOffset)(0, flag, true);
         LOG_INFO(Debug, "Co-op team world: the team's time of day is this guest's too (flag {})",
                  flag);
+    }
+}
+
+// Kaniel 2026-10-20: NPCs showed up for guests on maps without the host. The host's story steps
+// (TeamStoryToFollow) reached a guest only at its next trip's load; now as each report of the
+// host's world comes, read between loads only, every 2 s.
+void FollowTeamStory(s64 now_ms) {
+    static s64 checked_ms = 0;
+    if (!team_switch || !IsPartyGuestRole() || now_ms - checked_ms < 2'000) {
+        return;
+    }
+    checked_ms = now_ms;
+    std::vector<std::pair<s32, bool>> follow;
+    {
+        std::scoped_lock lock{team_mutex};
+        if (team_host || !team_world_taken || !team_world || !team_world->exists() ||
+            !InPartySession()) {
+            team_story_followed = {};
+            return;
+        }
+        const u64 global = GetGlobalState();
+        if (global < 0x10000 || TryRead<u8>(global, 0x08).value_or(1) != 0) {
+            return; // loading: the load takes it, or the next check
+        }
+        WorldFlags target = WorldFlagsOf(*team_world);
+        if (team_story_followed.blocks.empty()) {
+            team_story_followed = std::move(target);
+            return;
+        }
+        follow = TeamStoryToFollow(team_story_followed, target);
+        team_story_followed = std::move(target);
+    }
+    using SetFlag = void PS4_SYSV_ABI (*)(u64, s32, bool);
+    std::string which;
+    for (const auto& [flag, on] : follow) {
+        if (EventFlagOn(flag) == on) {
+            continue;
+        }
+        reinterpret_cast<SetFlag>(image_base + PartyGhostSetEventFlagOffset)(0, flag, on);
+        if (which.size() < 300) {
+            which += fmt::format(" {}{}", on ? "" : "-", flag);
+        }
+    }
+    if (!which.empty()) {
+        LOG_INFO(Debug, "Co-op team world: the host's story steps followed here (-off):{}", which);
     }
 }
 

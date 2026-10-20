@@ -461,6 +461,41 @@ std::vector<s32> TimeOfDayToFollow(const WorldFlags& team, const std::function<b
     return take;
 }
 
+namespace {
+
+bool IsTeamStoryFlag(s32 flag) {
+    constexpr s32 MapsFirst = 12000000;
+    constexpr s32 MapsLast = 13999999;
+    constexpr s32 ItemsFirst = 50000000;
+    constexpr s32 ItemsLast = 53999999;
+    // Only the table's "every other flag" (docs/FLAGS.md): a flag with a row of its own has its
+    // own way (9401 a guest sets itself, the per-player ones, the shared ones live already).
+    return RowFor(flag) == nullptr && !(flag >= MapsFirst && flag <= MapsLast) &&
+           !(flag >= ItemsFirst && flag <= ItemsLast) &&
+           std::ranges::find(TimeOfDayFlags, flag) == TimeOfDayFlags.end();
+}
+
+} // namespace
+
+std::vector<std::pair<s32, bool>> TeamStoryToFollow(const WorldFlags& before,
+                                                    const WorldFlags& after) {
+    if (before.blocks.empty() || before.blocks != after.blocks) {
+        return {}; // nothing taken yet, or another store's world: loads take it
+    }
+    std::vector<std::pair<s32, bool>> follow;
+    const auto add = [&](std::span<const s32> from, std::span<const s32> other, bool on) {
+        for (const s32 flag : from) {
+            if (IsTeamStoryFlag(flag) && !std::binary_search(other.begin(), other.end(), flag)) {
+                follow.emplace_back(flag, on);
+            }
+        }
+    };
+    add(after.on, before.on, true);
+    add(before.on, after.on, false);
+    std::ranges::sort(follow);
+    return follow;
+}
+
 TeamJoin::Action TeamJoin::Tick(const Frame& frame) {
     if (!frame.host) {
         if (frame.matching_state == MatchingStateSummonedGuest && frame.session_members <= 1) {

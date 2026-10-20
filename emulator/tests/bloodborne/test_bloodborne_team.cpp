@@ -300,6 +300,26 @@ TEST(TeamWorld, AGuestTakesTheTeamsTimeOfDay) {
     EXPECT_TRUE(TimeOfDayToFollow(WorldFlags{}, [](s32) { return false; }).empty());
 }
 
+// Kaniel 2026-10-20: NPCs showed up for guests on maps without the host. A guest away from the host
+// takes the story steps the host's reports change (quest and NPC flags), and only those: its own
+// game's changes, the maps' flags, items, the time of day and the flags with rules of their own
+// stay as they are.
+TEST(TeamWorld, AGuestFollowsTheStoryStepsTheHostChanged) {
+    WorldFlags before;
+    before.blocks = {1, 9, 1240};
+    before.on = {1100, 1205, 9401};
+    WorldFlags after = before;
+    after.on = {1100, 1300, 6630, 9401, 9403, 9801, 12404000, 50000100};
+    EXPECT_EQ(TeamStoryToFollow(before, after),
+              (std::vector<std::pair<s32, bool>>{{1205, false}, {1300, true}}));
+    EXPECT_TRUE(TeamStoryToFollow(before, before).empty());
+    // Nothing taken yet, or the blocks changed (another host's world): the loads take it.
+    EXPECT_TRUE(TeamStoryToFollow(WorldFlags{}, after).empty());
+    WorldFlags other = after;
+    other.blocks = {1, 9};
+    EXPECT_TRUE(TeamStoryToFollow(before, other).empty());
+}
+
 // Phase 6: the team join without signs or a bell. The host opens its session once it stands in
 // its world and says so once (the server keeps it for its guests); a guest joins the session the
 // server sent when it stands alone in its world.
