@@ -216,6 +216,13 @@ inline constexpr std::array FirstRows{
     Range(12101020, 12101029, FlagOwner::PerPlayer, FlagCarriesHome,
           "the Dream messengers' gift events and flags: what one player received is not given "
           "to the other"),
+    Range(12100122, 12100122, FlagOwner::PerPlayer, 0,
+          "the Doll's talk line (12100121 sets it from the player's own goods 4300): each "
+          "game's own, the others' values flipped it about once a second"),
+    Range(12105030, 12105034, FlagOwner::PerPlayer, 0,
+          "a Dream headstone's \"a lamp of mine is lit\" (12105020-12105024 set it from the "
+          "player's own lamps, the headstone talk reads it): the others' values flipped it and "
+          "the headstone said \"no place to awaken\" (Kaniel 2026-10-20)"),
 };
 
 // Rows after the boss fogs': the general ranges the earlier rows cut into.

@@ -315,6 +315,28 @@ TEST(BloodborneFlagRules, HeldItemFlagsAreEachPlayersOwn) {
     }
 }
 
+// Kaniel 2026-10-20: back in the Dream the guests' headstones all said "no place to awaken",
+// and his first one did after a rejoin. Each headstone's talk (t210000-t210004) asks one flag,
+// "a lamp of mine is lit" (12105030-12105034), which m21_00's 12105020-12105024 set and clear in
+// every player's own game from its own lamps; 12100122 (12100121, the Doll's talk) is the same
+// from the player's own goods 4300. As the host's, the other players' values came in over the
+// game's flag messages, flipped about once a second in all three logs, and a teammate with
+// fewer lamps switched the headstone off. Each player keeps its own; nothing carries or shares.
+TEST(BloodborneFlagRules, DreamHeadstonesReadEachPlayersOwnLamps) {
+    for (const s32 flag : {12100122, 12105030, 12105031, 12105032, 12105033, 12105034}) {
+        EXPECT_EQ(RuleFor(flag).owner, FlagOwner::PerPlayer) << flag;
+        EXPECT_TRUE(KeepsLocalFlag(true, flag)) << flag;
+        EXPECT_FALSE(KeepsLocalFlag(false, flag)) << flag;
+        EXPECT_FALSE(CarriesToGuestWorld(flag)) << flag;
+        EXPECT_FALSE(TakesHostMapFlag(flag)) << flag;
+        EXPECT_FALSE(SharedWithParty(flag)) << flag;
+    }
+    // The flags beside them stay the host's.
+    for (const s32 flag : {12100121, 12100123, 12105029, 12105035}) {
+        EXPECT_EQ(RuleFor(flag).owner, FlagOwner::Host) << flag;
+    }
+}
+
 // A held-item flag follows what this player holds: on while it holds the item (as 12100450 sets
 // it), off while it does not (a save that took the host's value from a team world got it back
 // wrong, so the boss, NPC or pickup never gave the item). Outside a party, the game's own.

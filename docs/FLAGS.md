@@ -37,6 +37,7 @@ and the item flags) as the host's world reports reach it, between loads (`TeamSt
 | 9403 | Host | carried home; a guest out in the world sets it itself once the session's world has 12410900 | the workshop's doors open (only set for a live player) |
 | 12101000-12101009 | Per player | carried home; cleared once per save slot | the messengers' weapon lines: each player's follow its own hunter badges, as in the base game (a broken patch once set them all) |
 | 12101020-12101029 | Per player | carried home | the Dream messengers' gifts: what one player got is not given to the other |
+| 12100122, 12105030-12105034 | Per player | none | each game works them out itself: a Dream headstone's "a lamp of mine is lit" (its talk reads it; the others' values said "no place to awaken") and the Doll's talk line from goods 4300 |
 | 21 boss fog "host entered" flags (12414700 Gascoigne, ...) | Shared | | a guest's fog event sets it to start the boss; holds for one map visit |
 | the flag after each of those | Session | | "a phantom entered" (local music) |
 | the maps' door flags (`DoorFlags`, 390: each object act's flag, its event's "done" flag, the flags it sets on; listed by `tools/re/door_flags.py`) | Shared | carried home, host's map value | the game only syncs an object act (a door, gate, lever, kicked ladder) to players on the same map: a door a teammate opened elsewhere stayed shut (Kaniel 2026-10-19) |
