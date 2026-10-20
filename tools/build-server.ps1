@@ -4,6 +4,8 @@ param(
     [string]$Src,
     [string]$Out
 )
+. "$PSScriptRoot\build-lock.ps1"
+Invoke-UnderBuildLock $PSCommandPath $PSBoundParameters "build-server"
 . "$PSScriptRoot\env.ps1"
 if (-not $Src) { $Src = Join-Path $env:BB_ROOT "bloodborne-server\server" }
 if (-not $Out) { $Out = Join-Path $env:BB_ROOT "out\server" }

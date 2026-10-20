@@ -11,6 +11,8 @@ param(
     [string]$Out,
     [switch]$Test
 )
+. "$PSScriptRoot\build-lock.ps1"
+Invoke-UnderBuildLock $PSCommandPath $PSBoundParameters "build-bbport"
 $ErrorActionPreference = "Stop"
 if (-not $env:BB_ROOT) { $env:BB_ROOT = "C:\bb" }
 if (-not $Src) { $Src = Join-Path $env:BB_ROOT "bloodborne-server\bbport" }

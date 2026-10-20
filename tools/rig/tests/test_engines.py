@@ -93,10 +93,18 @@ class EngineTest(unittest.TestCase):
             for line in ("output_res=1280x720", "upscaler=off", "model_lod=2", "skip_intro=1",
                          "effect_ssao=0", "live_resolution=0"):
                 self.assertIn(line, settings.splitlines())
-            (port.role_dir("host") / "bbport.ini").write_text("show_fps=1\n", encoding="utf-8")
+            # Kaniel 2026-10-20 (his PC froze under the rig): every run is 720p and lowest, also
+            # over a settings file a tester or an older rig left; the rest of the file stays.
+            (port.role_dir("host") / "bbport.ini").write_text(
+                "output_res=3840x2160\nshow_fps=1\nframe_generation=1\nbutton_icons=xbox\n",
+                encoding="utf-8")
             port.prepare("host")
-            self.assertEqual((port.role_dir("host") / "bbport.ini").read_text(encoding="utf-8"),
-                             "show_fps=1\n", "a tester's own settings stay")
+            lines = (port.role_dir("host") / "bbport.ini").read_text(encoding="utf-8").splitlines()
+            for line in ("output_res=1280x720", "show_fps=0", "frame_generation=0", "preset=0",
+                         "upscaler=off", "window_mode=windowed", "button_icons=xbox"):
+                self.assertIn(line, lines)
+            self.assertNotIn("output_res=3840x2160", lines)
+            self.assertEqual(len([line for line in lines if line.startswith("show_fps=")]), 1)
             port.prepare("host", backend_port=21453)
             self.assertEqual(json.loads(overrides.read_text(encoding="utf-8")),
                              {"https://ss4.scej-network.jp:20443": "http://127.0.0.1:21453"},

@@ -7,6 +7,8 @@ param(
     [string]$Out,
     [switch]$TestsOnly
 )
+. "$PSScriptRoot\build-lock.ps1"
+Invoke-UnderBuildLock $PSCommandPath $PSBoundParameters "build-emu"
 . "$PSScriptRoot\env.ps1"
 if (-not $Src) { $Src = Join-Path $env:BB_ROOT "bloodborne-server\emulator" }
 if (-not $Out) { $Out = Join-Path $env:BB_ROOT "out\emulator" }

@@ -92,12 +92,35 @@ def block(rig: pathlib.Path, lane: int, pids: list[int]):
     (folder / BLOCKED_FILE).write_text(" ".join(map(str, pids)) + "\n", encoding="utf-8")
 
 
+def max_lanes() -> int | None:
+    """How many lanes may play at once: no cap (Kaniel 2026-10-20 22:45Z: "run as many as you
+    want just keep track of memory"; build_lock's memory guard does that). BB_RIG_MAX_LANES=N
+    caps it again (it was two while his PC froze)."""
+    value = os.environ.get("BB_RIG_MAX_LANES", "")
+    return int(value) if value.isdigit() and int(value) > 0 else None
+
+
+def held_elsewhere(rig: pathlib.Path, lane: int, pid: int, alive=pid_alive) -> int:
+    """The other lanes live runs hold, unless `pid` holds `lane` already (its claim stands)."""
+    held = read_claim(rig, lane)
+    if held is not None and held["pid"] == pid and alive(pid):
+        return 0
+    count = 0
+    for other in available(rig):
+        claim_ = read_claim(rig, other)
+        if other != lane and claim_ is not None and alive(claim_["pid"]):
+            count += 1
+    return count
+
+
 def claim(rig: pathlib.Path, lane: int, owner: str, pid: int | None = None,
           alive=pid_alive, now=time.time) -> bool:
     """Takes the lane for `owner` (process `pid`), unless a live run holds it or it is blocked.
     The owner file is made exclusively: of two runs taking one lane at once, one gets it."""
     pid = os.getpid() if pid is None else pid
     if blocked_by(rig, lane, alive):
+        return False
+    if cap_reached(rig, lane, pid, alive):
         return False
     folder = lane_folder(rig, lane)
     folder.mkdir(parents=True, exist_ok=True)
@@ -118,6 +141,56 @@ def claim(rig: pathlib.Path, lane: int, owner: str, pid: int | None = None,
             file.write(f"{owner}\n{pid}\n{stamp}\n")
         return True
     return False
+
+
+WAIT_SECONDS = 15
+
+
+def cap_reached(rig: pathlib.Path, lane: int, pid: int, alive=pid_alive) -> bool:
+    cap = max_lanes()
+    return cap is not None and held_elsewhere(rig, lane, pid, alive) >= cap
+
+
+def playing(rig: pathlib.Path, alive=pid_alive) -> str:
+    """"lane 1 headstones, lane 2 witch": the lanes live runs hold."""
+    held = [(lane, read_claim(rig, lane)) for lane in available(rig)]
+    return ", ".join(f"lane {lane} {claim_['owner']}" for lane, claim_ in held
+                     if claim_ is not None and alive(claim_["pid"]))
+
+
+def claim_when_free(rig: pathlib.Path, lane: int, owner: str, pid: int | None = None,
+                    alive=pid_alive, sleep=time.sleep, say=print) -> bool:
+    """Takes the lane, waiting while the most lanes that may play at once are held (a queue,
+    not a refusal); False when the lane itself is held or blocked."""
+    pid = os.getpid() if pid is None else pid
+    said = False
+    while not claim(rig, lane, owner, pid, alive):
+        if not cap_reached(rig, lane, pid, alive):
+            return False  # held by another run, or blocked by its games
+        if not said:
+            say(f"{held_elsewhere(rig, lane, pid, alive)} lanes play already (at most "
+                f"{max_lanes()}): {playing(rig, alive)}. Waiting for one to end...")
+            said = True
+        sleep(WAIT_SECONDS)
+    return True
+
+
+def claim_free_waiting(rig: pathlib.Path, count: int, owner: str, pid: int | None = None,
+                       alive=pid_alive, sleep=time.sleep, say=print) -> list[int]:
+    """claim_free, waiting while the cap leaves no lane to take."""
+    pid = os.getpid() if pid is None else pid
+    said = False
+    while not (taken := claim_free(rig, count, owner, pid, alive)):
+        free = [lane for lane in available(rig) if read_claim(rig, lane) is None or
+                not alive(read_claim(rig, lane)["pid"])]
+        if not free or not cap_reached(rig, free[0], pid, alive):
+            return []  # every lane held or blocked
+        if not said:
+            say(f"{max_lanes()} lanes play already (the most at once): {playing(rig, alive)}. "
+                "Waiting for one to end...")
+            said = True
+        sleep(WAIT_SECONDS)
+    return taken
 
 
 def release(rig: pathlib.Path, lane: int, pid: int | None = None):

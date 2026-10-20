@@ -66,6 +66,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "re"))
 import budget  # noqa: E402
+import build_lock  # noqa: E402
 import check_party_log  # noqa: E402
 import engines  # noqa: E402
 import lanes  # noqa: E402
@@ -957,6 +958,8 @@ def launch(role: str, script: list[str] | None, party: str = "rig:hunters",
     set_aside(log_path(role))
     menu_keys_path(role).unlink(missing_ok=True)  # a key the last game never took
     ENGINE.prepare(role, backend_port=server_port(BACKEND_PORT))
+    build_lock.refuse_if_memory_low(f"the {role} game")  # leaked memory froze the PC
+    build_lock.wait_for_builds()  # beside builds unless BB_BUILD_BESIDE_GAMES=0
     env = game_environment(role, script_path, party, settings)
     if ENGINE.name == "emulator":
         game = subprocess.Popen(ENGINE.command(role), cwd=folder, env=env,
@@ -1082,7 +1085,7 @@ def boot_check(role: str, seconds: int, cache_twice: str | None = None,
     if player_blocks() if IN_LANES else games_running():
         print("A game is running; not starting another.")
         return 2
-    if IN_LANES and not lanes.claim(RIG, LANE, owner or lanes.default_owner()):
+    if IN_LANES and not lanes.claim_when_free(RIG, LANE, owner or lanes.default_owner()):
         print(f"Lane {LANE} is held or blocked (--lanes-status): not starting the game.")
         return 2
     try:
@@ -1904,7 +1907,7 @@ def act(args: argparse.Namespace) -> int:
         chosen[args.scenarios[0]] = compile_suite(suite, only=args.chapter)
     owner = args.owner or lanes.default_owner()
     if args.lanes:
-        taken = lanes.claim_free(RIG, args.lanes, owner)
+        taken = lanes.claim_free_waiting(RIG, args.lanes, owner)
         if not taken:
             print("Every lane is held or blocked (--lanes-status): not starting the rig.")
             return 2
@@ -1921,7 +1924,7 @@ def act(args: argparse.Namespace) -> int:
         return 0 if all(results.values()) else 1
     # One lane: taken here unless the --lanes run that started this one holds it.
     claimed_by_parent = os.environ.get(LANE_HELD) == str(LANE)
-    if not claimed_by_parent and not lanes.claim(RIG, LANE, owner):
+    if not claimed_by_parent and not lanes.claim_when_free(RIG, LANE, owner):
         held = lanes.read_claim(RIG, LANE)
         print(f"Lane {LANE} is " + (f"held by {held['owner']} since {held['since']}"
                                     if held else "blocked by games that would not stop") +

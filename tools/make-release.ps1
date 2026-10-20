@@ -46,6 +46,8 @@ param(
     [switch]$Prerelease,
     [string]$Repo = "lKaniel/bloodborne-server"
 )
+. "$PSScriptRoot\build-lock.ps1"
+Invoke-UnderBuildLock $PSCommandPath $PSBoundParameters "make-release"
 $ErrorActionPreference = "Stop"
 if (-not $env:BB_ROOT) { $env:BB_ROOT = "C:\bb" }
 $root = Split-Path -Parent $PSScriptRoot

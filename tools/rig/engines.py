@@ -39,12 +39,16 @@ def use_lane(lane: int):
     BACKEND_PORT = 20453 + lane * LANE_PORT_STEP
 
 # The port's settings on the rig (bbport.ini, read by the port and its scripts): as low as the
-# emulator rig's (rig-lowspec.ps1), so two or three games fit on one PC. Kept when present: a
-# tester may change them.
+# emulator rig's (rig-lowspec.ps1), so two or three games fit on one PC. Set before every run,
+# over what a tester or an older rig left (Kaniel 2026-10-20: his PC froze under the rig; every
+# run, headless too, is 720p and lowest); the file's other lines stay.
 LOW_SPEC_SETTINGS = """# The rig's low-spec profile (tools/rig/engines.py).
 upscaler=off
 preset=0
 output_res=1280x720
+window_mode=windowed
+frame_generation=0
+show_fps=0
 live_resolution=0
 model_lod=2
 effect_chromatic_aberration=0
@@ -56,6 +60,16 @@ effect_dynamic_shadows=0
 skip_intro=1
 tweak_no_camera_rotation=1
 """
+
+
+def low_spec(current: str) -> str:
+    """`current` (a bbport.ini) with every LOW_SPEC_SETTINGS key at the rig's value."""
+    forced = dict(line.split("=", 1) for line in LOW_SPEC_SETTINGS.splitlines()
+                  if "=" in line and not line.startswith("#"))
+    kept = [line for line in current.splitlines()
+            if line.split("=", 1)[0].strip() not in forced and line.strip() and
+            line != LOW_SPEC_SETTINGS.splitlines()[0]]
+    return LOW_SPEC_SETTINGS + "".join(f"{line}\n" for line in kept)
 
 
 class Emulator:
@@ -186,8 +200,9 @@ class Port(Emulator):
         of it at `backend_port` (run.py uses host_overrides.custom.json as it is)."""
         self.user_dir(role).mkdir(parents=True, exist_ok=True)
         settings = self.role_dir(role) / "bbport.ini"
-        if not settings.exists():
-            settings.write_text(LOW_SPEC_SETTINGS, encoding="utf-8", newline="\n")
+        settings.write_text(low_spec(settings.read_text(encoding="utf-8")
+                                     if settings.exists() else ""),
+                            encoding="utf-8", newline="\n")
         overrides = {GAME_SERVER: f"http://127.0.0.1:{backend_port}"}
         (self.user_dir(role) / "host_overrides.custom.json").write_text(
             json.dumps(overrides, indent=2) + "\n", encoding="utf-8", newline="\n")
