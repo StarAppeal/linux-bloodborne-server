@@ -3277,3 +3277,49 @@ SCENARIOS["mad-one-back"] = {
     "forbid": {"host": SESSION_HOLDS, "guest": SESSION_HOLDS},
     "timeout": 300,
 }
+
+# Kaniel 2026-10-20: back in the Dream the guests' headstones said "no place to awaken". Each
+# headstone's talk asks one flag, "a lamp of mine is lit" (12105030-12105034), which m21_00's
+# 12105020-12105024 set in each player's own game from its own lamps (12105031: the Forbidden
+# Woods lamp 12707810, Hemwick's and Byrgenwerth's; the rig characters have none of them). The
+# host lights the woods lamp before the session; the party's lamps are shared (the server world
+# gave the guest the woods lamp at the join, rig 2026-10-21), so both have headstones 1 and 2 on.
+# As the host's world flags the other's values came in over the game's flag messages and flipped
+# them about once a second (hundreds of "the other player sends flag 1210503x" a minute).
+HEADSTONE_LIT = 12105030  # + n: headstone n+1's "a lamp of mine is lit"
+HEADSTONE_SAMPLES = 8  # one look every 5 s: at a flip a second one of them catches it
+
+
+def headstones_seen(lit: dict[int, int]) -> list[str]:
+    """Each headstone flag as this player's own lamps have it: once the Dream's events set them
+    (some seconds after the arrival: a rig run looked at 5 s and found them all still off), then
+    every 5 s."""
+    return [*(f"wait-flag {flag} 1 60" for flag, on in lit.items() if on),
+            *[step for _ in range(HEADSTONE_SAMPLES)
+              for step in ("wait 5", *(f"expect-flag {flag} {on}" for flag, on in lit.items()))]]
+
+
+# The flag messages of a ping-pong (main before #301: 400 in a minute); a few at the arrival are
+# each game telling the other its own once. Atomic: each repeat takes the next message only (a
+# plain lazy repeat backtracks for ever on a log without 30).
+HEADSTONE_FLIPS = (r"the other player sends flag (?:1210503[0-4]|12100122) "
+                   r"(?=(?>[\s\S]*?the other player sends flag (?:1210503[0-4]|12100122) ){29})")
+SCENARIOS["dream-headstones-lit"] = {
+    "about": "#301: host and guest in the Hunter's Dream, the host with a lamp lit before the "
+             "session (shared with the guest): headstones 1 and 2 lit for both and staying so, "
+             "no flag ping-pong between them",
+    "roles": {
+        "host": [START, f"set-flag {FORBIDDEN_WOODS_LAMP_LIT} 1", "godmode", "wait-session 2 300",
+                 f"travel {HUNTERS_DREAM}", "wait-members 2 240", "sync dream-both",
+                 *headstones_seen({HEADSTONE_LIT: 1, HEADSTONE_LIT + 1: 1}),
+                 "sync dream-seen", "expect-session 2"],
+        "guest": [START, f"expect-flag {FORBIDDEN_WOODS_LAMP_LIT} 0", "godmode",
+                  "wait-session 2 300", f"travel {HUNTERS_DREAM}", "wait-members 2 240",
+                  "sync dream-both", *headstones_seen({HEADSTONE_LIT: 1, HEADSTONE_LIT + 1: 1}),
+                  "sync dream-seen", "expect-session 2"],
+    },
+    "syncs": {name: {"chapter": "dream-headstones-lit", "roles": ["host", "guest"]}
+              for name in ("dream-both", "dream-seen")},
+    "forbid": {role: SESSION_HOLDS + [HEADSTONE_FLIPS] for role in ("host", "guest")},
+    "timeout": 300,
+}
