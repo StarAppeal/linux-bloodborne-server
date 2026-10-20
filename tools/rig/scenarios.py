@@ -76,6 +76,7 @@ CLERIC_BEAST = "0x1001409f"  # entity 2410800; its death runs event 12411700
 CLERIC_BEAST_DEFEATED = 2411  # set by event 12411700 after Handle Boss Defeat
 GASCOIGNE = "0x1001409c"  # entity 2410810 (his beast form: 0x1001409e, 2410811)
 GASCOIGNE_BEAST = "0x1001409e"
+AWAY_FROM_GASCOIGNE = "0x10014003"  # stands about 60 m from where he waits
 BIG_BY_THE_LAMP = "0x10014001"  # boss-sized (max HP 1917), near the first lamp
 # Event 12411800's own flag: on, the map's load puts Gascoigne down (Force Character Death);
 # off, he waits for the fight. Both rig saves have him beaten.
@@ -180,6 +181,9 @@ GUEST_JOINS = (r"(?:auto-rejoin started search effect=9005|"
                r"Bloodborne team join: joining the host's session .* joined=true)")
 # The session must hold: a game that leaves the room (LeaveRoom) broke it.
 SESSION_HOLDS = [r"sceNpMatching2LeaveRoom: called"]
+# The party boards' member ids of the rig's accounts (their names in hex).
+RIG_HOST_ID = "rig_host".encode().hex()
+RIG_GUEST_ID = "rig_guest".encode().hex()
 # A downed player's kneel, on its own game or on another's copy of it (Kaniel 2026-10-15: none).
 KNEEL = r"party death: (pose [1-9]\d* asked|.*'s copy kneels)"
 # A member's game died: the others' games close the room it was in (and open a new one for its
@@ -988,6 +992,35 @@ SCENARIOS = {
         "forbid": {"host": SESSION_HOLDS + [r"boss 0x10014001 is run by 7269675f"],
                    "guest": SESSION_HOLDS + [r"enemy 10014001 jumped",
                                              r"boss 0x10014001 is run by 7269675f"]},
+        "timeout": 600,
+    },
+    "boss-whole-fight": {
+        "about": "Kaniel 2026-10-20 (#292): a real boss (npcType 1) stays with the member whose "
+                 "game took it for the whole fight, at any distance: the guest starts Father "
+                 "Gascoigne's fight while the host stays at the lamp, then runs about 60 m off on "
+                 "the same map (past the old 45 m hand-back); he is still the guest's",
+        "roles": {
+            "host": [START, f"set-flag {GASCOIGNE_DEFEATED} 0", f"travel {CENTRAL_YHARNAM_LAMP}",
+                     "godmode", "wait-session 2 300", "sync bwf-away", "census 80", "snapshot",
+                     "expect-session 2"],
+            "guest": [START, f"set-flag {GASCOIGNE_DEFEATED} 0", f"travel {CENTRAL_YHARNAM_LAMP}",
+                      "godmode", "wait-session 2 300", "wait 20", f"approach {GASCOIGNE} 4 0",
+                      "wait 5", f"hit {GASCOIGNE} 30", "wait 15", f"expect-hp {GASCOIGNE} < 2031",
+                      f"approach {AWAY_FROM_GASCOIGNE} 1.5 0", "census 80", "wait 30",
+                      "census 80", "sync bwf-away", "snapshot", "expect-session 2"],
+        },
+        "syncs": {"bwf-away": {"chapter": "boss-whole-fight", "roles": ["host", "guest"]}},
+        # The census right after the move finds him 45-80 m off, the guest on the ground (60 m
+        # off him in the air dropped the guest out of the map).
+        "expect": {"guest": [rf"boss {GASCOIGNE} is run by {RIG_GUEST_ID}\b",
+                             rf"census: {GASCOIGNE} hp .* at (4[5-9]|[5-7]\d)\.\d m"]},
+        # Once the guest's game has him, no line may give him to the host or back to the game's
+        # own runner, in either game.
+        "forbid": {role: SESSION_HOLDS + [
+            rf"boss {GASCOIGNE} is run by {RIG_HOST_ID}\b",
+            rf"(?s)boss {GASCOIGNE} is run by {RIG_GUEST_ID}\b.*boss {GASCOIGNE} is run by "
+            r"the game's own runner",
+            rf"enemy {GASCOIGNE[2:]} jumped"] for role in ("host", "guest")},
         "timeout": 600,
     },
     "save-backups": {
