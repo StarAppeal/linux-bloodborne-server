@@ -1,19 +1,23 @@
 # SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""One build at a time on the PC, and never beside the rig's games (Kaniel 2026-10-20: his PC
-froze with builds running beside rig games, worst of all several builds at once; rig runs side by
-side are fine).
+"""Builds on the PC take a build slot, and nothing starts while memory runs low.
 
-A build holds C:\\bb\\build.lock ("<owner>\\n<pid>\\n<when>") while it runs: it waits for the build
-before it and for every game (engines.GAME_PROCESSES) to end first. A rig game waits for the
-build (run_scenario.py's launch). A lock whose process is gone (a build killed outright) is stale
-and taken over. tools\\build-*.ps1 and make-release.ps1 build under it; any other build too:
+Kaniel 2026-10-20 22:20Z: one build at a time, never beside rig games (his PC froze). 22:42Z,
+after a reboot: the freeze was most likely leaked memory (crashed games leak commit), so up to
+two builds may run at once and beside games. Both limits stay one env var away:
+
+  BB_BUILD_SLOTS=N          builds at once (default 2; 1 = one at a time)
+  BB_BUILD_BESIDE_GAMES=0   a build waits for every game, and a game for every build (default 1)
+  BB_MIN_FREE_RAM_GB=G      a build or rig game refuses to start below G GB free RAM (default 2)
+  BB_MIN_FREE_COMMIT_GB=G   ... or below G GB of commit left (default 4)
+  BB_MEMORY_GUARD=0         no memory check
+
+A build holds one of C:\\bb\\build.lock, build-2.lock, ... ("<owner>\\n<pid>\\n<when>") while it
+runs. A lock whose process is gone (a build killed outright) is stale and taken over.
+tools\\build-*.ps1 and make-release.ps1 build under it; any other build too:
 
   py -3.12 tools\\rig\\build_lock.py run --owner <who> -- <command ...>
   py -3.12 tools\\rig\\build_lock.py status
-
-BB_BUILD_BESIDE_GAMES=1: a build may run beside games (someone playing said so); it still waits
-for the build before it.
 """
 import argparse
 import os
@@ -33,8 +37,22 @@ HELD = "BB_BUILD_LOCK_HELD"
 POLL_SECONDS = 10
 
 
+def slots() -> int:
+    value = os.environ.get("BB_BUILD_SLOTS", "")
+    return int(value) if value.isdigit() and int(value) > 0 else 2
+
+
+def beside_games() -> bool:
+    return os.environ.get("BB_BUILD_BESIDE_GAMES", "1") != "0"
+
+
+def slot_path(lock: pathlib.Path, slot: int) -> pathlib.Path:
+    return lock if slot == 1 else lock.with_name(f"{lock.stem}-{slot}{lock.suffix}")
+
+
 def holder(lock: pathlib.Path = LOCK) -> tuple[str, int] | None:
-    """Who holds the lock (owner, pid), or None: free, or held by a process that is gone."""
+    """Who holds this one lock file (owner, pid), or None: free, or held by a process that is
+    gone."""
     try:
         lines = lock.read_text(encoding="utf-8").splitlines()
     except OSError:
@@ -43,6 +61,12 @@ def holder(lock: pathlib.Path = LOCK) -> tuple[str, int] | None:
     if not lanes.pid_alive(pid):
         return None
     return lines[0] if lines else "?", pid
+
+
+def holders(lock: pathlib.Path = LOCK) -> list[tuple[str, int]]:
+    """Every build that holds a slot, those past a lowered BB_BUILD_SLOTS too."""
+    paths = [lock, *lock.parent.glob(f"{lock.stem}-*{lock.suffix}")]
+    return [held for path in paths if (held := holder(path))]
 
 
 def games_running() -> list[int]:
@@ -57,39 +81,90 @@ def games_running() -> list[int]:
     return [int(pid) for pid in listing.split() if pid.isdigit()]
 
 
-def try_take(owner: str, pid: int, lock: pathlib.Path = LOCK) -> bool:
-    """Takes the lock for `pid` if it is free or stale; True when `pid` holds it."""
-    held = holder(lock)
-    if held:
-        return held[1] == pid
-    lock.parent.mkdir(parents=True, exist_ok=True)
-    lock.unlink(missing_ok=True)  # stale: its process is gone
+def free_memory() -> tuple[int, int] | None:
+    """(free RAM, commit left) in bytes, or None off Windows."""
+    if os.name != "nt":
+        return None
+    import ctypes
+
+    class Status(ctypes.Structure):
+        _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+
+    status = Status(dwLength=ctypes.sizeof(Status))
+    if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+        return None
+    return status.ullAvailPhys, status.ullAvailPageFile
+
+
+def gigabytes(name: str, default: float) -> float:
     try:
-        handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError:
-        return False  # another build took it just now
-    with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as file:
-        file.write(f"{owner}\n{pid}\n{time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-    return True
+        return float(os.environ.get(name, "") or default)
+    except ValueError:
+        return default
+
+
+def memory_short(read=free_memory) -> str | None:
+    """Why memory is too low to start a build or game, or None."""
+    if os.environ.get("BB_MEMORY_GUARD") == "0" or (memory := read()) is None:
+        return None
+    ram, commit = (value / (1 << 30) for value in memory)
+    min_ram = gigabytes("BB_MIN_FREE_RAM_GB", 2)
+    min_commit = gigabytes("BB_MIN_FREE_COMMIT_GB", 4)
+    short = []
+    if ram < min_ram:
+        short.append(f"{ram:.1f} GB free RAM (at least {min_ram:g} wanted)")
+    if commit < min_commit:
+        short.append(f"{commit:.1f} GB of commit left (at least {min_commit:g} wanted)")
+    return ", ".join(short) or None
+
+
+def refuse_if_memory_low(what: str, read=free_memory) -> None:
+    """Stops `what` from starting while memory runs low (crashed games leak commit)."""
+    if short := memory_short(read):
+        raise SystemExit(f"Memory guard: not starting {what}: {short}. Close games, or reboot "
+                         "to free memory crashed games leaked (BB_MEMORY_GUARD=0 skips this).")
+
+
+def try_take(owner: str, pid: int, lock: pathlib.Path = LOCK) -> bool:
+    """Takes a free or stale slot for `pid`; True when `pid` holds one."""
+    if any(held[1] == pid for held in holders(lock)):
+        return True
+    for slot in range(1, slots() + 1):
+        path = slot_path(lock, slot)
+        if holder(path):
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.unlink(missing_ok=True)  # stale: its process is gone
+        try:
+            handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            continue  # another build took it just now
+        with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as file:
+            file.write(f"{owner}\n{pid}\n{time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+        return True
+    return False
 
 
 def take(owner: str, pid: int, lock: pathlib.Path = LOCK, games=games_running,
          sleep=time.sleep) -> None:
-    """Waits for the build before and every game, then holds the lock for `pid`."""
-    beside_games = os.environ.get("BB_BUILD_BESIDE_GAMES") == "1"
+    """Waits for a free slot (and, with BB_BUILD_BESIDE_GAMES=0, every game), then holds it."""
     said = None
     while True:
-        held = holder(lock)
-        running = [] if beside_games else games()
-        if held and held[1] != pid:
-            why = f"waiting for the build of {held[0]} (pid {held[1]}) to end"
-        elif running:
+        running = [] if beside_games() else games()
+        if running:
             why = f"waiting for {len(running)} game(s) to end (pids {running})"
         elif try_take(owner, pid, lock):
             print(f"Build lock: {owner} builds (pid {pid})", flush=True)
             return
         else:
-            why = "another build took the lock first"
+            builds = ", ".join(f"{name} (pid {held})" for name, held in holders(lock))
+            why = f"{slots()} build(s) at most at once: waiting for {builds}"
         if why != said:
             print(f"Build lock: {why}", flush=True)
             said = why
@@ -97,18 +172,19 @@ def take(owner: str, pid: int, lock: pathlib.Path = LOCK, games=games_running,
 
 
 def release(pid: int, lock: pathlib.Path = LOCK) -> None:
-    held = holder(lock)
-    if held and held[1] == pid:
-        lock.unlink(missing_ok=True)
+    for path in [lock, *lock.parent.glob(f"{lock.stem}-*{lock.suffix}")]:
+        held = holder(path)
+        if held and held[1] == pid:
+            path.unlink(missing_ok=True)
 
 
 def wait_for_builds(lock: pathlib.Path = LOCK, sleep=time.sleep) -> None:
-    """A game waits while a build runs (run_scenario.py's launch)."""
+    """With BB_BUILD_BESIDE_GAMES=0 a game waits while a build runs (run_scenario.py's launch)."""
     said = None
-    while held := holder(lock):
+    while not beside_games() and (held := holders(lock)):
         if held != said:
-            print(f"Build lock: waiting for the build of {held[0]} (pid {held[1]}) before "
-                  "starting a game", flush=True)
+            print(f"Build lock: waiting for the build(s) {held} before starting a game",
+                  flush=True)
             said = held
         sleep(POLL_SECONDS)
 
@@ -123,14 +199,17 @@ def main(argv: list[str]) -> int:
     sub.add_parser("status", help="who holds the lock")
     args = parser.parse_args(argv)
     if args.action == "status":
-        held = holder()
-        print(f"held by {held[0]} (pid {held[1]})" if held else "free")
+        held = holders()
+        print(", ".join(f"held by {name} (pid {pid})" for name, pid in held) or "free",
+              f"({slots()} slot(s); beside games: {'yes' if beside_games() else 'no'})")
+        print(memory_short() or "memory: fine")
         return 0
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     if not command:
         parser.error("run needs a command after --")
     if os.environ.get(HELD) == "1":
         return subprocess.run(command).returncode
+    refuse_if_memory_low(f"the build of {args.owner}")
     take(args.owner, os.getpid())
     try:
         return subprocess.run(command, env={**os.environ, HELD: "1"}).returncode

@@ -1,9 +1,9 @@
-# The PC's build lock (tools\rig\build_lock.py): one build at a time, never beside games (Kaniel
-# 2026-10-20: builds beside rig games, worst of all several at once, froze his PC). A build script
+# The PC's build lock (tools\rig\build_lock.py): two builds at once (BB_BUILD_SLOTS), beside games
+# unless BB_BUILD_BESIDE_GAMES=0, and none while memory is low. A build script
 # dot-sources this after its param() block and calls
 #   Invoke-UnderBuildLock $PSCommandPath $PSBoundParameters "<what it builds>"
-# which runs the script again inside the lock (it waits for the build before it and for every
-# game) and exits with its code. Inside the lock (BB_BUILD_LOCK_HELD=1) it returns at once.
+# which runs the script again inside the lock (it waits for a free slot) and exits with its code.
+# Inside the lock (BB_BUILD_LOCK_HELD=1) it returns at once.
 function Invoke-UnderBuildLock([string]$Script, $Bound, [string]$What) {
     if ($env:BB_BUILD_LOCK_HELD -eq "1") { return }
     $arguments = @()

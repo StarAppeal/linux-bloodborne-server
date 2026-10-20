@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Tests for the PC's build lock (build_lock.py): one build at a time, never beside games.
+"""Tests for the PC's build lock (build_lock.py): build slots, games, and the memory guard.
 
 Run: py -3.12 -m unittest discover -s tools\\rig\\tests
 """
@@ -31,6 +31,14 @@ class BuildLockTest(unittest.TestCase):
     def tearDown(self):
         self.folder.cleanup()
 
+    def sleeper(self) -> int:
+        """A live process other than this one and its parent."""
+        process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        self.addCleanup(process.wait)
+        self.addCleanup(process.kill)
+        return process.pid
+
+    @unittest.mock.patch.dict(os.environ, {"BB_BUILD_SLOTS": "1"})
     def test_a_build_holds_it_until_it_lets_go(self):
         build_lock.take("emu", os.getpid(), self.lock, games=lambda: [], sleep=self.fail)
         self.assertEqual(build_lock.holder(self.lock), ("emu", os.getpid()))
@@ -47,11 +55,30 @@ class BuildLockTest(unittest.TestCase):
         self.assertTrue(build_lock.try_take("new", os.getpid(), self.lock))
         self.assertEqual(build_lock.holder(self.lock), ("new", os.getpid()))
 
+    def test_two_builds_run_at_once_by_default(self):
+        # Kaniel 2026-10-20 22:42Z: "we can try doing more builds at a time and during rig runs".
+        with unittest.mock.patch.dict(os.environ, {"BB_BUILD_SLOTS": ""}):
+            build_lock.take("emu", os.getpid(), self.lock, games=lambda: [], sleep=self.fail)
+            build_lock.take("port", os.getppid(), self.lock, games=lambda: [], sleep=self.fail)
+            self.assertFalse(build_lock.try_take("server", self.sleeper(), self.lock),
+                             "a third waits")
+            self.assertEqual(sorted(build_lock.holders(self.lock)),
+                             sorted([("emu", os.getpid()), ("port", os.getppid())]))
+            build_lock.release(os.getpid(), self.lock)
+            self.assertEqual(build_lock.holders(self.lock), [("port", os.getppid())])
+
+    def test_builds_run_beside_games_by_default(self):
+        with unittest.mock.patch.dict(os.environ, {"BB_BUILD_BESIDE_GAMES": ""}):
+            build_lock.take("port", os.getpid(), self.lock, games=lambda: [1234],
+                            sleep=self.fail)
+            self.lock.write_text(f"emu\n{os.getpid()}\nnow\n", encoding="utf-8")
+            build_lock.wait_for_builds(self.lock, sleep=self.fail)  # a game starts beside it
+
     def test_a_build_waits_for_the_games(self):
-        # Kaniel 2026-10-20: builds beside rig games froze his PC.
+        # Kaniel 2026-10-20 22:20Z: builds beside rig games froze his PC.
         seen = iter([[1234, 5678], [1234], []])
         naps = []
-        with unittest.mock.patch.dict(os.environ, {"BB_BUILD_BESIDE_GAMES": ""}):
+        with unittest.mock.patch.dict(os.environ, {"BB_BUILD_BESIDE_GAMES": "0"}):
             build_lock.take("port", os.getpid(), self.lock, games=lambda: next(seen),
                             sleep=naps.append)
         self.assertEqual(len(naps), 2)
@@ -72,9 +99,32 @@ class BuildLockTest(unittest.TestCase):
             if len(naps) == 3:
                 build_lock.release(os.getpid(), self.lock)
 
-        build_lock.wait_for_builds(self.lock, sleep=nap)
-        self.assertEqual(len(naps), 3)
-        build_lock.wait_for_builds(self.lock, sleep=self.fail)  # free: no wait
+        with unittest.mock.patch.dict(os.environ, {"BB_BUILD_BESIDE_GAMES": "0"}):
+            build_lock.wait_for_builds(self.lock, sleep=nap)
+            self.assertEqual(len(naps), 3)
+            build_lock.wait_for_builds(self.lock, sleep=self.fail)  # free: no wait
+
+    def test_nothing_starts_while_memory_is_low(self):
+        # Kaniel 2026-10-20 22:42Z: the freeze was most likely leaked memory.
+        gib = 1 << 30
+        with unittest.mock.patch.dict(os.environ, {"BB_MIN_FREE_RAM_GB": "",
+                                                   "BB_MIN_FREE_COMMIT_GB": "",
+                                                   "BB_MEMORY_GUARD": ""}):
+            self.assertIsNone(build_lock.memory_short(lambda: (8 * gib, 20 * gib)))
+            self.assertIn("1.5 GB free RAM (at least 2",
+                          build_lock.memory_short(lambda: (int(1.5 * gib), 20 * gib)))
+            self.assertIn("3.0 GB of commit left (at least 4",
+                          build_lock.memory_short(lambda: (8 * gib, 3 * gib)))
+            self.assertIsNone(build_lock.memory_short(lambda: None), "unknown: no check")
+            with self.assertRaises(SystemExit) as refused:
+                build_lock.refuse_if_memory_low("a rig game", lambda: (gib, gib))
+            self.assertIn("a rig game", str(refused.exception))
+            self.assertIn("reboot", str(refused.exception))
+        with unittest.mock.patch.dict(os.environ, {"BB_MEMORY_GUARD": "0"}):
+            self.assertIsNone(build_lock.memory_short(lambda: (0, 0)))
+        with unittest.mock.patch.dict(os.environ, {"BB_MIN_FREE_RAM_GB": "0.5",
+                                                   "BB_MIN_FREE_COMMIT_GB": "1"}):
+            self.assertIsNone(build_lock.memory_short(lambda: (gib, int(1.5 * gib))))
 
 
 if __name__ == "__main__":

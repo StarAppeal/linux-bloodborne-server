@@ -958,7 +958,8 @@ def launch(role: str, script: list[str] | None, party: str = "rig:hunters",
     set_aside(log_path(role))
     menu_keys_path(role).unlink(missing_ok=True)  # a key the last game never took
     ENGINE.prepare(role, backend_port=server_port(BACKEND_PORT))
-    build_lock.wait_for_builds()  # never beside a build (Kaniel 2026-10-20)
+    build_lock.refuse_if_memory_low(f"the {role} game")  # leaked memory froze the PC
+    build_lock.wait_for_builds()  # beside builds unless BB_BUILD_BESIDE_GAMES=0
     env = game_environment(role, script_path, party, settings)
     if ENGINE.name == "emulator":
         game = subprocess.Popen(ENGINE.command(role), cwd=folder, env=env,
