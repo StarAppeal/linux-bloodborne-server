@@ -3277,3 +3277,55 @@ SCENARIOS["mad-one-back"] = {
     "forbid": {"host": SESSION_HOLDS, "guest": SESSION_HOLDS},
     "timeout": 300,
 }
+
+
+# Kaniel's playtest 2026-10-20: during the Witch of Hemwick fight krolebord (a guest) saw the Witch's
+# Abode lamp, which shows only once she is dead (m22_00 common event 7000: character 2200951 and
+# object 2201951 switched off until flag 12201800), while the host was far; near the host it was
+# gone again. Host by the Charnel Lane lamp (some 300 m off), guest at the Abode: the guest's lamp
+# stays off, far from the host and once the host is beside it.
+CHARNEL_LANE_LAMP = 2202950
+ABODE_LAMP_CHARACTER = 2200951
+SCENARIOS["abode-lamp-far"] = {
+    "about": "the Witch's Abode lamp stays off for a guest by it while the Witch lives, with the "
+             "host far away and with the host beside it",
+    "roles": {
+        "host": [START, f"set-flag {WITCH_DEFEATED} 0", f"travel {CHARNEL_LANE_LAMP}", "godmode",
+                 f"expect-map {HEMWICK}", "wait-session 2 300", "sync lamp-ready", "wait 20",
+                 "census 60", "sync lamp-far", f"travel {WITCH_ABODE_LAMP}", "wait 15",
+                 "census 60", "sync lamp-near", "wait 10", "sync lamp-checked",
+                 f"expect-flag {WITCH_DEFEATED} 0", "expect-session 2"],
+        "guest": [*HEMWICK_START, "wait-session 2 300", "sync lamp-ready", "wait 20", "census 60",
+                  "shot abode-lamp-far", "sync lamp-far", "sync lamp-near", "wait 5", "census 60",
+                  "shot abode-lamp-near", "sync lamp-checked", f"expect-flag {WITCH_DEFEATED} 0",
+                  "expect-session 2"],
+    },
+    "syncs": {name: {"chapter": "abode-lamp-far", "roles": ["host", "guest"]}
+              for name in ("lamp-ready", "lamp-far", "lamp-near", "lamp-checked")},
+    "forbid": {"host": SESSION_HOLDS,
+               "guest": [*SESSION_HOLDS, rf"disabled 0 at [^\n]* entity {ABODE_LAMP_CHARACTER}\b"]},
+    "timeout": 300,
+}
+# The playtest's order: both at the Abode with the fight on (her fight starts with flag 12204800),
+# then the host leaves for Charnel Lane and comes back. At the join the guest switches the lamp
+# off to match the host (its own copy is on until common event 7000 runs).
+SCENARIOS["abode-lamp-host-leaves"] = {
+    "about": "the Witch's Abode lamp stays off for a guest by it while the Witch lives, after the "
+             "host was beside it, once the host leaves and once it is back",
+    "roles": {
+        "host": [*HEMWICK_START, "wait-session 2 300", "set-flag 12204800 1", "sync lamp-ready",
+                 "wait 10", "census 60", f"travel {CHARNEL_LANE_LAMP}", "wait 20", "sync lamp-far",
+                 "sync lamp-far-checked", f"travel {WITCH_ABODE_LAMP}", "wait 10", "sync lamp-near",
+                 "sync lamp-checked", f"expect-flag {WITCH_DEFEATED} 0", "expect-session 2"],
+        "guest": [*HEMWICK_START, "wait-session 2 300", "sync lamp-ready", "wait 10", "census 60",
+                  "sync lamp-far", "wait 5", "census 60", "shot abode-lamp-host-left",
+                  "sync lamp-far-checked", "sync lamp-near", "wait 5", "census 60",
+                  "sync lamp-checked", f"expect-flag {WITCH_DEFEATED} 0", "expect-session 2"],
+    },
+    "syncs": {name: {"chapter": "abode-lamp-host-leaves", "roles": ["host", "guest"]}
+              for name in ("lamp-ready", "lamp-far", "lamp-far-checked", "lamp-near",
+                           "lamp-checked")},
+    "forbid": {"host": SESSION_HOLDS,
+               "guest": [*SESSION_HOLDS, rf"disabled 0 at [^\n]* entity {ABODE_LAMP_CHARACTER}\b"]},
+    "timeout": 300,
+}
