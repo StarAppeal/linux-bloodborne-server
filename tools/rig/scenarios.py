@@ -54,6 +54,8 @@ LEVEL_UP_AT_THE_DOLL = [f"approach {DOLL} 1.0 0 1.5708", "wait 2", "press cross 
 CENTRAL_YHARNAM = "0x18010000"
 CENTRAL_YHARNAM_LAMP = 2412950  # the first lamp, where the rig's characters start
 CENTRAL_YHARNAM_LAMP_2 = 2412951  # talk 241001, 3 m from talk 241319 (Gilbert's window?)
+# By the lamp on the bridge (2412952), in the open: where the overhead map is tried.
+CENTRAL_YHARNAM_BRIDGE = "-124.8 -26.88 64.3"
 CATHEDRAL_WARD = "0x18000000"
 CATHEDRAL_WARD_LAMP = 2402950
 CATHEDRAL_WARD_LAMP_LIT = 12407810  # its active flag (bloodborne_map.h's LampActiveFlag)
@@ -2802,6 +2804,48 @@ SCENARIOS = {
                                     r"Map: (drew|read) m24_01_00_00 view 1"]},
         "settings": {"BB_MAP_3D": "1"},  # the 3D map is opt-in (Insert, Display)
         "timeout": 240,
+    },
+    # Kaniel 2026-10-21 ("another 3D map mode that uses the game's own camera"): with the 3D map
+    # set to the game camera, the map in the open is the world seen from the game's camera high
+    # over the player; L3 the flat map and back; closed, the game's own camera; under a roof
+    # (the first lamp's passage), the flat map. Pictures of each (a GPU game: headless draws no world).
+    "map-overhead": {
+        "about": "the map screen's game camera view: the game's camera over the player in the open, "
+                 "L3 flat and back, given back on close; the flat map under a roof; pictures of each",
+        "roles": {
+            "host": [START, "godmode", f"teleport {CENTRAL_YHARNAM_BRIDGE} 0.0", "wait 15", "keys map",
+                     "wait 6", "shot map-overhead", "keys l3", "wait 4", "shot map-overhead-flat", "keys l3",
+                     "wait 4", "shot map-overhead-again", "keys circle", "wait 4", "shot map-overhead-closed",
+                     "teleport -199.74 -50.76 179.42 0.0", "wait 10", "keys map", "wait 6",
+                     "shot map-overhead-indoors", "keys circle", "wait 2"],
+        },
+        "expect": {"host": [r"Bloodborne map screen: the game camera over \(-12\d\.\d, ",
+                            r"Bloodborne map screen: the game camera is the game's again"]},
+        "console_expect": {"host": [r"Map: game camera view", r"Map: flat view", r"Map: 3D view",
+                                    r"Map: game camera back"]},
+        "settings": {"BB_MAP_3D": "3"},  # the game camera's view is opt-in (Insert, Display)
+        "timeout": 300,
+    },
+    # Kaniel 2026-10-21: the game camera's view moved about (held keys: hold-<name>-<frames>):
+    # higher, flatter, turned, low, panned; a lamp picked for travel (asked, not taken); closed.
+    "map-overhead-tour": {
+        "about": "the map's game camera view zoomed out, tilted, turned, zoomed in and panned; a lamp "
+                 "focused and its travel question; closed; pictures of each",
+        "roles": {
+            "host": [START, "godmode", f"teleport {CENTRAL_YHARNAM_BRIDGE} 0.0", "wait 15", "keys map",
+                     "wait 6", "shot tour-start", "keys down", "wait 4", "shot tour-lamp", "keys enter", "wait 2",
+                     "shot tour-question", "keys circle", "wait 2", "keys square", "wait 3",
+                     "keys hold-zoomout-120", "wait 4", "shot tour-high",
+                     "keys hold-tiltdown-60", "wait 4", "shot tour-tilted", "keys hold-turnright-50", "wait 4",
+                     "shot tour-turned", "keys hold-zoomin-200", "wait 4", "shot tour-low",
+                     "keys hold-tiltup-90", "wait 3", "keys hold-panup-60", "wait 4", "shot tour-panned",
+                     "keys circle", "wait 4", "shot tour-closed"],
+        },
+        "expect": {"host": [r"Bloodborne map screen: the game camera is the game's again"]},
+        "forbid": {"host": [r"Bloodborne map screen: travels to"]},
+        "console_expect": {"host": [r"Map: game camera view", r"Map: game camera back"]},
+        "settings": {"BB_MAP_3D": "3"},
+        "timeout": 300,
     },
     # Kaniel 2026-10-17: the map screen in a session: the other hunter at its spot on the
     # picture, ringed in the compass's light gray, and listed with its area.

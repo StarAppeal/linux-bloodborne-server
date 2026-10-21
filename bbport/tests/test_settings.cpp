@@ -161,6 +161,27 @@ int main() {
     }
     std::puts("PASS: map fog setting");
 
+    // Kaniel 2026-10-21 ("another 3D map mode that uses the game's own camera"): map_3d=3 is the
+    // game camera's view, kept in bbport.ini; opt-in only (Kaniel): never the default.
+    {
+        const BbSettings::Values fresh;
+        assert(fresh.map_3d == BbSettings::Map3dOff && fresh.map_3d != BbSettings::Map3dGameCamera);
+        char path[512];
+        std::snprintf(path, sizeof(path), "%s/bbport-settings-test-XXXXXX", temp && temp[0] ? temp : "/tmp");
+        const int file = mkstemp(path);
+        const char text[] = "map_3d=3\n";
+        assert(write(file, text, sizeof(text) - 1) == ssize_t(sizeof(text) - 1));
+        close(file);
+        setenv("BB_CONFIG", path, 1);
+        BbSettings::Load();
+        assert(s.map_3d == BbSettings::Map3dGameCamera);
+        BbSettings::Save();
+        assert(Read(path).find("map_3d=3\n") != std::string::npos);
+        s.map_3d = BbSettings::Map3dOff;
+        unlink(path);
+    }
+    std::puts("PASS: map 3D game camera setting");
+
     // Kaniel 2026-10-10: window mode (windowed, borderless, exclusive) and HDR output in the game's
     // menus. The launcher's BB_FULLSCREEN counts until the file has a window mode.
     char fourth[512];

@@ -10,7 +10,6 @@
  "Turn": "Draaien",
  "Prerendered": "Vooraf getekend",
  "Live": "Live",
- "{L3} on the map shows the place from the game's own models, from an angle. Prerendered: each area is drawn once, the first time, in the background. Live: the models are drawn on the graphics card as you turn and tilt the view (right stick), using its memory. Leave it off on a low-end PC.": "{L3} op de kaart toont de plek schuin van boven uit de modellen van het spel. Vooraf getekend: elk gebied wordt één keer getekend, de eerste keer, op de achtergrond. Live: de videokaart tekent de modellen terwijl je het beeld draait en kantelt (rechterstick), met haar geheugen. Laat het uit op een zwakke pc.",
  "3D map": "3D-kaart",
  "Turn on the 3D map in the settings (Insert, Display)": "Zet de 3D-kaart aan in de instellingen (Insert, Beeld)",
  "Preparing the 3D view...": "3D-weergave wordt voorbereid...",
@@ -361,5 +360,8 @@
  "Vertical field of view in degrees; the game's camera has 43. Every camera is widened by the same amount. Applies after restarting the game.": "Verticaal gezichtsveld in graden; de camera van het spel heeft 43. Elke camera wordt evenveel verbreed. Geldt na het herstarten van het spel.",
  "Mute in the background": "Geluid uit op de achtergrond",
  "The game is silent while its window is not the active one.": "Het spel is stil zolang het venster niet het actieve is.",
- "The buttons the game shows on screen. Automatic follows what you play with: the keys bound below while you use the keyboard and mouse, the controller's own buttons (PlayStation, Xbox or Switch) while you use one, switching as you change. A change here applies after a restart.": "De knoppen die het spel op het scherm toont. Automatisch volgt waarmee je speelt: de hieronder toegewezen toetsen zolang je toetsenbord en muis gebruikt, de knoppen van de controller (PlayStation, Xbox of Switch) zolang je er een gebruikt, en wisselt mee. Een wijziging hier geldt na een herstart."
+ "The buttons the game shows on screen. Automatic follows what you play with: the keys bound below while you use the keyboard and mouse, the controller's own buttons (PlayStation, Xbox or Switch) while you use one, switching as you change. A change here applies after a restart.": "De knoppen die het spel op het scherm toont. Automatisch volgt waarmee je speelt: de hieronder toegewezen toetsen zolang je toetsenbord en muis gebruikt, de knoppen van de controller (PlayStation, Xbox of Switch) zolang je er een gebruikt, en wisselt mee. Een wijziging hier geldt na een herstart.",
+ "{L3} on the map shows the place from the game's own models, from an angle. Prerendered: each area is drawn once, the first time, in the background. Live: the models are drawn on the graphics card as you turn and tilt the view (right stick), using its memory. Game camera: the game's own camera rises high above you and the world itself is the map (indoors, the flat map). Leave it off on a low-end PC.": "{L3} op de kaart toont de plek schuin van boven uit de modellen van het spel. Vooraf getekend: elk gebied wordt één keer getekend, de eerste keer, op de achtergrond. Live: de videokaart tekent de modellen terwijl je het beeld draait en kantelt (rechterstick), met haar geheugen. Spelcamera: de eigen camera van het spel stijgt hoog boven je uit en de wereld zelf is de kaart (binnen de platte kaart). Laat het uit op een zwakke pc.",
+ "Game camera": "Spelcamera",
+ "Indoors: the flat map (the game camera's view shows in the open)": "Binnen: de platte kaart (het beeld van de spelcamera verschijnt in de open lucht)"
 }

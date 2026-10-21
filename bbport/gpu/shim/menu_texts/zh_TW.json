@@ -10,7 +10,6 @@
  "Turn": "旋轉",
  "Prerendered": "預先繪製",
  "Live": "即時",
- "{L3} on the map shows the place from the game's own models, from an angle. Prerendered: each area is drawn once, the first time, in the background. Live: the models are drawn on the graphics card as you turn and tilt the view (right stick), using its memory. Leave it off on a low-end PC.": "在地圖上按{L3}，以遊戲模型斜視顯示場景。預先繪製：每個區域首次在背景繪製一次。即時：轉動和傾斜視角（右搖桿）時由顯示卡使用其記憶體繪製模型。配備較低的電腦請保持關閉。",
  "3D map": "3D地圖",
  "Turn on the 3D map in the settings (Insert, Display)": "請在設定中開啟3D地圖（Insert，顯示）",
  "Preparing the 3D view...": "正在準備3D視圖...",
@@ -361,5 +360,8 @@
  "Vertical field of view in degrees; the game's camera has 43. Every camera is widened by the same amount. Applies after restarting the game.": "垂直視野角度；遊戲的鏡頭為 43。所有鏡頭按相同幅度放寬。重新啟動遊戲後生效。",
  "Mute in the background": "背景時靜音",
  "The game is silent while its window is not the active one.": "遊戲視窗不是使用中的視窗時，遊戲不發出聲音。",
- "The buttons the game shows on screen. Automatic follows what you play with: the keys bound below while you use the keyboard and mouse, the controller's own buttons (PlayStation, Xbox or Switch) while you use one, switching as you change. A change here applies after a restart.": "遊戲在畫面上顯示的按鍵。自動會跟隨你正在使用的裝置：使用鍵盤和滑鼠時顯示下方綁定的按鍵，使用手把時顯示手把自己的按鍵（PlayStation、Xbox 或 Switch），切換裝置時隨之切換。此處的變更在重新啟動後生效。"
+ "The buttons the game shows on screen. Automatic follows what you play with: the keys bound below while you use the keyboard and mouse, the controller's own buttons (PlayStation, Xbox or Switch) while you use one, switching as you change. A change here applies after a restart.": "遊戲在畫面上顯示的按鍵。自動會跟隨你正在使用的裝置：使用鍵盤和滑鼠時顯示下方綁定的按鍵，使用手把時顯示手把自己的按鍵（PlayStation、Xbox 或 Switch），切換裝置時隨之切換。此處的變更在重新啟動後生效。",
+ "{L3} on the map shows the place from the game's own models, from an angle. Prerendered: each area is drawn once, the first time, in the background. Live: the models are drawn on the graphics card as you turn and tilt the view (right stick), using its memory. Game camera: the game's own camera rises high above you and the world itself is the map (indoors, the flat map). Leave it off on a low-end PC.": "在地圖上按{L3}，以遊戲模型斜視顯示場景。預先繪製：每個區域首次在背景繪製一次。即時：轉動和傾斜視角（右搖桿）時由顯示卡使用其記憶體繪製模型。遊戲鏡頭：遊戲本身的鏡頭升到你的正上方高處，世界本身就是地圖（室內為平面地圖）。配備較低的電腦請保持關閉。",
+ "Game camera": "遊戲鏡頭",
+ "Indoors: the flat map (the game camera's view shows in the open)": "室內：平面地圖（遊戲鏡頭的視角在戶外顯示）"
 }

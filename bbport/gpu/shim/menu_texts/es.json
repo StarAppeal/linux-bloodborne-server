@@ -10,7 +10,6 @@
  "Turn": "Girar",
  "Prerendered": "Predibujado",
  "Live": "En vivo",
- "{L3} on the map shows the place from the game's own models, from an angle. Prerendered: each area is drawn once, the first time, in the background. Live: the models are drawn on the graphics card as you turn and tilt the view (right stick), using its memory. Leave it off on a low-end PC.": "{L3} en el mapa muestra el lugar en perspectiva con los modelos del juego. Predibujado: cada zona se dibuja una vez, la primera vez, en segundo plano. En vivo: la tarjeta gráfica dibuja los modelos mientras giras e inclinas la vista (stick derecho), usando su memoria. Déjalo desactivado en un PC modesto.",
  "3D map": "Mapa 3D",
  "Turn on the 3D map in the settings (Insert, Display)": "Activa el mapa 3D en los ajustes (Insert, Pantalla)",
  "Preparing the 3D view...": "Preparando la vista 3D...",
@@ -361,5 +360,8 @@
  "Vertical field of view in degrees; the game's camera has 43. Every camera is widened by the same amount. Applies after restarting the game.": "Campo de visión vertical en grados; la cámara del juego tiene 43. Todas las cámaras se amplían en la misma medida. Se aplica al reiniciar el juego.",
  "Mute in the background": "Silenciar en segundo plano",
  "The game is silent while its window is not the active one.": "El juego no suena mientras su ventana no es la activa.",
- "The buttons the game shows on screen. Automatic follows what you play with: the keys bound below while you use the keyboard and mouse, the controller's own buttons (PlayStation, Xbox or Switch) while you use one, switching as you change. A change here applies after a restart.": "Los botones que el juego muestra en pantalla. Automático sigue a lo que usas: las teclas asignadas abajo mientras usas teclado y ratón, los botones del mando (PlayStation, Xbox o Switch) mientras usas uno, y cambia al cambiar tú. Un cambio aquí se aplica tras reiniciar."
+ "The buttons the game shows on screen. Automatic follows what you play with: the keys bound below while you use the keyboard and mouse, the controller's own buttons (PlayStation, Xbox or Switch) while you use one, switching as you change. A change here applies after a restart.": "Los botones que el juego muestra en pantalla. Automático sigue a lo que usas: las teclas asignadas abajo mientras usas teclado y ratón, los botones del mando (PlayStation, Xbox o Switch) mientras usas uno, y cambia al cambiar tú. Un cambio aquí se aplica tras reiniciar.",
+ "{L3} on the map shows the place from the game's own models, from an angle. Prerendered: each area is drawn once, the first time, in the background. Live: the models are drawn on the graphics card as you turn and tilt the view (right stick), using its memory. Game camera: the game's own camera rises high above you and the world itself is the map (indoors, the flat map). Leave it off on a low-end PC.": "{L3} en el mapa muestra el lugar en perspectiva con los modelos del juego. Predibujado: cada zona se dibuja una vez, la primera vez, en segundo plano. En vivo: la tarjeta gráfica dibuja los modelos mientras giras e inclinas la vista (stick derecho), usando su memoria. Cámara del juego: la propia cámara del juego se eleva muy por encima de ti y el mundo mismo es el mapa (en interiores, el mapa plano). Déjalo desactivado en un PC modesto.",
+ "Game camera": "Cámara del juego",
+ "Indoors: the flat map (the game camera's view shows in the open)": "En interiores: el mapa plano (la vista de la cámara del juego se muestra al aire libre)"
 }

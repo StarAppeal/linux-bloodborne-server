@@ -173,4 +173,83 @@ bool MapTripArrived(const MapTripProgress& trip, u32 map_now, bool loading_now) 
     return trip.load_seen || trip.seconds >= NoLoadSeconds;
 }
 
+namespace {
+
+using Vec3 = std::array<float, 3>;
+
+Vec3 Axis(const std::array<float, 4>& row) {
+    return {row[0], row[1], row[2]};
+}
+float Dot(const Vec3& a, const Vec3& b) {
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+Vec3 Cross(const Vec3& a, const Vec3& b) {
+    return {a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]};
+}
+
+} // namespace
+
+bool LooksLikeGameCamera(const GameCamera& camera) {
+    for (const auto& row : camera.rows) {
+        for (const float value : row) {
+            if (!std::isfinite(value) || std::abs(value) > 1.0e6f) {
+                return false;
+            }
+        }
+    }
+    for (const float value : {camera.fov, camera.aspect, camera.near_plane, camera.far_plane}) {
+        if (!std::isfinite(value)) {
+            return false;
+        }
+    }
+    constexpr float Slack = 0.01f;
+    for (int i = 0; i < 3; ++i) {
+        const Vec3 axis = Axis(camera.rows[size_t(i)]);
+        if (std::abs(Dot(axis, axis) - 1.0f) > Slack || camera.rows[size_t(i)][3] != 0.0f) {
+            return false;
+        }
+        for (int j = i + 1; j < 3; ++j) {
+            if (std::abs(Dot(axis, Axis(camera.rows[size_t(j)]))) > Slack) {
+                return false;
+            }
+        }
+    }
+    return camera.rows[3][3] == 1.0f && camera.fov > 0.05f && camera.fov < 3.0f &&
+           camera.aspect > 0.1f && camera.aspect < 10.0f && camera.near_plane > 0.0f &&
+           camera.far_plane > camera.near_plane;
+}
+
+GameCamera OverheadCamera(const GameCamera& game, const OverheadView& view) {
+    // The x axis on the side of the y and z axes the game's is on (+1: x = y cross z).
+    const float hand = Dot(Axis(game.rows[0]), Cross(Axis(game.rows[1]), Axis(game.rows[2]))) < 0.0f
+                           ? -1.0f
+                           : 1.0f;
+    const float sh = std::sin(view.heading), ch = std::cos(view.heading);
+    const float sp = std::sin(view.pitch), cp = std::cos(view.pitch);
+    const Vec3 looks{sh * cp, -sp, ch * cp};
+    const Vec3 up{sh * sp, cp, ch * sp}; // at right angles to `looks`, towards the heading
+    const Vec3 cross = Cross(up, looks);
+    const Vec3 side{hand * cross[0], hand * cross[1], hand * cross[2]};
+    GameCamera camera = game;
+    camera.rows[0] = {side[0], side[1], side[2], 0.0f};
+    camera.rows[1] = {up[0], up[1], up[2], 0.0f};
+    camera.rows[2] = {looks[0], looks[1], looks[2], 0.0f};
+    camera.rows[3] = {view.x - looks[0] * view.distance, view.y - looks[1] * view.distance,
+                      view.z - looks[2] * view.distance, 1.0f};
+    camera.far_plane = std::max(game.far_plane, view.distance + 500.0f);
+    return camera;
+}
+
+std::optional<std::array<float, 2>> ProjectWithCamera(const GameCamera& camera, float x, float y,
+                                                      float z) {
+    const Vec3 d{x - camera.rows[3][0], y - camera.rows[3][1], z - camera.rows[3][2]};
+    const float ahead = Dot(d, Axis(camera.rows[2]));
+    if (ahead <= camera.near_plane) {
+        return std::nullopt;
+    }
+    const float t = std::tan(camera.fov * 0.5f);
+    return std::array<float, 2>{Dot(d, Axis(camera.rows[0])) / (ahead * t * camera.aspect),
+                                Dot(d, Axis(camera.rows[1])) / (ahead * t)};
+}
+
 } // namespace Core::Bloodborne

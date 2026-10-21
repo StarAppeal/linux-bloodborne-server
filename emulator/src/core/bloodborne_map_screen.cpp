@@ -7,6 +7,9 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -19,6 +22,7 @@
 #include "core/bloodborne_party.h"
 #include "core/bloodborne_re.h"
 #include "core/bloodborne_re_internal.h"
+#include "core/cpu_patches.h"
 
 namespace Core::Bloodborne {
 
@@ -100,6 +104,60 @@ void NoteExplored(u32 map, const LampPosition& at) {
 bool Loading() {
     const u64 global = GetGlobalState();
     return global < 0x10000 || TryRead<u8>(global, 0x08).value_or(1) != 0;
+}
+
+// Kaniel 2026-10-21 (the overhead map): the camera the game made this frame (GameCamera), read in
+// the frame step once its camera manager has updated (the hook at OverheadCameraHookOffset, r13 the
+// step, its camera manager at +0x128), and the view the map wants drawn instead; the camera the
+// frame was then drawn with. A view not asked again for OverheadViewHold is dropped (the overlay
+// went, or stopped asking): the game's own camera is never left moved.
+constexpr u64 StepCameraManagerField = 0x128;
+static_assert(sizeof(GameCamera) == 0x50);
+std::mutex camera_mutex;
+std::optional<GameCamera> camera_drawn;
+std::optional<OverheadView> overhead_wanted;
+Clock::time_point overhead_asked_at{};
+constexpr auto OverheadViewHold = std::chrono::milliseconds{750};
+
+void OverheadCameraStepNow(const GuestRegisterSnapshot* registers) {
+    const u64 manager = ReadValue<u64>(registers->r13, StepCameraManagerField);
+    if (manager < 0x10000 ||
+        !HasMemoryAccess(manager + GameCameraAt, sizeof(GameCamera), MemoryProt::CpuReadWrite)) {
+        return;
+    }
+    GameCamera game;
+    std::memcpy(&game, reinterpret_cast<const void*>(manager + GameCameraAt), sizeof(game));
+    if (!LooksLikeGameCamera(game)) {
+        return;
+    }
+    std::optional<OverheadView> wanted;
+    {
+        std::scoped_lock lock{camera_mutex};
+        if (overhead_wanted && Clock::now() - overhead_asked_at > OverheadViewHold) {
+            overhead_wanted.reset();
+        }
+        wanted = overhead_wanted;
+    }
+    // Taken and given back: logged (the rig's map-overhead checks both).
+    static bool was_wanted = false;
+    if (wanted.has_value() != was_wanted) {
+        was_wanted = wanted.has_value();
+        if (wanted) {
+            LOG_INFO(
+                Debug,
+                "Bloodborne map screen: the game camera over ({:.1f}, {:.1f}, {:.1f}), {:.0f} m "
+                "away, pitch {:.2f}",
+                wanted->x, wanted->y, wanted->z, wanted->distance, wanted->pitch);
+        } else {
+            LOG_INFO(Debug, "Bloodborne map screen: the game camera is the game's again");
+        }
+    }
+    const GameCamera drawn = wanted ? OverheadCamera(game, *wanted) : game;
+    if (wanted) {
+        std::memcpy(reinterpret_cast<void*>(manager + GameCameraAt), &drawn, sizeof(drawn));
+    }
+    std::scoped_lock lock{camera_mutex};
+    camera_drawn = drawn;
 }
 
 bool LocalPlayerDown() {
@@ -266,7 +324,22 @@ void TickMapScreen() {
     map_view_read = true;
 }
 
+void PS4_SYSV_ABI OverheadCameraStep(u64, const GuestRegisterSnapshot* registers) {
+    OverheadCameraStepNow(registers);
+}
+
 } // namespace Coop
+
+void SetOverheadView(const std::optional<OverheadView>& view) {
+    std::scoped_lock lock{camera_mutex};
+    overhead_wanted = view;
+    overhead_asked_at = Clock::now();
+}
+
+std::optional<GameCamera> DrawnGameCamera() {
+    std::scoped_lock lock{camera_mutex};
+    return camera_drawn;
+}
 
 bool ReadMapScreen(MapScreenView& view, bool open) {
     const bool was_open = map_screen_open.exchange(open, std::memory_order_relaxed);

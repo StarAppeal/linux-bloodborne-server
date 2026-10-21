@@ -331,6 +331,41 @@ extern "C" int32_t bbcoop_map_area_name_id(uint32_t map) {
     return Core::Bloodborne::AreaNameId(map);
 }
 
+static_assert(sizeof(bbcoop_camera) == sizeof(Core::Bloodborne::GameCamera));
+
+extern "C" void bbcoop_map_overhead(int on, float x, float y, float z, float distance, float heading,
+                                    float pitch) {
+    using namespace Core::Bloodborne;
+    SetOverheadView(on != 0 ? std::optional<OverheadView>{OverheadView{.x = x,
+                                                                      .y = y,
+                                                                      .z = z,
+                                                                      .distance = distance,
+                                                                      .heading = heading,
+                                                                      .pitch = pitch}}
+                            : std::nullopt);
+}
+
+extern "C" int bbcoop_map_camera(bbcoop_camera* camera) {
+    const auto drawn = Core::Bloodborne::DrawnGameCamera();
+    if (!drawn) {
+        return 0;
+    }
+    std::memcpy(camera, &*drawn, sizeof(*camera));
+    return 1;
+}
+
+extern "C" int bbcoop_camera_project(const bbcoop_camera* camera, float x, float y, float z, float at[2]) {
+    Core::Bloodborne::GameCamera game;
+    std::memcpy(&game, camera, sizeof(game));
+    const auto seen = Core::Bloodborne::ProjectWithCamera(game, x, y, z);
+    if (!seen) {
+        return 0;
+    }
+    at[0] = (*seen)[0];
+    at[1] = (*seen)[1];
+    return 1;
+}
+
 static_assert(BBCOOP_PORTRAIT_SIDE == Core::Bloodborne::PortraitSide);
 
 extern "C" int bbcoop_member_portrait(const char* member, uint8_t* rgba, size_t size, uint32_t* id) {

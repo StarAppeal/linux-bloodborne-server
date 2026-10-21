@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <array>
 #include <optional>
 #include <span>
 #include <vector>
@@ -83,5 +84,36 @@ ExploredCell ExploredCellAt(u32 packed_map, float x, float z);
 // read back (nothing when it is not one).
 std::vector<u8> SaveExplored(const std::vector<ExploredCell>& cells);
 std::optional<std::vector<ExploredCell>> LoadExplored(std::span<const u8> file);
+
+// Kaniel 2026-10-21 ("another 3D map mode that uses the game's own camera"): the map seen through
+// the game's own camera, high over the player. The camera manager ([[CameraManagerPointerOffset]
+// +CameraManagerField], built by 0x01435FC0) holds the camera the frame is drawn with from +0x10:
+// its world matrix (rows: the x axis, the y axis, the z axis the camera looks along, its position;
+// w 0, 0, 0, 1), then the vertical field of view (radians), width / height, near and far planes.
+// The game rebuilds it every frame (0x01436C31 copies it from the active camera); the copies the
+// frame is drawn from are made after 0x0193BE5A, where the overhead map writes its own.
+struct GameCamera {
+    std::array<std::array<float, 4>, 4> rows{};
+    float fov = 0, aspect = 0, near_plane = 0, far_plane = 0;
+    bool operator==(const GameCamera&) const = default;
+};
+constexpr u64 GameCameraAt = 0x10;
+// A camera as the game's are: finite, unit axes at right angles, w 0, 0, 0, 1, a sane view.
+bool LooksLikeGameCamera(const GameCamera& camera);
+// Where the overhead camera looks from: the spot it looks at (x east, y up, z north), how far it
+// is from it, its heading (the compass's: 0 looks north, +z; growing to the right) and its pitch
+// (down from level: pi/2 straight down).
+struct OverheadView {
+    float x = 0, y = 0, z = 0;
+    float distance = 0, heading = 0, pitch = 0;
+};
+// `game` moved and turned to the view: its axes keep their handedness (an x axis on the same side
+// of the other two as the game's), the top of the picture faces the heading, and its far plane
+// reaches past the spot looked at.
+GameCamera OverheadCamera(const GameCamera& game, const OverheadView& view);
+// Where a point lies in a camera's picture: x from -1 (left) to 1 (right), y from -1 (bottom) to
+// 1 (top); nothing behind the camera.
+std::optional<std::array<float, 2>> ProjectWithCamera(const GameCamera& camera, float x, float y,
+                                                      float z);
 
 } // namespace Core::Bloodborne

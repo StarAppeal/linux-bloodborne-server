@@ -10,7 +10,6 @@
  "Turn": "Käännä",
  "Prerendered": "Esipiirretty",
  "Live": "Reaaliaikainen",
- "{L3} on the map shows the place from the game's own models, from an angle. Prerendered: each area is drawn once, the first time, in the background. Live: the models are drawn on the graphics card as you turn and tilt the view (right stick), using its memory. Leave it off on a low-end PC.": "{L3} kartalla näyttää paikan viistosti pelin malleista. Esipiirretty: jokainen alue piirretään kerran, ensimmäisellä kerralla, taustalla. Reaaliaikainen: näytönohjain piirtää mallit, kun käännät ja kallistat näkymää (oikea sauva), käyttäen muistiaan. Pidä pois päältä heikolla tietokoneella.",
  "3D map": "3D-kartta",
  "Turn on the 3D map in the settings (Insert, Display)": "Ota 3D-kartta käyttöön asetuksista (Insert, Näyttö)",
  "Preparing the 3D view...": "Valmistellaan 3D-näkymää...",
@@ -361,5 +360,8 @@
  "Vertical field of view in degrees; the game's camera has 43. Every camera is widened by the same amount. Applies after restarting the game.": "Pystysuora näkökenttä asteina; pelin kamerassa on 43. Jokaista kameraa laajennetaan yhtä paljon. Tulee voimaan, kun peli käynnistetään uudelleen.",
  "Mute in the background": "Mykistä taustalla",
  "The game is silent while its window is not the active one.": "Peli on hiljaa, kun sen ikkuna ei ole aktiivinen.",
- "The buttons the game shows on screen. Automatic follows what you play with: the keys bound below while you use the keyboard and mouse, the controller's own buttons (PlayStation, Xbox or Switch) while you use one, switching as you change. A change here applies after a restart.": "Pelin ruudulla näyttämät painikkeet. Automaattinen seuraa sitä, millä pelaat: alla määritetyt näppäimet, kun käytät näppäimistöä ja hiirtä, ohjaimen omat painikkeet (PlayStation, Xbox tai Switch), kun käytät ohjainta, ja vaihtuu kesken pelin. Muutos tässä tulee voimaan uudelleenkäynnistyksen jälkeen."
+ "The buttons the game shows on screen. Automatic follows what you play with: the keys bound below while you use the keyboard and mouse, the controller's own buttons (PlayStation, Xbox or Switch) while you use one, switching as you change. A change here applies after a restart.": "Pelin ruudulla näyttämät painikkeet. Automaattinen seuraa sitä, millä pelaat: alla määritetyt näppäimet, kun käytät näppäimistöä ja hiirtä, ohjaimen omat painikkeet (PlayStation, Xbox tai Switch), kun käytät ohjainta, ja vaihtuu kesken pelin. Muutos tässä tulee voimaan uudelleenkäynnistyksen jälkeen.",
+ "{L3} on the map shows the place from the game's own models, from an angle. Prerendered: each area is drawn once, the first time, in the background. Live: the models are drawn on the graphics card as you turn and tilt the view (right stick), using its memory. Game camera: the game's own camera rises high above you and the world itself is the map (indoors, the flat map). Leave it off on a low-end PC.": "{L3} kartalla näyttää paikan viistosti pelin malleista. Esipiirretty: jokainen alue piirretään kerran, ensimmäisellä kerralla, taustalla. Reaaliaikainen: näytönohjain piirtää mallit, kun käännät ja kallistat näkymää (oikea sauva), käyttäen muistiaan. Pelin kamera: pelin oma kamera nousee korkealle yläpuolellesi ja maailma itse on kartta (sisätiloissa tasainen kartta). Pidä pois päältä heikolla tietokoneella.",
+ "Game camera": "Pelin kamera",
+ "Indoors: the flat map (the game camera's view shows in the open)": "Sisätiloissa: tasainen kartta (pelin kameran näkymä näkyy ulkona)"
 }

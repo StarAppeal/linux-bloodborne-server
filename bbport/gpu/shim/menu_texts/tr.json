@@ -10,7 +10,6 @@
  "Turn": "Çevir",
  "Prerendered": "Önceden çizilmiş",
  "Live": "Canlı",
- "{L3} on the map shows the place from the game's own models, from an angle. Prerendered: each area is drawn once, the first time, in the background. Live: the models are drawn on the graphics card as you turn and tilt the view (right stick), using its memory. Leave it off on a low-end PC.": "Haritada {L3}, yeri oyunun modellerinden açılı gösterir. Önceden çizilmiş: her bölge ilk seferde bir kez arka planda çizilir. Canlı: görünümü çevirip eğdikçe (sağ çubuk) modelleri ekran kartı belleğini kullanarak çizer. Zayıf bir bilgisayarda kapalı bırakın.",
  "3D map": "3B harita",
  "Turn on the 3D map in the settings (Insert, Display)": "3B haritayı ayarlardan açın (Insert, Görüntü)",
  "Preparing the 3D view...": "3B görünüm hazırlanıyor...",
@@ -361,5 +360,8 @@
  "Vertical field of view in degrees; the game's camera has 43. Every camera is widened by the same amount. Applies after restarting the game.": "Derece cinsinden dikey görüş alanı; oyunun kamerası 43. Her kamera aynı ölçüde genişletilir. Oyun yeniden başlatıldıktan sonra uygulanır.",
  "Mute in the background": "Arka planda sessiz",
  "The game is silent while its window is not the active one.": "Oyunun penceresi etkin değilken oyun ses çıkarmaz.",
- "The buttons the game shows on screen. Automatic follows what you play with: the keys bound below while you use the keyboard and mouse, the controller's own buttons (PlayStation, Xbox or Switch) while you use one, switching as you change. A change here applies after a restart.": "Oyunun ekranda gösterdiği düğmeler. Otomatik, neyle oynadığını izler: klavye ve fare kullanırken aşağıda atanan tuşları, kontrolcü kullanırken onun düğmelerini (PlayStation, Xbox veya Switch) gösterir ve değiştirdiğinde anında değişir. Buradaki bir değişiklik yeniden başlattıktan sonra uygulanır."
+ "The buttons the game shows on screen. Automatic follows what you play with: the keys bound below while you use the keyboard and mouse, the controller's own buttons (PlayStation, Xbox or Switch) while you use one, switching as you change. A change here applies after a restart.": "Oyunun ekranda gösterdiği düğmeler. Otomatik, neyle oynadığını izler: klavye ve fare kullanırken aşağıda atanan tuşları, kontrolcü kullanırken onun düğmelerini (PlayStation, Xbox veya Switch) gösterir ve değiştirdiğinde anında değişir. Buradaki bir değişiklik yeniden başlattıktan sonra uygulanır.",
+ "{L3} on the map shows the place from the game's own models, from an angle. Prerendered: each area is drawn once, the first time, in the background. Live: the models are drawn on the graphics card as you turn and tilt the view (right stick), using its memory. Game camera: the game's own camera rises high above you and the world itself is the map (indoors, the flat map). Leave it off on a low-end PC.": "Haritada {L3}, yeri oyunun modellerinden açılı gösterir. Önceden çizilmiş: her bölge ilk seferde bir kez arka planda çizilir. Canlı: görünümü çevirip eğdikçe (sağ çubuk) modelleri ekran kartı belleğini kullanarak çizer. Oyun kamerası: oyunun kendi kamerası yükseğe, tam üstüne çıkar ve dünyanın kendisi harita olur (kapalı yerlerde düz harita). Zayıf bir bilgisayarda kapalı bırakın.",
+ "Game camera": "Oyun kamerası",
+ "Indoors: the flat map (the game camera's view shows in the open)": "Kapalı alanda: düz harita (oyun kamerası görünümü açık alanda gösterilir)"
 }

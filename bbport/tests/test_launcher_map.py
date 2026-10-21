@@ -32,7 +32,10 @@ class MapCardTests(unittest.TestCase):
 
     def test_setting(self):
         self.assertEqual(launcher.INI_DEFAULTS['map_3d'], '0')
-        self.assertEqual([value for value, _text in launcher.MAP_3D], ['0', '1', '2'])
+        # Kaniel 2026-10-21: the game's own camera over the map (BbSettings::Map3dGameCamera).
+        self.assertEqual([value for value, _text in launcher.MAP_3D], ['0', '1', '2', '3'])
+        self.assertEqual(launcher.MAP_3D[3][1], ('Game camera', 'Камера игры'))
+        self.assertNotEqual(launcher.INI_DEFAULTS['map_3d'], '3')  # opt-in only (Kaniel 2026-10-21)
 
 
 if __name__ == '__main__':

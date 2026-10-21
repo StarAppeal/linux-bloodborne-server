@@ -4574,9 +4574,29 @@ std::optional<std::string> AutoplayMenuKeys(const std::vector<std::string>& toke
     if (tokens.empty()) {
         return std::nullopt;
     }
+    // Kaniel 2026-10-21: the map's held controls, hold-<control>-<frames> (the overlay holds them).
+    static constexpr std::array<std::string_view, 10> Held{
+        "zoomin",  "zoomout", "turnleft", "turnright", "panup",
+        "pandown", "panleft", "panright", "tiltup",    "tiltdown"};
+    const auto held = [](std::string_view token) {
+        if (!token.starts_with("hold-")) {
+            return false;
+        }
+        token.remove_prefix(5);
+        const size_t dash = token.find('-');
+        if (dash == std::string_view::npos ||
+            std::ranges::find(Held, token.substr(0, dash)) == Held.end()) {
+            return false;
+        }
+        const std::string_view count = token.substr(dash + 1);
+        int frames = 0;
+        const auto [end, error] =
+            std::from_chars(count.data(), count.data() + count.size(), frames);
+        return error == std::errc{} && end == count.data() + count.size() && frames > 0;
+    };
     std::string text;
     for (const std::string& token : tokens) {
-        if (std::ranges::find(Keys, token) == Keys.end()) {
+        if (std::ranges::find(Keys, token) == Keys.end() && !held(token)) {
             return std::nullopt;
         }
         text += text.empty() ? token : " " + token;

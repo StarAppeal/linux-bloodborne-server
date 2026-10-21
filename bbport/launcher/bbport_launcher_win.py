@@ -285,7 +285,9 @@ INI_DEFAULTS = {'upscaler': 'fsr4', 'preset': '1', 'sharpen': '1', 'sharpness': 
                 'button_icons': bbport_controls.ICON_DEFAULT, **bbport_controls.MOUSE_DEFAULTS,
                 **{key: '1' if on else '0' for key, _t, on in EFFECTS + EXTRAS + CHEATS + TWEAKS}}
 # Kaniel 2026-10-19: the map's 3D view (bbport.ini map_3d: BbSettings::Map3d).
-MAP_3D = [('0', ('Off', 'Выкл.')), ('1', ('Prerendered', 'Заранее нарисованная')), ('2', ('Live', 'В реальном времени'))]
+# Kaniel 2026-10-21: or the game's own camera high over the map.
+MAP_3D = [('0', ('Off', 'Выкл.')), ('1', ('Prerendered', 'Заранее нарисованная')), ('2', ('Live', 'В реальном времени')),
+          ('3', ('Game camera', 'Камера игры'))]
 
 
 def map_areas(dvdroot):
@@ -3594,10 +3596,11 @@ class Launcher:
         self.row(card, _('3D map', '3D-карта'), self.choice(card, 'map_3d', 'ini', MAP_3D, 26),
                  _('L3 on the in-game map shows the place from the game\'s own models, from an angle. Prerendered: '
                    'drawn ahead (below), the map opens in 3D. Live: drawn by the graphics card as you turn the view; '
-                   'needs video memory.',
+                   'needs video memory. Game camera: the game\'s own camera rises above you and the world is the map.',
                    'L3 на карте в игре показывает местность из моделей самой игры под углом. Заранее '
                    'нарисованная: рисуется заранее (ниже), карта открывается в 3D. В реальном времени: рисует '
-                   'видеокарта, пока вы поворачиваете вид; нужна видеопамять.'))
+                   'видеокарта, пока вы поворачиваете вид; нужна видеопамять. Камера игры: камера самой игры '
+                   'поднимается над вами, и картой служит сам мир.'))
         self.map_label = self.label(card, '', wraplength=px(640), justify='left')
         self.map_label.grid(row=self.next_row(card), column=0, columnspan=2, sticky='w', pady=(px(14), 0))
         holder = tk.Frame(card, bg=CARD)

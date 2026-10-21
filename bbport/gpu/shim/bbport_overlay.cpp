@@ -1699,17 +1699,20 @@ void DisplayTab() {
     // Kaniel 2026-10-19 ("make it opt in", "an opt in option to view rendered in real time"):
     // the map's 3D view.
     const char* map_3d_names[] = {T("Off", "Выкл."), T("Prerendered", "Заранее нарисованная"),
-                                  T("Live", "В реальном времени")};
+                                  T("Live", "В реальном времени"), T("Game camera", "Камера игры")};
     Choice("map_3d", T("3D map", "3D-карта"), std::clamp(s.map_3d.load(), 0, BbSettings::Map3dCount - 1),
            BbSettings::Map3dCount, [&](int i) { return map_3d_names[i]; }, [](int) { return true; },
            T("{L3} on the map shows the place from the game's own models, from an angle. Prerendered: "
              "each area is drawn once, the first time, in the background. Live: the models are "
              "drawn on the graphics card as you turn and tilt the view (right stick), using its "
-             "memory. Leave it off on a low-end PC.",
+             "memory. Game camera: the game's own camera rises high above you and the world itself is "
+             "the map (indoors, the flat map). Leave it off on a low-end PC.",
              "{L3} на карте показывает местность из моделей самой игры под углом. Заранее "
              "нарисованная: каждая область рисуется один раз, при первом показе, в фоне. В "
              "реальном времени: модели рисуются видеокартой, пока вы поворачиваете и наклоняете "
-             "вид (правый стик), используя её память. На слабом ПК оставьте выключенным."),
+             "вид (правый стик), используя её память. Камера игры: камера самой игры поднимается "
+             "высоко над вами, и картой служит сам мир (в помещении — плоская карта). На слабом ПК "
+             "оставьте выключенным."),
            true, [&](int i) { Store(s.map_3d, i, true); });
     Toggle("map_fog", T("Map fog of war", "Туман на карте"), s.map_fog,
            T("The map hides what your hunter has not walked near yet. Off shows the whole map.",
@@ -4611,12 +4614,49 @@ State state;
 bool three_d_kept = false; // the 3D view stays on the next time the map opens
 bool sides_ready = false;  // the 3D view's pictures of its side are there (else the flat map shows)
 bool live_ready = false;   // the live 3D view has the shown area on the GPU
+// Kaniel 2026-10-21 ("another 3D map mode that uses the game's own camera"): the game's camera is
+// asked over the map (since `overhead_asked_at`), and a frame was drawn with it (`overhead_camera`).
+bool overhead_asked = false;
+double overhead_asked_at = 0.0;
+bool overhead_ready = false;
+bbcoop_camera overhead_camera{};
+// The player stands under a roof (BbMapArt::UnderRoof): the game draws only the pieces round it
+// there, so the flat map shows instead (Kaniel 2026-10-21: "flat map now").
+bool overhead_enclosed = false;
 /// The map is shown angled: the 3D view is on and its pictures (or meshes) are there.
 bool Angled() {
-    return state.three_d && (sides_ready || live_ready);
+    return state.three_d && (sides_ready || live_ready || overhead_ready);
 }
 bool Live() {
     return BbSettings::Get().map_3d == BbSettings::Map3dLive;
+}
+/// Kaniel 2026-10-21: the 3D view is the world itself, the game's camera high over the map's middle.
+bool Overhead() {
+    return BbSettings::Get().map_3d == BbSettings::Map3dGameCamera;
+}
+/// The 3D view turns and tilts by the right stick and zooms by L2 / R2 (the live one, the game's).
+bool Turning() {
+    return state.three_d && (Live() || (Overhead() && !overhead_enclosed));
+}
+/// The game camera's view is on screen: asked, and drawn (else, a second on, the flat map: the
+/// game would not take the camera).
+bool OverheadShown() {
+    return state.three_d && Overhead() && !overhead_enclosed && (overhead_ready || (overhead_asked && ImGui::GetTime() - overhead_asked_at < 1.0));
+}
+// The game camera's view: from 40 to 400 m from the spot looked at (nearer, a flat view went inside
+// the houses), first 120 m away, tilted 72 degrees from level; never more than 300 m from the
+// player (the map blocks round it are loaded).
+constexpr float OverheadNear = 40.0f, OverheadFar = 400.0f, OverheadStart = 120.0f;
+constexpr float OverheadPitch = 1.25f, OverheadReach = 300.0f, OverheadClearance = 12.0f;
+float OverheadFov() {
+    return overhead_camera.fov > 0.05f ? overhead_camera.fov : 0.75f;
+}
+/// The map's zoom (screen pixels a metre at the spot looked at) as the camera's distance, and back.
+float OverheadDistance(float zoom) {
+    return ImGui::GetIO().DisplaySize.y / (2.0f * std::tan(OverheadFov() * 0.5f) * std::max(zoom, 1e-3f));
+}
+float OverheadZoom(float distance) {
+    return ImGui::GetIO().DisplaySize.y / (2.0f * std::tan(OverheadFov() * 0.5f) * distance);
 }
 
 /// An area's picture as a texture.
@@ -4783,16 +4823,24 @@ void Refresh() {
         }
     }
     if (!open) {
+        if (overhead_asked) {
+            bbcoop_map_overhead(0, 0, 0, 0, 0, 0, 0); // the game's own camera, on the next frame
+            overhead_asked = overhead_ready = false;
+            std::printf("Map: game camera back\n");
+        }
         return;
     }
+    overhead_ready = overhead_asked && bbcoop_map_camera(&overhead_camera) != 0;
     // Kaniel 2026-10-18 ("sometimes roofs, sometimes floors"): floors where the player stands
     // under a roof (indoors, under a bridge), roofs in the open; R3 or F picks the other.
     float floors = NAN;
+    overhead_enclosed = false;
     if (view.has_me) {
         bool want = state.floors == 2;
+        const auto mine = BbMapCharts::Get(view.map);
+        overhead_enclosed = mine && BbMapArt::UnderRoof(*mine, view.x, view.y, view.z);
         if (state.floors == 0) {
-            const auto mine = BbMapCharts::Get(view.map);
-            want = mine && BbMapArt::UnderRoof(*mine, view.x, view.y, view.z);
+            want = overhead_enclosed;
         }
         floors = want ? view.y : NAN;
     }
@@ -4899,7 +4947,7 @@ void Refresh() {
             }
         }
     }
-    if (state.three_d && !live) {
+    if (state.three_d && !live && !Overhead()) { // the game camera's view needs no pictures
         for (const uint32_t map : order) {
             {
                 const uint32_t key = map | uint32_t(state.side);
@@ -5006,6 +5054,19 @@ struct Frame {
     ImVec2 Mid() const { return ImVec2((p0.x + p1.x) * 0.5f, (p0.y + p1.y) * 0.5f); }
     ImVec2 Screen(float x, float z, float y = NAN) const {
         const ImVec2 m = Mid();
+        if (OverheadShown() && overhead_ready) {
+            // Kaniel 2026-10-21: where the game drew it, through the camera of its last frame (the
+            // atlas spot back in the game's metres of the player's world; the ground looked at
+            // for a spot without a height).
+            const Place p = AtlasOffset(view.map);
+            const float h = !std::isnan(y) ? y : !std::isnan(state.cy) ? state.cy : view.y;
+            float at[2];
+            if (bbcoop_camera_project(&overhead_camera, x - p.dx, h, z - p.dz, at) == 0) {
+                return ImVec2(-1.0e5f, -1.0e5f);
+            }
+            const ImVec2 d = ImGui::GetIO().DisplaySize;
+            return ImVec2((at[0] + 1.0f) * 0.5f * d.x, (1.0f - at[1]) * 0.5f * d.y);
+        }
         if (!Angled()) {
             return ImVec2(m.x + (x - state.cx) * state.zoom, m.y - (z - state.cz) * state.zoom);
         }
@@ -5018,6 +5079,9 @@ struct Frame {
     }
     /// An area's own spot, where its world lies on the atlas.
     ImVec2 At(uint32_t map, float x, float z, float y = NAN) const {
+        if (OverheadShown() && WorldOf(map) != WorldOf(view.map)) {
+            return ImVec2(-1.0e5f, -1.0e5f); // another world: not under the game's camera
+        }
         const Place p = AtlasOffset(map);
         return Screen(x + p.dx, z + p.dz, y);
     }
@@ -5072,6 +5136,26 @@ float TopAt(float x, float z) {
         }
     }
     return NAN;
+}
+
+/// The highest of the pictures' tops at an atlas spot (areas over one another: Central Yharnam
+/// over Old Yharnam); NaN where nothing is drawn.
+float HighestTopAt(float x, float z) {
+    float highest = NAN;
+    for (const auto& [map, c] : charts) {
+        const BbMapArt::Chart& chart = *c.chart;
+        const BbMapArt::Chart::Storeys& s = chart.storeys;
+        const Place p = AtlasOffset(map);
+        const auto [px, py] = chart.PixelOf(x - p.dx, z - p.dz);
+        const int cx = int(std::floor(px)) / BbMapArt::Chart::FloorCell, cy = int(std::floor(py)) / BbMapArt::Chart::FloorCell;
+        if (px >= 0 && py >= 0 && cx < s.width && cy < s.height) {
+            const int16_t top = s.roof[size_t(cy) * size_t(s.width) + size_t(cx)];
+            if (top != BbMapArt::Chart::NoHeight && !(float(top) / 10.0f <= highest)) {
+                highest = float(top) / 10.0f;
+            }
+        }
+    }
+    return highest;
 }
 
 /// A small lamp: its post and its glowing head; `focused` rings it.
@@ -5137,11 +5221,15 @@ void StainMark(ImDrawList* draw, const bbcoop_map_stain& stain, ImVec2 at) {
 /// The picture with its marks, inside the game's card art.
 void DrawPicture(ImDrawList* draw, const Frame& frame, const std::vector<const bbcoop_map_lamp*>& lamps,
                  float pulse) {
-    MenuArt::Nine(draw, MenuArt::Card, ImVec2(frame.p0.x - S(14.0f), frame.p0.y - S(14.0f)),
-                  ImVec2(frame.p1.x + S(14.0f), frame.p1.y + S(14.0f)), 14.0f, S(12.0f), 0.95f);
-    draw->AddRectFilled(frame.p0, frame.p1, Party::Rgba(0.045f, 0.040f, 0.035f, 0.92f));
+    // Kaniel 2026-10-21: in the game camera's view the game's own frame is the picture.
+    const bool world = OverheadShown();
+    if (!world) {
+        MenuArt::Nine(draw, MenuArt::Card, ImVec2(frame.p0.x - S(14.0f), frame.p0.y - S(14.0f)),
+                      ImVec2(frame.p1.x + S(14.0f), frame.p1.y + S(14.0f)), 14.0f, S(12.0f), 0.95f);
+        draw->AddRectFilled(frame.p0, frame.p1, Party::Rgba(0.045f, 0.040f, 0.035f, 0.92f));
+    }
     draw->PushClipRect(frame.p0, frame.p1, true);
-    if (const ChartTexture* shown = Shown()) {
+    if (const ChartTexture* shown = world ? nullptr : Shown(); world || shown != nullptr) {
         // The world's other areas under the shown one, a little darker; the shown one over them.
         const auto picture = [&](const ChartTexture& c, float tone) {
             const BbMapArt::Chart& chart = *c.chart;
@@ -5182,7 +5270,7 @@ void DrawPicture(ImDrawList* draw, const Frame& frame, const std::vector<const b
             }
             return !drawn.empty();
         };
-        bool sides_shown = state.three_d && !Live() && side_picture(state.side, 1.0f);
+        bool sides_shown = world || (state.three_d && !Live() && side_picture(state.side, 1.0f));
         if (state.three_d && Live() && live_ready) {
             // Kaniel 2026-10-19 (live 3D): the models drawn this frame on the GPU, with this camera.
             ImVec2 uv1(1, 1);
@@ -5197,7 +5285,7 @@ void DrawPicture(ImDrawList* draw, const Frame& frame, const std::vector<const b
         }
         // Kaniel 2026-10-19 ("now it shows this state with boxes"): while the sides are still
         // being drawn, the flat map with a note.
-        const bool preparing = state.three_d && !sides_shown;
+        const bool preparing = state.three_d && !sides_shown && !Overhead(); // indoors: the flat map, ready
         if (!sides_shown) {
             for (const auto& [map, c] : charts) {
                 if (map != state.shown && c.texture != nullptr) {
@@ -5206,8 +5294,8 @@ void DrawPicture(ImDrawList* draw, const Frame& frame, const std::vector<const b
             }
             picture(*shown, 1.0f);
         }
-        // Zoomed out: each area's name over its middle.
-        if (state.zoom < S(1.2f) && charts.size() > 1) {
+        // Zoomed out: each area's name over its middle (not over the world itself: only the marks).
+        if (!world && state.zoom < S(1.2f) && charts.size() > 1) {
             for (const auto& [map, c] : charts) {
                 const BbMapArt::Chart& chart = *c.chart;
                 const ImVec2 at = frame.At(map, chart.x0 + float(chart.width) / chart.ppm * 0.5f,
@@ -5218,7 +5306,7 @@ void DrawPicture(ImDrawList* draw, const Frame& frame, const std::vector<const b
         }
         // Kaniel 2026-10-18: the places the game names (Iosefka's Clinic, the Healing Church
         // Workshop) where their floors lie, once close enough to read.
-        if (state.zoom >= S(1.0f)) {
+        if (!world && state.zoom >= S(1.0f)) {
             for (const auto& [map, c] : charts) {
                 for (const BbMapArt::Chart::Label& label : c.chart->labels) {
                     const std::string name = BbMapCharts::AreaName(label.name_id);
@@ -5300,7 +5388,7 @@ void DrawPicture(ImDrawList* draw, const Frame& frame, const std::vector<const b
         ImGui::PopFont();
     }
     draw->PopClipRect();
-    MenuArt::Vignette(draw, frame.p0, frame.p1, 0.35f);
+    MenuArt::Vignette(draw, frame.p0, frame.p1, world ? 0.2f : 0.35f);
 }
 
 /// The right-hand column: the area's lit lamps (the focused one framed), then the party.
@@ -5444,12 +5532,14 @@ void DrawKeys(ImDrawList* draw, float x0, float x1, float bottom) {
     std::vector<Keys::Hint> keys = {
         {"L1 R1", "Q E", T("Area", "Область")},
         {"LS", "WASD", T("Move", "Сдвиг")},
-        {state.three_d && Live() ? "L2 R2" : "RS", "- =", T("Zoom", "Масштаб")},
+        {Turning() ? "L2 R2" : "RS", "- =", T("Zoom", "Масштаб")},
         {"Square", "C", T("You", "Вы")},
-        {"Triangle", "Tab", T("Whole map", "Вся карта")},
-        {"R3", "F", std::isnan(drawn_floors) ? T("Floors", "Этажи") : T("Roofs", "Крыши")},
     };
-    if (state.three_d && Live()) {
+    if (!OverheadShown()) { // the game camera's view: no whole map, no floors (the world is drawn)
+        keys.push_back({"Triangle", "Tab", T("Whole map", "Вся карта")});
+        keys.push_back({"R3", "F", std::isnan(drawn_floors) ? T("Floors", "Этажи") : T("Roofs", "Крыши")});
+    }
+    if (Turning()) {
         keys.insert(keys.begin() + 3, {"RS", "Z X", T("Turn", "Поворот")});
     }
     if (state.three_d || BbSettings::Get().map_3d) {
@@ -5486,7 +5576,9 @@ void MoveView(const Frame& frame) {
     const float ry = analog(ImGuiKey_GamepadRStickDown) - analog(ImGuiKey_GamepadRStickUp);
     const bool inside = io.MousePos.x >= frame.p0.x && io.MousePos.x < frame.p1.x && io.MousePos.y >= frame.p0.y &&
                         io.MousePos.y < frame.p1.y;
-    const bool live = state.three_d && Live();
+    const bool live = Turning();
+    // Kaniel 2026-10-21: the game camera's view tilts from 46 degrees to straight down.
+    const float flattest = Overhead() ? 0.8f : 0.35f;
     if (state.three_d && !live) {
         // Kaniel 2026-10-19 ("we need just one side"): the prerendered 3D view is seen from the south.
         const BbMapArt::ObliqueView seen = BbMapArt::ViewOf(state.side);
@@ -5498,10 +5590,10 @@ void MoveView(const Frame& frame) {
         // down tilts.
         const float turn = (ImGui::IsKeyDown(ImGuiKey_X) ? 1.0f : 0.0f) - (ImGui::IsKeyDown(ImGuiKey_Z) ? 1.0f : 0.0f);
         state.yaw += (rx + turn) * 1.8f * dt;
-        state.pitch = std::clamp(state.pitch - ry * 0.9f * dt, 0.35f, 1.5707f);
+        state.pitch = std::clamp(state.pitch - ry * 0.9f * dt, flattest, 1.5707f);
         if (inside && ImGui::IsMouseDragging(ImGuiMouseButton_Right, 2.0f)) {
             state.yaw += io.MouseDelta.x * 0.006f;
-            state.pitch = std::clamp(state.pitch + io.MouseDelta.y * 0.004f, 0.35f, 1.5707f);
+            state.pitch = std::clamp(state.pitch + io.MouseDelta.y * 0.004f, flattest, 1.5707f);
         }
     }
     lx += (ImGui::IsKeyDown(ImGuiKey_D) ? 1.0f : 0.0f) - (ImGui::IsKeyDown(ImGuiKey_A) ? 1.0f : 0.0f);
@@ -5557,8 +5649,21 @@ void MoveView(const Frame& frame) {
         zoom *= std::pow(1.25f, io.MouseWheel);
     }
     state.zoom = std::clamp(state.zoom * zoom, S(0.05f), S(12.0f));
-    // The middle stays over the pictures.
-    if (!charts.empty()) {
+    if (state.three_d && Overhead()) {
+        // Kaniel 2026-10-21: the game's camera from OverheadNear to OverheadFar metres away, its
+        // middle within OverheadReach of the player.
+        state.zoom = std::clamp(state.zoom, OverheadZoom(OverheadFar), OverheadZoom(OverheadNear));
+        if (view.has_me) {
+            const Place p = AtlasOffset(view.map);
+            const float dx = state.cx - (view.x + p.dx), dz = state.cz - (view.z + p.dz);
+            const float d = std::hypot(dx, dz);
+            if (d > OverheadReach) {
+                state.cx = view.x + p.dx + dx / d * OverheadReach;
+                state.cz = view.z + p.dz + dz / d * OverheadReach;
+            }
+        }
+    } else if (!charts.empty()) {
+        // The middle stays over the pictures.
         const auto [x0, x1, z0, z1] = AtlasExtent();
         state.cx = std::clamp(state.cx, x0, x1);
         state.cz = std::clamp(state.cz, z0, z1);
@@ -5597,6 +5702,39 @@ void MoveCursor(const Frame& frame) {
     }
 }
 
+/// Kaniel 2026-10-21: the game's camera over the map's middle while the game camera's view is on
+/// (every frame: the game takes its own back a moment after the last), else the game's own.
+void AskOverhead() {
+    const bool want = state.three_d && Overhead() && !overhead_enclosed && state.zoom > 0.0f && view.has_me &&
+                      view.map != 0;
+    if (want) {
+        const Place p = AtlasOffset(view.map);
+        const float y = std::isnan(state.cy) ? view.y : state.cy;
+        // The camera stays OverheadClearance over the roofs on its way down to the spot (the map's
+        // tops): farther away where it would be among the houses.
+        float distance = OverheadDistance(state.zoom);
+        const float sh = std::sin(state.yaw), ch = std::cos(state.yaw);
+        const float sp = std::max(std::sin(state.pitch), 0.2f), cp = std::cos(state.pitch);
+        for (const float share : {1.0f, 0.75f, 0.5f, 0.25f}) {
+            const float back = distance * share * cp;
+            const float top = HighestTopAt(state.cx - sh * back, state.cz - ch * back);
+            if (!std::isnan(top) && y + distance * share * sp < top + OverheadClearance) {
+                distance = std::max(distance, (top + OverheadClearance - y) / (share * sp));
+            }
+        }
+        if (!overhead_asked) {
+            overhead_asked_at = ImGui::GetTime();
+            std::printf("Map: game camera view\n");
+        }
+        bbcoop_map_overhead(1, state.cx - p.dx, y, state.cz - p.dz, distance, state.yaw, state.pitch);
+        overhead_asked = true;
+    } else if (overhead_asked) {
+        bbcoop_map_overhead(0, 0, 0, 0, 0, 0, 0);
+        overhead_asked = overhead_ready = false;
+        std::printf("Map: game camera back\n");
+    }
+}
+
 void Screen() {
     ImGuiIO& io = ImGui::GetIO();
     const ImVec2 display = io.DisplaySize;
@@ -5613,6 +5751,9 @@ void Screen() {
             three_d_kept = BbSettings::Get().map_3d != BbSettings::Map3dOff;
         }
         state.three_d = three_d_kept;
+        if (Overhead()) {
+            state.pitch = OverheadPitch;
+        }
     }
     // The player's own area once the game thread has read where it stands (a moment after opening).
     if (!state.placed && (view.has_me || ImGui::GetTime() - state.opened > 1.5)) {
@@ -5651,12 +5792,17 @@ void Screen() {
         state.focus = std::clamp(state.focus, 0, int(lamps.size()) - 1);
     }
 
+    // Kaniel 2026-10-21: the game camera's view leaves the game's frame uncovered.
+    const bool world = OverheadShown();
     ImDrawList* back = ImGui::GetBackgroundDrawList();
-    back->AddRectFilled(ImVec2(0, 0), display, IM_COL32(0, 0, 0, 175));
+    if (!world) {
+        back->AddRectFilled(ImVec2(0, 0), display, IM_COL32(0, 0, 0, 175));
+    }
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(display, ImGuiCond_Always);
-    const bool wall = MenuArt::Has(MenuArt::Wall);
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, wall ? ImVec4(0, 0, 0, 0) : ImVec4(0.035f, 0.032f, 0.028f, 1.0f));
+    const bool wall = !world && MenuArt::Has(MenuArt::Wall);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg,
+                          wall || world ? ImVec4(0, 0, 0, 0) : ImVec4(0.035f, 0.032f, 0.028f, 1.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::Begin("##bbport_map", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
@@ -5668,6 +5814,13 @@ void Screen() {
     }
     const ImVec2 size(std::min(S(1760.0f), display.x - S(60.0f)), display.y - S(40.0f));
     const ImVec2 win((display.x - size.x) * 0.5f, (display.y - size.y) * 0.5f);
+    if (world) {
+        // Shades for the title, the list and the key guide over the world.
+        const ImU32 dark = Party::Rgba(0, 0, 0, 0.62f), clear = Party::Rgba(0, 0, 0, 0.0f);
+        draw->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(display.x, S(190.0f)), dark, dark, clear, clear);
+        draw->AddRectFilledMultiColor(ImVec2(0, display.y - S(150.0f)), display, clear, clear, dark, dark);
+        draw->AddRectFilledMultiColor(ImVec2(display.x - S(560.0f), 0), display, clear, dark, dark, clear);
+    }
     Divider(draw, win.x + S(24.0f), win.x + size.x - S(24.0f), win.y + S(14.0f));
     Divider(draw, win.x + S(24.0f), win.x + size.x - S(24.0f), win.y + size.y - S(14.0f));
 
@@ -5699,7 +5852,16 @@ void Screen() {
     const float list_w = S(430.0f);
     // Kaniel 2026-10-19: room under the picture for the key guide, clear of the bottom ornament.
     const float top = win.y + S(84.0f) + ornament + S(20.0f), bottom = win.y + size.y - S(100.0f);
-    const Frame frame{ImVec2(win.x + S(40.0f), top), ImVec2(win.x + size.x - list_w - S(70.0f), bottom)};
+    const Frame layout{ImVec2(win.x + S(40.0f), top), ImVec2(win.x + size.x - list_w - S(70.0f), bottom)};
+    // The game camera's view is the whole screen: its middle is the spot the camera looks at.
+    const Frame frame = world ? Frame{ImVec2(0, 0), display} : layout;
+    if (state.three_d && Overhead() && state.zoom <= 0.0f && view.has_me && view.map != 0) {
+        // Kaniel 2026-10-21: the game camera's view needs no picture: over the player at once.
+        const Place p = AtlasOffset(view.map);
+        state.zoom = OverheadZoom(OverheadStart);
+        state.cx = view.x + p.dx;
+        state.cz = view.z + p.dz;
+    }
     if (const ChartTexture* shown = Shown(); state.zoom <= 0.0f && shown != nullptr) {
         state.zoom = FitZoom(frame, *shown->chart);
         CentreOnChart(state.shown, *shown->chart);
@@ -5737,7 +5899,7 @@ void Screen() {
             state.cx = view.x + p.dx;
             state.cz = view.z + p.dz;
         }
-        if (Pressed({ImGuiKey_GamepadR3, ImGuiKey_F}) && view.has_me) {
+        if (Pressed({ImGuiKey_GamepadR3, ImGuiKey_F}) && view.has_me && !world) {
             state.floors = std::isnan(drawn_floors) ? 2 : 1;
         }
         // Kaniel 2026-10-19 ("3d map ... as an optional feature"): L3 (or V) turns the 3D view on
@@ -5746,6 +5908,16 @@ void Screen() {
             if (BbSettings::Get().map_3d || state.three_d) {
                 state.three_d = !state.three_d;
                 three_d_kept = state.three_d;
+                if (state.three_d && Overhead()) {
+                    // Kaniel 2026-10-21: the game's camera starts over the player.
+                    state.pitch = OverheadPitch;
+                    state.zoom = OverheadZoom(OverheadStart);
+                    if (view.has_me && view.map != 0) {
+                        const Place p = AtlasOffset(view.map);
+                        state.cx = view.x + p.dx;
+                        state.cz = view.z + p.dz;
+                    }
+                }
                 std::printf("Map: %s view\n", state.three_d ? "3D" : "flat");
             } else {
                 state.notice = T("Turn on the 3D map in the settings (Insert, Display)",
@@ -5755,7 +5927,7 @@ void Screen() {
         }
         // Kaniel 2026-10-17 ("one big map"), 2026-10-19 ("just one picture"): Triangle shows every
         // world drawn so far.
-        if (Pressed({ImGuiKey_GamepadFaceUp, ImGuiKey_Tab}) && !charts.empty()) {
+        if (Pressed({ImGuiKey_GamepadFaceUp, ImGuiKey_Tab}) && !charts.empty() && !world) {
             const auto [x0, x1, z0, z1] = AtlasExtent();
             state.zoom = std::min((frame.p1.x - frame.p0.x) / std::max(1.0f, x1 - x0),
                                   (frame.p1.y - frame.p0.y) / std::max(1.0f, z1 - z0)) * 0.95f;
@@ -5784,7 +5956,13 @@ void Screen() {
         }
     }
     DrawPicture(draw, frame, lamps, pulse);
-    DrawList(draw, ImVec2(frame.p1.x + S(46.0f), top), list_w, bottom, lamps);
+    DrawList(draw, ImVec2(layout.p1.x + S(46.0f), top), list_w, bottom, lamps);
+    AskOverhead();
+    if (state.three_d && Overhead() && overhead_enclosed && state.notice.empty()) {
+        state.notice = T("Indoors: the flat map (the game camera's view shows in the open)",
+                         "В помещении: плоская карта (вид камеры игры работает на открытом месте)");
+        state.notice_until = ImGui::GetTime() + 3.0;
+    }
     if (!state.notice.empty() && ImGui::GetTime() < state.notice_until) {
         ImGui::PushFont(MenuArt::Font(), 20.0f);
         ts = ImGui::CalcTextSize(state.notice.c_str());
@@ -5816,6 +5994,9 @@ void ScriptedKeys() {
     static std::vector<std::string> queue;
     static bool release = false;
     static ImGuiKey held = ImGuiKey_None;
+    // hold-<name>-<frames>: a key (or a stick, all the way) held for that many frames.
+    static int hold_frames = 0;
+    static bool hold_analog = false;
     if (!path) {
         return;
     }
@@ -5823,6 +6004,15 @@ void ScriptedKeys() {
     if (release) {
         io.AddKeyEvent(held, false);
         release = false;
+        return;
+    }
+    if (hold_frames > 0) {
+        const bool down = --hold_frames > 0;
+        if (hold_analog) {
+            io.AddKeyAnalogEvent(held, down, down ? 1.0f : 0.0f);
+        } else {
+            io.AddKeyEvent(held, down);
+        }
         return;
     }
     const auto now = std::chrono::steady_clock::now();
@@ -5849,6 +6039,31 @@ void ScriptedKeys() {
     }
     if (token == "map") {
         bbcoop_map_menu(Map::open ? 0 : 2);
+        return;
+    }
+    // Kaniel 2026-10-21 (the map's game camera view): the map's held controls for the rig.
+    if (char name[16]; std::sscanf(token.c_str(), "hold-%15[a-z]-%d", name, &hold_frames) == 2) {
+        static const std::pair<const char*, ImGuiKey> holds[] = {
+            {"zoomin", ImGuiKey_Equal},    {"zoomout", ImGuiKey_Minus},          {"turnleft", ImGuiKey_Z},
+            {"turnright", ImGuiKey_X},     {"panup", ImGuiKey_W},                {"pandown", ImGuiKey_S},
+            {"panleft", ImGuiKey_A},       {"panright", ImGuiKey_D},             {"tiltup", ImGuiKey_GamepadRStickUp},
+            {"tiltdown", ImGuiKey_GamepadRStickDown}};
+        held = ImGuiKey_None;
+        for (const auto& [key_name, key] : holds) {
+            if (std::string_view{name} == key_name) {
+                held = key;
+            }
+        }
+        hold_analog = held == ImGuiKey_GamepadRStickUp || held == ImGuiKey_GamepadRStickDown;
+        if (held == ImGuiKey_None || hold_frames <= 0) {
+            hold_frames = 0;
+            return;
+        }
+        if (hold_analog) {
+            io.AddKeyAnalogEvent(held, true, 1.0f);
+        } else {
+            io.AddKeyEvent(held, true);
+        }
         return;
     }
     held = token == "up" ? ImGuiKey_GamepadDpadUp : token == "down" ? ImGuiKey_GamepadDpadDown

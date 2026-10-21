@@ -10,7 +10,6 @@
  "Turn": "旋转",
  "Prerendered": "预先绘制",
  "Live": "实时",
- "{L3} on the map shows the place from the game's own models, from an angle. Prerendered: each area is drawn once, the first time, in the background. Live: the models are drawn on the graphics card as you turn and tilt the view (right stick), using its memory. Leave it off on a low-end PC.": "在地图上按{L3}，以游戏模型斜视显示场景。预先绘制：每个区域首次在后台绘制一次。实时：转动和倾斜视角（右摇杆）时由显卡使用其显存绘制模型。配置较低的电脑请保持关闭。",
  "3D map": "3D地图",
  "Turn on the 3D map in the settings (Insert, Display)": "请在设置中开启3D地图（Insert，显示）",
  "Preparing the 3D view...": "正在准备3D视图...",
@@ -361,5 +360,8 @@
  "Vertical field of view in degrees; the game's camera has 43. Every camera is widened by the same amount. Applies after restarting the game.": "垂直视野角度；游戏的镜头为 43。所有镜头按相同幅度放宽。重启游戏后生效。",
  "Mute in the background": "后台时静音",
  "The game is silent while its window is not the active one.": "游戏窗口不是当前窗口时，游戏不发出声音。",
- "The buttons the game shows on screen. Automatic follows what you play with: the keys bound below while you use the keyboard and mouse, the controller's own buttons (PlayStation, Xbox or Switch) while you use one, switching as you change. A change here applies after a restart.": "游戏在屏幕上显示的按键。自动会跟随你正在使用的设备：使用键盘和鼠标时显示下方绑定的按键，使用手柄时显示手柄自己的按键（PlayStation、Xbox 或 Switch），切换设备时随之切换。此处的更改在重启后生效。"
+ "The buttons the game shows on screen. Automatic follows what you play with: the keys bound below while you use the keyboard and mouse, the controller's own buttons (PlayStation, Xbox or Switch) while you use one, switching as you change. A change here applies after a restart.": "游戏在屏幕上显示的按键。自动会跟随你正在使用的设备：使用键盘和鼠标时显示下方绑定的按键，使用手柄时显示手柄自己的按键（PlayStation、Xbox 或 Switch），切换设备时随之切换。此处的更改在重启后生效。",
+ "{L3} on the map shows the place from the game's own models, from an angle. Prerendered: each area is drawn once, the first time, in the background. Live: the models are drawn on the graphics card as you turn and tilt the view (right stick), using its memory. Game camera: the game's own camera rises high above you and the world itself is the map (indoors, the flat map). Leave it off on a low-end PC.": "在地图上按{L3}，以游戏模型斜视显示场景。预先绘制：每个区域首次在后台绘制一次。实时：转动和倾斜视角（右摇杆）时由显卡使用其显存绘制模型。游戏镜头：游戏本身的镜头升到你的正上方高处，世界本身就是地图（室内为平面地图）。配置较低的电脑请保持关闭。",
+ "Game camera": "游戏镜头",
+ "Indoors: the flat map (the game camera's view shows in the open)": "室内：平面地图（游戏镜头的视角在户外显示）"
 }

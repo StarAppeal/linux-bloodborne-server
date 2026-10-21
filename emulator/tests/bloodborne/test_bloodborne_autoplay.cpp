@@ -191,6 +191,12 @@ TEST(BloodborneAutoplay, MenuKeysAreTheOverlaysTokens) {
     EXPECT_EQ(AutoplayMenuKeys({"r3"}), std::optional<std::string>{"r3\n"}) << "floors or roofs";
     // Kaniel 2026-10-19: L3 turns the map's 3D view on and off.
     EXPECT_EQ(AutoplayMenuKeys({"l3"}), std::optional<std::string>{"l3\n"}) << "the 3D view";
+    // Kaniel 2026-10-21: the map's held controls (the game camera's view zoomed, turned, tilted).
+    EXPECT_EQ(AutoplayMenuKeys({"hold-zoomout-120", "hold-tiltup-9"}),
+              std::optional<std::string>{"hold-zoomout-120 hold-tiltup-9\n"});
+    EXPECT_EQ(AutoplayMenuKeys({"hold-jump-5"}), std::nullopt) << "no such control";
+    EXPECT_EQ(AutoplayMenuKeys({"hold-zoomin-0"}), std::nullopt) << "no frames";
+    EXPECT_EQ(AutoplayMenuKeys({"hold-zoomin-x"}), std::nullopt);
 }
 
 // Kaniel 2026-10-12: the hardest bugs come where two maps meet (a fog border crossed back and

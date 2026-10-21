@@ -1376,6 +1376,26 @@ void InstallNoLostConnectionPopup(u64 base, u64 image_size) {
     coop_features.On("no lost-connection popup");
 }
 
+// Kaniel 2026-10-21: the overhead map's camera (see OverheadCameraStep), in the port only.
+void InstallOverheadMapCamera(u64 base, u64 image_size) {
+#ifdef BLOODBORNE_NATIVE_PORT
+    if (!CoopSitesMatch(base, image_size, "overhead map camera",
+                        "the overhead map shows the flat map")) {
+        return;
+    }
+    static constexpr std::array<u8, 7> Bytes{0x49, 0x8B, 0x85, 0x28, 0x01, 0x00, 0x00};
+    if (!InstallCoopHook(reinterpret_cast<void*>(base + OverheadCameraHookOffset), Bytes, 0,
+                         GuestCodeHook{OverheadCameraStep})) {
+        coop_features.Skipped("overhead map camera", "the hook did not go in");
+        return;
+    }
+    coop_features.On("overhead map camera");
+#else
+    (void)base;
+    (void)image_size;
+#endif
+}
+
 void InstallNoMultiplayerBanners(u64 base, u64 image_size) {
     if (!party_controller || !CoopSitesMatch(base, image_size, "no multiplayer banners",
                                              "join and leave banners show")) {
@@ -1666,6 +1686,7 @@ void InstallCoopFeatures(u64 base, u64 image_size) {
     InstallPartyDeath(base, image_size);
     InstallOwnHitCount(base, image_size);
     InstallTrading(base, image_size);
+    InstallOverheadMapCamera(base, image_size);
     StartSaveBackups();
     StartCoopTrace();
     InstallNativePacketTrace(base, image_size);

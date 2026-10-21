@@ -10,7 +10,6 @@
  "Turn": "Drej",
  "Prerendered": "Fortegnet",
  "Live": "Live",
- "{L3} on the map shows the place from the game's own models, from an angle. Prerendered: each area is drawn once, the first time, in the background. Live: the models are drawn on the graphics card as you turn and tilt the view (right stick), using its memory. Leave it off on a low-end PC.": "{L3} på kortet viser stedet skråt oppefra fra spillets modeller. Fortegnet: hvert område tegnes én gang, første gang, i baggrunden. Live: grafikkortet tegner modellerne, mens du drejer og vipper visningen (højre pind), med sin hukommelse. Lad det være slået fra på en svag pc.",
  "3D map": "3D-kort",
  "Turn on the 3D map in the settings (Insert, Display)": "Slå 3D-kortet til i indstillingerne (Insert, Skærm)",
  "Preparing the 3D view...": "Forbereder 3D-visningen...",
@@ -361,5 +360,8 @@
  "Vertical field of view in degrees; the game's camera has 43. Every camera is widened by the same amount. Applies after restarting the game.": "Lodret synsfelt i grader; spillets kamera har 43. Hvert kamera udvides lige meget. Træder i kraft, når spillet genstartes.",
  "Mute in the background": "Lydløs i baggrunden",
  "The game is silent while its window is not the active one.": "Spillet er stille, mens dets vindue ikke er det aktive.",
- "The buttons the game shows on screen. Automatic follows what you play with: the keys bound below while you use the keyboard and mouse, the controller's own buttons (PlayStation, Xbox or Switch) while you use one, switching as you change. A change here applies after a restart.": "Knapperne, spillet viser på skærmen. Automatisk følger det, du spiller med: tasterne nedenfor, mens du bruger tastatur og mus, controllerens egne knapper (PlayStation, Xbox eller Switch), mens du bruger en, og skifter undervejs. En ændring her træder i kraft efter en genstart."
+ "The buttons the game shows on screen. Automatic follows what you play with: the keys bound below while you use the keyboard and mouse, the controller's own buttons (PlayStation, Xbox or Switch) while you use one, switching as you change. A change here applies after a restart.": "Knapperne, spillet viser på skærmen. Automatisk følger det, du spiller med: tasterne nedenfor, mens du bruger tastatur og mus, controllerens egne knapper (PlayStation, Xbox eller Switch), mens du bruger en, og skifter undervejs. En ændring her træder i kraft efter en genstart.",
+ "{L3} on the map shows the place from the game's own models, from an angle. Prerendered: each area is drawn once, the first time, in the background. Live: the models are drawn on the graphics card as you turn and tilt the view (right stick), using its memory. Game camera: the game's own camera rises high above you and the world itself is the map (indoors, the flat map). Leave it off on a low-end PC.": "{L3} på kortet viser stedet skråt oppefra fra spillets modeller. Fortegnet: hvert område tegnes én gang, første gang, i baggrunden. Live: grafikkortet tegner modellerne, mens du drejer og vipper visningen (højre pind), med sin hukommelse. Spillets kamera: spillets eget kamera stiger højt op over dig, og verden selv er kortet (indendørs det flade kort). Lad det være slået fra på en svag pc.",
+ "Game camera": "Spillets kamera",
+ "Indoors: the flat map (the game camera's view shows in the open)": "Indendørs: det flade kort (spilkameraets visning vises udendørs)"
 }

@@ -160,6 +160,22 @@ int32_t bbcoop_map_area_name_id(uint32_t map);
  * presses Circle a moment later). bbcoop_map_screen: 1 while it is open. */
 void bbcoop_map_menu(int open);
 int bbcoop_map_screen(void);
+/* Kaniel 2026-10-21 ("another 3D map mode that uses the game's own camera"): while asked (on 1),
+ * every frame is drawn from the game's camera moved `distance` metres from the spot (x, y, z: the
+ * game's metres on the player's map), with the compass's `heading` and `pitch` radians down from
+ * level; asked off (or not asked again for a moment), the game's own camera again. */
+void bbcoop_map_overhead(int on, float x, float y, float z, float distance, float heading, float pitch);
+/* The camera the last frame was drawn with (the overhead one while it is on): its rows (the x
+ * axis, the y axis, the z axis it looks along, its position), vertical field of view (radians),
+ * width / height, near and far planes; 1 once there is one. */
+typedef struct bbcoop_camera {
+    float rows[4][4];
+    float fov, aspect, near_plane, far_plane;
+} bbcoop_camera;
+int bbcoop_map_camera(bbcoop_camera *camera);
+/* Where a point (the game's metres) lies in the camera's picture: x from -1 (left) to 1 (right),
+ * y from -1 (bottom) to 1 (top) into `at`; 0 behind the camera. */
+int bbcoop_camera_project(const bbcoop_camera *camera, float x, float y, float z, float at[2]);
 /* Kaniel 2026-10-18: the pad's touchpad held: the map opens (as from the Insert menu) while the
  * player is in the world. */
 void bbcoop_map_from_pad(void);

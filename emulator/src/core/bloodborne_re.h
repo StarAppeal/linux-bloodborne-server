@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "common/types.h"
+#include "core/bloodborne_map.h"
 
 namespace Core::Bloodborne {
 
@@ -80,6 +81,10 @@ struct MapScreenView {
 bool ReadMapScreen(MapScreenView& view, bool open);
 // A trip from the map to the lamp, started by the game thread when MapTravelCheck allows it.
 void RequestMapTrip(s32 warp_point);
+// Kaniel 2026-10-21 (the overhead map): the game's camera moved to `view` every frame from now on
+// (nothing: the game's own again), and the camera the last frame was drawn with.
+void SetOverheadView(const std::optional<OverheadView>& view);
+std::optional<GameCamera> DrawnGameCamera();
 // Kaniel 2026-10-18 (fog of war): the cells (bloodborne_map.h's ExploredCellMetres squares) this
 // character has walked on the map.
 std::vector<std::array<s16, 2>> ExploredOn(u32 packed_map);

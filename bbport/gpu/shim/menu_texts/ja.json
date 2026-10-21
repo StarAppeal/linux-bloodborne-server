@@ -10,7 +10,6 @@
  "Turn": "回転",
  "Prerendered": "事前描画",
  "Live": "リアルタイム",
- "{L3} on the map shows the place from the game's own models, from an angle. Prerendered: each area is drawn once, the first time, in the background. Live: the models are drawn on the graphics card as you turn and tilt the view (right stick), using its memory. Leave it off on a low-end PC.": "マップで{L3}を押すと、ゲームのモデルから場所を斜めから表示します。事前描画：各エリアは初回に一度だけバックグラウンドで描かれます。リアルタイム：視点を回転・傾けるたび（右スティック）、グラフィックカードがメモリを使ってモデルを描きます。低スペックのPCではオフのままにしてください。",
  "3D map": "3Dマップ",
  "Turn on the 3D map in the settings (Insert, Display)": "設定で3Dマップをオンにしてください（Insert、表示）",
  "Preparing the 3D view...": "3Dビューを準備中...",
@@ -361,5 +360,8 @@
  "Vertical field of view in degrees; the game's camera has 43. Every camera is widened by the same amount. Applies after restarting the game.": "縦の視野角 (度)。ゲームのカメラは 43 です。すべてのカメラが同じだけ広がります。ゲームの再起動後に反映されます。",
  "Mute in the background": "バックグラウンドで消音",
  "The game is silent while its window is not the active one.": "ゲームのウィンドウがアクティブでない間は音を出しません。",
- "The buttons the game shows on screen. Automatic follows what you play with: the keys bound below while you use the keyboard and mouse, the controller's own buttons (PlayStation, Xbox or Switch) while you use one, switching as you change. A change here applies after a restart.": "ゲームが画面に表示するボタンです。自動では、プレイ中の入力に合わせます。キーボードとマウスの間は下で割り当てたキー、コントローラーの間はそのボタン (PlayStation、Xbox、Switch) を表示し、持ち替えると切り替わります。ここでの変更は再起動後に反映されます。"
+ "The buttons the game shows on screen. Automatic follows what you play with: the keys bound below while you use the keyboard and mouse, the controller's own buttons (PlayStation, Xbox or Switch) while you use one, switching as you change. A change here applies after a restart.": "ゲームが画面に表示するボタンです。自動では、プレイ中の入力に合わせます。キーボードとマウスの間は下で割り当てたキー、コントローラーの間はそのボタン (PlayStation、Xbox、Switch) を表示し、持ち替えると切り替わります。ここでの変更は再起動後に反映されます。",
+ "{L3} on the map shows the place from the game's own models, from an angle. Prerendered: each area is drawn once, the first time, in the background. Live: the models are drawn on the graphics card as you turn and tilt the view (right stick), using its memory. Game camera: the game's own camera rises high above you and the world itself is the map (indoors, the flat map). Leave it off on a low-end PC.": "マップで{L3}を押すと、ゲームのモデルから場所を斜めから表示します。事前描画：各エリアは初回に一度だけバックグラウンドで描かれます。リアルタイム：視点を回転・傾けるたび（右スティック）、グラフィックカードがメモリを使ってモデルを描きます。ゲームカメラ：ゲーム自体のカメラがあなたの真上高くに上がり、世界そのものが地図になります（屋内では平面の地図）。低スペックのPCではオフのままにしてください。",
+ "Game camera": "ゲームカメラ",
+ "Indoors: the flat map (the game camera's view shows in the open)": "屋内：平面の地図（ゲームカメラの視点は屋外で表示されます）"
 }

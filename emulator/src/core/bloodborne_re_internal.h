@@ -504,6 +504,10 @@ void LogJoinTaskChanges();
 void TickPlayersOnThisMap();
 // Kaniel 2026-10-17: the port's map screen's reads and trips (bloodborne_map_screen.cpp).
 void TickMapScreen();
+// Kaniel 2026-10-21: the overhead map's camera (GameCamera): the frame step's hook after its
+// camera manager's update (bloodborne_map_screen.cpp), installed by InstallOverheadMapCamera.
+constexpr u64 OverheadCameraHookOffset = 0x0193BE5A;
+void PS4_SYSV_ABI OverheadCameraStep(u64 tag, const GuestRegisterSnapshot* registers);
 
 void TickAutoplay();
 // The rig's watch-unseen check (bloodborne_autoplay.cpp), after the co-op tick.

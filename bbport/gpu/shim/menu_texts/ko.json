@@ -10,7 +10,6 @@
  "Turn": "회전",
  "Prerendered": "미리 그리기",
  "Live": "실시간",
- "{L3} on the map shows the place from the game's own models, from an angle. Prerendered: each area is drawn once, the first time, in the background. Live: the models are drawn on the graphics card as you turn and tilt the view (right stick), using its memory. Leave it off on a low-end PC.": "지도에서 {L3}를 누르면 게임 모델로 장소를 비스듬히 보여 줍니다. 미리 그리기: 각 지역은 처음에 한 번 백그라운드에서 그려집니다. 실시간: 시점을 돌리고 기울일 때(오른쪽 스틱) 그래픽 카드가 메모리를 사용해 모델을 그립니다. 저사양 PC에서는 꺼 두세요.",
  "3D map": "3D 지도",
  "Turn on the 3D map in the settings (Insert, Display)": "설정에서 3D 지도를 켜세요 (Insert, 디스플레이)",
  "Preparing the 3D view...": "3D 보기 준비 중...",
@@ -361,5 +360,8 @@
  "Vertical field of view in degrees; the game's camera has 43. Every camera is widened by the same amount. Applies after restarting the game.": "세로 시야각(도)입니다. 게임 카메라는 43입니다. 모든 카메라가 같은 만큼 넓어집니다. 게임을 다시 시작하면 적용됩니다.",
  "Mute in the background": "백그라운드에서 음소거",
  "The game is silent while its window is not the active one.": "게임 창이 활성 창이 아닌 동안 소리가 나지 않습니다.",
- "The buttons the game shows on screen. Automatic follows what you play with: the keys bound below while you use the keyboard and mouse, the controller's own buttons (PlayStation, Xbox or Switch) while you use one, switching as you change. A change here applies after a restart.": "게임이 화면에 표시하는 버튼입니다. 자동은 지금 사용하는 장치를 따릅니다. 키보드와 마우스를 쓰는 동안에는 아래에서 지정한 키를, 컨트롤러를 쓰는 동안에는 그 버튼(PlayStation, Xbox, Switch)을 보여 주며, 바꾸면 바로 바뀝니다. 여기서 바꾼 설정은 다시 시작한 뒤 적용됩니다."
+ "The buttons the game shows on screen. Automatic follows what you play with: the keys bound below while you use the keyboard and mouse, the controller's own buttons (PlayStation, Xbox or Switch) while you use one, switching as you change. A change here applies after a restart.": "게임이 화면에 표시하는 버튼입니다. 자동은 지금 사용하는 장치를 따릅니다. 키보드와 마우스를 쓰는 동안에는 아래에서 지정한 키를, 컨트롤러를 쓰는 동안에는 그 버튼(PlayStation, Xbox, Switch)을 보여 주며, 바꾸면 바로 바뀝니다. 여기서 바꾼 설정은 다시 시작한 뒤 적용됩니다.",
+ "{L3} on the map shows the place from the game's own models, from an angle. Prerendered: each area is drawn once, the first time, in the background. Live: the models are drawn on the graphics card as you turn and tilt the view (right stick), using its memory. Game camera: the game's own camera rises high above you and the world itself is the map (indoors, the flat map). Leave it off on a low-end PC.": "지도에서 {L3}를 누르면 게임 모델로 장소를 비스듬히 보여 줍니다. 미리 그리기: 각 지역은 처음에 한 번 백그라운드에서 그려집니다. 실시간: 시점을 돌리고 기울일 때(오른쪽 스틱) 그래픽 카드가 메모리를 사용해 모델을 그립니다. 게임 카메라: 게임 자체의 카메라가 당신 위로 높이 올라가 세계 자체가 지도가 됩니다(실내에서는 평면 지도). 저사양 PC에서는 꺼 두세요.",
+ "Game camera": "게임 카메라",
+ "Indoors: the flat map (the game camera's view shows in the open)": "실내: 평면 지도(게임 카메라 시점은 야외에서 표시됩니다)"
 }
