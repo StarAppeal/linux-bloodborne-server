@@ -469,9 +469,12 @@ def let_guests_wake_ambushes(emevd: bytes, wanted: set[int],
 # host's warp ran in every teammate's game and took each one in the Dream along (2026-10-20).
 # m21_00 12101000 (slots 0-9) unlocks the messengers' shop lines from the player's own items
 # (12101004: the Hunter Chief Emblem); kept in step, a guest's Dream waited on the host's.
+# 12105040 rises the shop messengers in the bath (2100211-2100213) while this player's shop menu
+# is open (12105041, their talk) and sinks them after; kept in step, another player's restart
+# of it rose them and played their tune again and again (Kaniel 2026-10-21).
 LOCAL_EVENTS = {
     'm21_00_00_00.emevd.dcx': {12101000, 12101020, 12101021, 12101022, 12101024, 12101026,
-                               12101028, 12107100, 12107200},
+                               12101028, 12105040, 12107100, 12107200},
 }
 for _name, _events in ACTION_PICKUP_EVENTS.items():
     LOCAL_EVENTS[_name] = LOCAL_EVENTS.get(_name, set()) | set(_events)

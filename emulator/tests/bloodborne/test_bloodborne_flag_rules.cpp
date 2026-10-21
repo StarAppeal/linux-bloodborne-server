@@ -453,8 +453,27 @@ TEST(BloodborneFlagRules, DreamHeadstonesReadEachPlayersOwnLamps) {
         flags.push_back(headstone.flag);
     }
     EXPECT_EQ(flags, (std::vector<s32>{12105030, 12105031, 12105032, 12105033, 12105034}));
-    // The flags beside them stay the host's; the Doll's 12100122 too.
-    for (const s32 flag : {12100122, 12105029, 12105035}) {
+    // The flags beside them stay the host's.
+    for (const s32 flag : {12105029, 12105035}) {
+        EXPECT_EQ(RuleFor(flag).owner, FlagOwner::Host) << flag;
+    }
+}
+
+// Kaniel 2026-10-21, several players in the Dream: the Doll's "Give" (12100122, on while the
+// player holds the Small Hair Ornament) flipped between a player with it and one without, and the
+// shop messengers (12105040, risen while this player's shop menu is open: 12105041) rose and
+// played their tune again and again. Each player's own, and none of them carried home or shared.
+TEST(BloodborneFlagRules, TheDollsGiveAndTheShopMessengersAreEachPlayersOwn) {
+    for (const s32 flag : {12100122, 12105040, 12105041}) {
+        EXPECT_EQ(RuleFor(flag).owner, FlagOwner::PerPlayer) << flag;
+        EXPECT_TRUE(KeepsLocalFlag(true, flag)) << flag;
+        EXPECT_FALSE(KeepsLocalFlag(false, flag)) << flag;
+        EXPECT_FALSE(CarriesToGuestWorld(flag)) << flag;
+        EXPECT_FALSE(TakesHostMapFlag(flag)) << flag;
+        EXPECT_FALSE(SharedWithParty(flag)) << flag;
+    }
+    // The insight messenger's (12105043-12105045) and the Doll's other flags stay the host's.
+    for (const s32 flag : {12100121, 12100123, 12105042, 12105043, 12105045}) {
         EXPECT_EQ(RuleFor(flag).owner, FlagOwner::Host) << flag;
     }
 }

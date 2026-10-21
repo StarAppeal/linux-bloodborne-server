@@ -288,6 +288,11 @@ inline constexpr std::array FirstRows{
     Range(9403, 9403, FlagOwner::Host, FlagCarriesHome | FlagGuestSetsInWorld,
           "the workshop's doors open (Central Yharnam's 12410900 sets it for a live player "
           "only): set by a guest out in the world for itself"),
+    Range(12100122, 12100122, FlagOwner::PerPlayer, 0,
+          "the Doll's \"Give\" (her talk offers it while it is on): m21_00 12100121 sets it while "
+          "the player holds the Small Hair Ornament (goods 4300); as the host's, a player "
+          "without it and one with it flipped it back and forth (5,000 flag messages in "
+          "Kaniel's Dream, 2026-10-21)"),
     Range(12101000, 12101009, FlagOwner::PerPlayer, FlagCarriesHome | FlagShopLine,
           "the messengers' weapon lines (Dream event 12101000, slot 0-9 once the player has its "
           "badge; run in each player's own game): each player's follow its own badges; cleared "
@@ -299,6 +304,11 @@ inline constexpr std::array FirstRows{
           "a Dream headstone's \"a lamp of mine is lit\" (DreamHeadstones; the headstone talk "
           "reads it): from this player's own lamps, whatever the others send (theirs flipped it "
           "and the headstone said \"no place to awaken\", Kaniel 2026-10-20)"),
+    Range(12105040, 12105041, FlagOwner::PerPlayer, 0,
+          "the shop messengers in the bath (m21_00 12105040, 2100211-2100213): 12105041 is on "
+          "while this player's shop menu is open (their talk t210691), and the event rises and "
+          "sinks them by it; the other player's end of the event restarted it, so they rose and "
+          "played their tune again and again (Kaniel 2026-10-21)"),
     Range(12204000, 12204008, FlagOwner::Shared, FlagCarriesHome | FlagTakesHostMap,
           "the Hemwick woods' mist ambush (m22_00 event 12204000, a slot per enemy "
           "2200500-2200508): its slot's done flag; the host's copy rises when it turns on, so "

@@ -3397,6 +3397,35 @@ SCENARIOS["dream-headstones-team"] = {
 }
 
 
+# Kaniel 2026-10-21: with several players in the Dream the shop messengers rose from the bath and
+# played their tune again and again. m21_00 12105040 rises them (2100211-2100213) while the shop
+# menu is open (12105041, set by their talk t210691) and sinks them after, then restarts; kept in
+# step, one player's end of it restarted the other's. Here the guest keeps its shop open while
+# the host opens and closes its own twice: neither game hears of the other's end of 12105040,
+# and the guest's shop stays open.
+SHOP_OPEN = 12105041
+SHOP_MESSENGERS_IN_STEP = r"the other player ends event 12105040 "
+SCENARIOS["dream-shop-messengers"] = {
+    "about": "host and guest in the Hunter's Dream: the guest's shop open while the host opens "
+             "and closes its own twice; neither game restarts the other's messengers",
+    "roles": {
+        "host": [START, "godmode", "wait-session 2 300", f"travel {HUNTERS_DREAM}",
+                 "wait-members 2 240", "sync shop-both", "sync shop-guest-open",
+                 *[step for _ in range(2) for step in
+                   (f"set-flag {SHOP_OPEN} 1", "wait 5", f"set-flag {SHOP_OPEN} 0", "wait 5")],
+                 f"expect-flag {SHOP_OPEN} 0", "sync shop-done", "expect-session 2"],
+        "guest": [START, "godmode", "wait-session 2 300", f"travel {HUNTERS_DREAM}",
+                  "wait-members 2 240", "sync shop-both", f"set-flag {SHOP_OPEN} 1", "wait 3",
+                  "sync shop-guest-open", "wait 20", f"expect-flag {SHOP_OPEN} 1",
+                  "sync shop-done", f"set-flag {SHOP_OPEN} 0", "expect-session 2"],
+    },
+    "syncs": {name: {"chapter": "dream-shop-messengers", "roles": ["host", "guest"]}
+              for name in ("shop-both", "shop-guest-open", "shop-done")},
+    "forbid": {role: SESSION_HOLDS + [SHOP_MESSENGERS_IN_STEP] for role in ("host", "guest")},
+    "timeout": 300,
+}
+
+
 # #300 (rig test 2026-10-21): the enemies that rise out of the mist in Hemwick's woods (m22_00
 # event 12204000, a slot each for 2200500-2200508). On each load event 12204010 arms them
 # (MIST_ARMED) for a host with 15 Insight or more (3:26, "SAN値で判定"); unarmed, 12204000 switches

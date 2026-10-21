@@ -1180,6 +1180,11 @@ constexpr std::array<u8, 14> RemoteEndEvent{0x84, 0xDB, 0x0F, 0x95, 0xC0, 0x0F, 
 
 void PS4_SYSV_ABI KeepLocalEventsFromOthers(u64, GuestRegisterSnapshot* registers) {
     const s32 event = static_cast<s32>(registers->r15);
+    // Diagnostics: which Hunter's Dream events the other player ends (the shop messengers).
+    if (party_controller && event >= 12100000 && event < 12110000) {
+        LOG_INFO(Debug, "Bloodborne party: the other player ends event {} (slot {})", event,
+                 static_cast<s32>(registers->r14));
+    }
     if (KeepsLocalFlag(party_controller.has_value(), event)) {
         LOG_INFO(Debug, "Bloodborne party: kept event {} running against the other player's end",
                  event);

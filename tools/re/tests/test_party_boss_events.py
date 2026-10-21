@@ -242,6 +242,24 @@ class GuestsUseTheDreamShops(unittest.TestCase):
         self.assertEqual(read_events(patched)[12101000][0], (2000, 2, bytes(4)))
         self.assertEqual(count, 1)
 
+    # Kaniel 2026-10-21: with several players in the Dream the shop messengers rose from the bath
+    # and played their tune again and again. 12105040 (restarts when done) rises them while this
+    # player's shop menu is open (12105041) and sinks them after; kept in step, the other
+    # player's end of it restarted it here.
+    MESSENGERS = [(2003, 18, struct.pack('<iiB3x', 2100211, 7001, 1)),
+                  (3, 0, struct.pack('<BBxxi', 0, 1, 12105041)),
+                  (2003, 18, struct.pack('<iiB3x', 2100211, 7005, 0)),
+                  (3, 0, struct.pack('<BBxxi', 0, 0, 12105041)),
+                  (1000, 4, struct.pack('<i', 1))]
+
+    def test_the_shop_messengers_rise_for_each_players_own_shop(self):
+        patched, count = tool.make_events_local(build_emevd({12105040: self.MESSENGERS}),
+                                                tool.LOCAL_EVENTS[self.DREAM])
+        self.assertEqual(read_events(patched)[12105040][0], (2000, 2, bytes(4)))
+        self.assertEqual(read_events(patched)[12105040][1:], read_events(
+            build_emevd({12105040: self.MESSENGERS}))[12105040])
+        self.assertEqual(count, 1)
+
 
 class GuestsEnterChaliceDungeons(unittest.TestCase):
     """Team altars (2026-10-18): a party guest joined its teammate's chalice dungeon from Chalice
