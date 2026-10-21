@@ -134,7 +134,8 @@ void main() {
     const vec3 to_sun = sun_dir.w > 0.0 ? normalize(ToWorld(sun_dir.xyz, 0.0)) : vec3(0.0);
     const float sun_phase = Phase(dot(dir, to_sun), 0.6) * 4.0 * 3.14159265;
     const float step_len = dist / float(FogSteps);
-    const float jitter = fract(Hash(vec2(pixel)) + noise);
+    // The same steps each frame (a new jitter each frame flickered; the apply's blur hides the bands).
+    const float jitter = Hash(vec2(pixel));
     vec3 light = vec3(0.0);
     float transmittance = 1.0;
     for (int s = 0; s < FogSteps; ++s) {

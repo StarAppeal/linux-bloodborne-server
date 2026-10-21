@@ -301,7 +301,10 @@ void ScreenLighting::OnSunConstants(const float* data) {
     if (std::abs(length - 1.0f) > 0.01f || !std::isfinite(data[76]) || data[76] < 0.0f) {
         return;
     }
-    sun_dir = {x, y, z, 1.0f};
+    // The constant is the way the light travels: toward the sun is its opposite (Kaniel 2026-10-21,
+    // "check if the global light lights from the correct direction": the game's light0 on the
+    // street rises with N.L against -v, corr 0.77, and not with +v, corr -0.11; rtgi-sunfit.py).
+    sun_dir = {-x, -y, -z, 1.0f};
     sun_age = 0;
     sun_colour = {data[76], data[77], data[78], 0.0f};
 }
