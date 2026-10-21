@@ -305,12 +305,19 @@ void ScreenLighting::OnLightingDone() {
     auto& specular = texture_cache.GetImage(light_targets[1]);
     auto& depth = texture_cache.GetImage(depth_id);
     auto& normal = texture_cache.GetImage(normals);
+    if (!gloss || !specular_colour) {
+        return;
+    }
+    auto& gloss_image = texture_cache.GetImage(gloss);
+    auto& f0_image = texture_cache.GetImage(specular_colour);
     const u32 w = diffuse.info.size.width, h = diffuse.info.size.height;
     // Native scene size only for now (live resolution draws into reduced proxies).
     if (scene_targets.Reduced() || !(diffuse.usage_flags & vk::ImageUsageFlagBits::eStorage) ||
         !(specular.usage_flags & vk::ImageUsageFlagBits::eStorage) ||
         depth.info.size.width != w || depth.info.size.height != h ||
-        normal.info.size.width != w || normal.info.size.height != h) {
+        normal.info.size.width != w || normal.info.size.height != h ||
+        gloss_image.info.size.width != w || gloss_image.info.size.height != h ||
+        f0_image.info.size.width != w || f0_image.info.size.height != h) {
         if (!lamps_logged) {
             std::printf("Lamp shadows: not at this size or format (reduced %d)\n",
                         int(scene_targets.Reduced()));
@@ -320,7 +327,7 @@ void ScreenLighting::OnLightingDone() {
     }
     const auto device = instance.GetDevice();
     if (!lamp_pipeline) {
-        const std::array<vk::DescriptorSetLayoutBinding, 10> bindings{{
+        const std::array<vk::DescriptorSetLayoutBinding, 13> bindings{{
             {0, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute},
             {1, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute},
             {2, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute},
@@ -331,6 +338,9 @@ void ScreenLighting::OnLightingDone() {
             {7, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
             {8, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
             {9, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute},
+            {10, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute},
+            {11, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute},
+            {12, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute},
         }};
         lamp_desc_layout = Check(device.createDescriptorSetLayoutUnique({
             .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
@@ -401,7 +411,8 @@ void ScreenLighting::OnLightingDone() {
                 .arrayLayers = 1,
                 .samples = vk::SampleCountFlagBits::e1,
                 .tiling = vk::ImageTiling::eOptimal,
-                .usage = vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled,
+                .usage = vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled |
+                         vk::ImageUsageFlagBits::eTransferDst,
                 .initialLayout = vk::ImageLayout::eUndefined,
             });
             bounce_views[i] = Check(device.createImageViewUnique({
@@ -414,6 +425,7 @@ void ScreenLighting::OnLightingDone() {
         bounce_width = w;
         bounce_height = h;
         history_valid = false;
+        last_scene_valid = false;
         history_next = 1;
     }
     // The lamps into the next of three host buffers (the frames before may still read theirs).
@@ -449,6 +461,10 @@ void ScreenLighting::OnLightingDone() {
         CachedView(depth, depth.info.pixel_format, vk::ImageAspectFlagBits::eDepth);
     const vk::ImageView normal_view =
         CachedView(normal, normal.info.pixel_format, vk::ImageAspectFlagBits::eColor);
+    const vk::ImageView gloss_view =
+        CachedView(gloss_image, gloss_image.info.pixel_format, vk::ImageAspectFlagBits::eColor);
+    const vk::ImageView f0_view =
+        CachedView(f0_image, f0_image.info.pixel_format, vk::ImageAspectFlagBits::eColor);
     const vk::ImageView diffuse_view =
         CachedView(diffuse, diffuse.info.pixel_format, vk::ImageAspectFlagBits::eColor);
     const vk::ImageView specular_view =
@@ -457,6 +473,10 @@ void ScreenLighting::OnLightingDone() {
                     vk::AccessFlagBits2::eShaderRead);
     runtime.Transit(&normal, vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eComputeShader,
                     vk::AccessFlagBits2::eShaderRead);
+    runtime.Transit(&gloss_image, vk::ImageLayout::eGeneral,
+                    vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderRead);
+    runtime.Transit(&f0_image, vk::ImageLayout::eGeneral,
+                    vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderRead);
     runtime.Transit(&diffuse, vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eComputeShader,
                     rw);
     runtime.Transit(&specular, vk::ImageLayout::eGeneral,
@@ -503,8 +523,12 @@ void ScreenLighting::OnLightingDone() {
     history_next = read_history;
     const bool first_use = !history_valid;
     history_valid = true;
-    const std::array<vk::Image, 3> bounce_imgs{vk::Image(bounce_images[0]), vk::Image(bounce_images[1]),
-                                               vk::Image(bounce_images[2])};
+    const std::array<vk::Image, 4> bounce_imgs{vk::Image(bounce_images[0]), vk::Image(bounce_images[1]),
+                                               vk::Image(bounce_images[2]),
+                                               vk::Image(bounce_images[3])};
+    // Part 2: the last frame's scene (its first frame: this frame's bounce, never read as one).
+    const vk::ImageView last_scene_v = last_scene_valid ? *bounce_views[3] : *bounce_views[0];
+    const s32 last_scene_on = last_scene_valid ? 1 : 0;
     const vk::ImageView current_v = *bounce_views[0], history_v = *bounce_views[read_history],
                         next_v = *bounce_views[write_history];
     const vk::DescriptorBufferInfo map_positions = rays->Positions();
@@ -544,7 +568,13 @@ void ScreenLighting::OnLightingDone() {
                 .pAccelerationStructures = &scene_as,
             };
             const vk::DescriptorBufferInfo lamps_info{lamp_buffer, 0, VK_WHOLE_SIZE};
-            const std::array<vk::WriteDescriptorSet, 10> writes = {{
+            const vk::DescriptorImageInfo gloss_info{.imageView = gloss_view,
+                                                     .imageLayout = vk::ImageLayout::eGeneral};
+            const vk::DescriptorImageInfo f0_info{.imageView = f0_view,
+                                                  .imageLayout = vk::ImageLayout::eGeneral};
+            const vk::DescriptorImageInfo last_scene_info{.imageView = last_scene_v,
+                                                          .imageLayout = vk::ImageLayout::eGeneral};
+            const std::array<vk::WriteDescriptorSet, 13> writes = {{
                 {.dstBinding = 0, .descriptorCount = 1,
                  .descriptorType = vk::DescriptorType::eSampledImage, .pImageInfo = &depth_info},
                 {.dstBinding = 1, .descriptorCount = 1,
@@ -565,6 +595,12 @@ void ScreenLighting::OnLightingDone() {
                  .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &map_colors},
                 {.dstBinding = 9, .descriptorCount = 1,
                  .descriptorType = vk::DescriptorType::eStorageImage, .pImageInfo = &current_info},
+                {.dstBinding = 10, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eSampledImage, .pImageInfo = &gloss_info},
+                {.dstBinding = 11, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eSampledImage, .pImageInfo = &f0_info},
+                {.dstBinding = 12, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eStorageImage, .pImageInfo = &last_scene_info},
             }};
             const vk::MemoryBarrier2 before{
                 .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
@@ -744,6 +780,38 @@ bool ScreenLighting::EnsureTraceImage(u32 width, u32 height) {
     trace_width = width;
     trace_height = height;
     return true;
+}
+
+void ScreenLighting::KeepLastScene(const VideoCore::Image& color, bool reduced, u32 w, u32 h) {
+    if (reduced || !bounce_images[3].image || w != bounce_width || h != bounce_height ||
+        !BbSettings::Get().ray_traced_ao) {
+        last_scene_valid = false;
+        return;
+    }
+    const vk::Image source = color.GetImage(), target = vk::Image(bounce_images[3]);
+    const vk::ImageCopy region{
+        .srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+        .dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+        .extent = {w, h, 1},
+    };
+    scheduler.RecordCrumb({.name = "keep last scene"}, [=](vk::CommandBuffer cmdbuf) {
+        const vk::MemoryBarrier2 before{
+            .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+            .srcAccessMask = vk::AccessFlagBits2::eShaderWrite | vk::AccessFlagBits2::eShaderRead,
+            .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+            .dstAccessMask = vk::AccessFlagBits2::eTransferRead | vk::AccessFlagBits2::eTransferWrite,
+        };
+        cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &before});
+        cmdbuf.copyImage(source, vk::ImageLayout::eGeneral, target, vk::ImageLayout::eGeneral, region);
+        const vk::MemoryBarrier2 after{
+            .srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+            .srcAccessMask = vk::AccessFlagBits2::eTransferWrite | vk::AccessFlagBits2::eTransferRead,
+            .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+            .dstAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
+        };
+        cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &after});
+    });
+    last_scene_valid = true;
 }
 
 void ScreenLighting::OnOpaqueSceneDone(bool temporal) {
@@ -1041,6 +1109,7 @@ void ScreenLighting::OnOpaqueSceneDone(bool temporal) {
         };
     if (!dump) {
         scheduler.RecordCrumb({.name = "screen lighting"}, record);
+        KeepLastScene(color, reduced, w, h);
         return;
     }
     dump_due = false;

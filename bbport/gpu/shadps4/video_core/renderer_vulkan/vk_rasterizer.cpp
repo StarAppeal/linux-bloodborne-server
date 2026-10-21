@@ -719,6 +719,9 @@ void Rasterizer::PrepareRenderState(const GraphicsPipeline* pipeline) {
                     screen_lighting->OnGBufferTarget(u32(cb), id);
                 }
             }
+            if (std::bit_width(key.mrt_mask) > 3 && cb_descs[1].first && cb_descs[3].first) {
+                screen_lighting->OnGlossTargets(cb_descs[1].first, cb_descs[3].first);
+            }
         }
     }
     if (upscaler->Enabled() && cb_descs[0].first) {

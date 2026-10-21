@@ -116,6 +116,12 @@ public:
     void OnNormals(VideoCore::ImageId normals_id) noexcept {
         normals = normals_id;
     }
+    /// The same pass's second target (red: gloss) and fourth (rgb: specular colour), for the
+    /// ray-traced reflections.
+    void OnGlossTargets(VideoCore::ImageId gloss_id, VideoCore::ImageId f0_id) noexcept {
+        gloss = gloss_id;
+        specular_colour = f0_id;
+    }
     /// The scene color target (RGBA16F drawn with the scene depth).
     void OnSceneColor(VideoCore::ImageId color) noexcept {
         scene_color = color;
@@ -124,6 +130,9 @@ public:
     /// shader that starts the post-processing. Once a frame. `temporal`: an upscaler accumulates
     /// frames, so the noise may change every frame.
     void OnOpaqueSceneDone(bool temporal);
+    /// Part 2: the lit opaque scene into the fourth bounce image (General layout) for the next
+    /// frame's reflections.
+    void KeepLastScene(const VideoCore::Image& color, bool reduced, u32 w, u32 h);
 
 private:
     struct ViewEntry {
@@ -158,6 +167,7 @@ private:
     VideoCore::ImageId scene_color{};
     VideoCore::ImageId albedo{};
     VideoCore::ImageId normals{};
+    VideoCore::ImageId gloss{}, specular_colour{};
     std::array<VideoCore::ImageId, 2> light_targets{};
     std::vector<std::array<float, 16>> lamps; ///< this frame's, as the lighting pass has them
     bool lamps_done = false;
@@ -183,9 +193,11 @@ private:
     vk::UniqueDescriptorSetLayout lamp_desc_layout;
     vk::UniquePipelineLayout lamp_layout;
     vk::UniquePipeline lamp_pipeline;
-    /// Step 2c: this frame's bounce and two histories (ping-pong), RGBA16F at light0's size.
-    std::array<VideoCore::UniqueImage, 3> bounce_images;
-    std::array<vk::UniqueImageView, 3> bounce_views;
+    /// Step 2c: this frame's bounce and two histories (ping-pong), RGBA16F at light0's size;
+    /// fourth, the last frame's opaque scene (the reflections' hits on screen).
+    std::array<VideoCore::UniqueImage, 4> bounce_images;
+    std::array<vk::UniqueImageView, 4> bounce_views;
+    bool last_scene_valid = false;
     u32 bounce_width = 0, bounce_height = 0;
     u32 history_next = 0;  ///< which history the resolve writes (1 or 2)
     bool history_valid = false;

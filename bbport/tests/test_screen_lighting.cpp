@@ -52,6 +52,10 @@ inline float pow(float x, double y) { return std::pow(x, float(y)); }
 inline float max(float a, double b) { return std::max(a, float(b)); }
 inline float min(float a, double b) { return std::min(a, float(b)); }
 inline float clamp(float x, double lo, double hi) { return std::min(std::max(x, float(lo)), float(hi)); }
+inline float smoothstep(double e0, double e1, float x) {
+    const float t = clamp((x - float(e0)) / float(e1 - e0), 0.0, 1.0);
+    return t * t * (3.0f - 2.0f * t);
+}
 
 vec3 LightingViewPos(vec2 pixel);
 vec3 LightingRadiance(vec2 pixel);
@@ -228,6 +232,16 @@ int main() {
         // The light that stays: what the unblocked lamps give, of all the lamps give; no lamp, all.
         assert(LampShadowFactor(4.0f, 1.0f) == 0.75f && LampShadowFactor(0.0f, 0.0f) == 1.0f);
         assert(LampShadowFactor(2.0f, 2.0f) == 0.0f && LampShadowFactor(1.0f, 3.0f) == 0.0f);
+    }
+
+    // Kaniel 2026-10-21 ("let's do 1 and 2": ray-traced reflections). A glossy surface reflects its
+    // specular colour head on and nearly all at grazing angles (Schlick); a rough one nothing.
+    {
+        assert(std::fabs(ReflectionWeight(0.04f, 1.0f, 1.0f) - 0.04f) < 1e-5f && "head on: F0");
+        assert(ReflectionWeight(0.04f, 0.0f, 1.0f) > 0.99f && "grazing: all of it");
+        assert(ReflectionWeight(0.04f, 0.3f, 1.0f) > ReflectionWeight(0.04f, 0.8f, 1.0f));
+        assert(ReflectionWeight(0.5f, 1.0f, 0.2f) == 0.0f && "rough: no reflection");
+        assert(ReflectionWeight(0.5f, 1.0f, 0.6f) < ReflectionWeight(0.5f, 1.0f, 0.9f));
     }
 
     // The noise is in 0..1.

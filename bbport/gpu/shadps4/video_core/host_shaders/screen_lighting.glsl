@@ -145,6 +145,14 @@ float LampWeight(vec3 p, vec3 n, vec3 lamp, float inv_r2, float strength) {
     return strength * ndl * reach * reach;
 }
 
+/// Kaniel 2026-10-21 ("let's do 1 and 2"): how much of what a ray-traced reflection finds a surface
+/// shows. Its specular colour `f0` head on, nearly all at grazing angles (Schlick, `n_dot_v` the
+/// cosine to the eye), faded out on rough surfaces (`gloss` from the G-buffer, 0..1).
+float ReflectionWeight(float f0, float n_dot_v, float gloss) {
+    const float grazing = pow(1.0 - clamp(n_dot_v, 0.0, 1.0), 5.0);
+    return (f0 + (1.0 - f0) * grazing) * smoothstep(0.35, 0.8, gloss);
+}
+
 /// The share of a pixel's lamp light that stays when lamps worth `occluded` of `total` are blocked.
 float LampShadowFactor(float total, float occluded) {
     return total > 1e-6 ? clamp((total - occluded) / total, 0.0, 1.0) : 1.0;
