@@ -1018,6 +1018,20 @@ std::optional<bool> HeldItemFlagFix(bool party_configured, bool flag_on, bool ho
     return holds;
 }
 
+bool HoldsWeapon(u32 weapon, std::span<const u32> held) {
+    return std::ranges::any_of(held, [&](u32 id) {
+        return id >= weapon && id - weapon <= 1000 && (id - weapon) % 100 == 0;
+    });
+}
+
+std::optional<bool> OwnedWeaponFlagFix(bool party_configured, bool flag_on, bool holds,
+                                       bool recheck) {
+    if (!party_configured || flag_on == holds || (flag_on && !recheck)) {
+        return std::nullopt;
+    }
+    return holds;
+}
+
 std::optional<bool> HeadstoneLampsLit(s32 flag, const std::function<bool(s32)>& on) {
     for (const HeadstoneLamps& headstone : DreamHeadstones) {
         if (headstone.flag == flag) {

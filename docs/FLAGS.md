@@ -30,6 +30,8 @@ and the item flags) as the host's world reports reach it, between loads (`TeamSt
 |---|---|---|---|
 | 0 and below | Session | | not an event flag |
 | 4000-4999 | Session | | death and multiplayer bookkeeping (4000 a boss fight on, 4047 a player on the way out) |
+| 5000-5299 | Per player | carried home | a chalice dungeon item lot's "taken" flag (ItemLotParam getItemFlagId): each player's own loot. The Bath shop sells an Uncanny or Lost weapon once its lot flag is on, so as the host's a guest's shop sold the host's weapons (Kaniel 2026-10-21) |
+| 5500-5521, 6680-6697 | Per player | carried home; on once the player holds the weapon, off once per save slot if not (`OwnedWeaponFlags`) | "had this weapon" (common events 5500 + slot, 6680-6697: Ludwig's Holy Blade, the DLC weapons and their Uncanny and Lost ones): the Bath shop sells the weapon once it is on. A phantom's events never run, so the co-op code sets it from the player's inventory |
 | 6630-6633, 6640-6649 | Per player | carried home; follow the player's own items | "holds this workshop tool / hunter badge" (`HeldItemFlags`, set by the Dream's 12100450): the badges' bosses, NPC gifts and map objects read them. As the host's (a team world wrote them into every save) a guest never got its own Sword Hunter Badge from the Cleric Beast (Kaniel 2026-10-18) |
 | 9180-9199 | Session | | the bell's bookkeeping (common events 9181-9198); carried home it gave Insight again |
 | 9300-9307, 9336, 9338-9344, 9346-9348 | Per player | carried home | a boss's "found" flag: each player gets the Insight for finding a boss (`EncounterInsights`) |

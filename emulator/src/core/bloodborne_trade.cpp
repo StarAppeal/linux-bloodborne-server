@@ -306,6 +306,21 @@ std::vector<HeldGoods> HeldKeyGoods() {
     return held;
 }
 
+std::vector<u32> HeldWeaponIds() {
+    std::vector<u32> held;
+    const u64 data = PlayerGameData();
+    if (data < 0x10000) {
+        return held;
+    }
+    for (const u64 entry : InventoryEntries(data)) {
+        const u32 id = ReadValue<u32>(entry, 4);
+        if ((id & 0xF0000000) == WeaponCategory && ReadValue<s32>(entry, 8) > 0) {
+            held.push_back(id);
+        }
+    }
+    return held;
+}
+
 // What the player holds of an item: its echoes, or the goods in its inventory (not the storage).
 u32 TradeHeld(const TradeItem& item) {
     const u64 data = PlayerGameData();

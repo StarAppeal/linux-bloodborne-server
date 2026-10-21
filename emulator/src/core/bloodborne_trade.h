@@ -39,6 +39,8 @@ bool PlayerItemsReadable();
 // phantom, see PhantomKeyItemsToGiveBack) and what is in it; 0 and none when there is no data.
 u64 KeyItemList();
 std::vector<HeldGoods> HeldKeyGoods();
+// The weapon ids (with their upgrade level) in the player's inventory, not the storage.
+std::vector<u32> HeldWeaponIds();
 bool TakeTradeItems(std::span<TradeItem> items, u32 handle = 0);
 void AddTradeItems(std::span<const TradeItem> items);
 // Whether AddTradeItems can (the game's functions it calls are the ones it knows).

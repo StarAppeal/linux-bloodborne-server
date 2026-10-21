@@ -1604,6 +1604,54 @@ void KeepHeldItemFlagsOwn() {
     }
 }
 
+// See OwnedWeaponFlagFix: every second in a loaded world, an owned-weapon flag comes on once this
+// player holds the weapon; once per save slot (a file marks it done), those of weapons it does not
+// hold go off, so the Bath shop sells this character's own weapons, not the host's.
+void KeepOwnedWeaponFlagsOwn() {
+    static s64 checked_ms = 0;
+    static int checked_slot = -2;
+    static bool recheck = false;
+    const s64 now_ms = SteadyMilliseconds();
+    if (!party_controller || now_ms - checked_ms < 1'000 || GetLocalPlayer() < 0x10000 ||
+        !PlayerItemsReadable() || !IsUsablePackedMap(PlayingMap())) {
+        return;
+    }
+    checked_ms = now_ms;
+    const int slot = character_slot.load();
+    const auto marker = Common::FS::GetUserPath(Common::FS::PathType::UserDir) /
+                        fmt::format("bloodborne_party_owned_weapons_slot{}.txt", slot);
+    if (slot != checked_slot) {
+        checked_slot = slot;
+        std::error_code error;
+        recheck = slot >= 0 && !std::filesystem::exists(marker, error);
+    }
+    const std::vector<u32> held = HeldWeaponIds();
+    int cleared = 0;
+    for (const OwnedWeaponFlag& owned : OwnedWeaponFlags) {
+        const bool holds = HoldsWeapon(owned.weapon, held);
+        const auto fix = OwnedWeaponFlagFix(true, EventFlagOn(owned.flag), holds, recheck);
+        if (!fix) {
+            continue;
+        }
+        reinterpret_cast<bool PS4_SYSV_ABI (*)(u64, s32, bool)>(
+            image_base + PartyGhostSetEventFlagOffset)(0, owned.flag, *fix);
+        if (*fix) {
+            LOG_INFO(Debug, "Bloodborne party: owned-weapon flag {} set: this player holds {}",
+                     owned.flag, owned.weapon);
+        } else {
+            ++cleared;
+        }
+    }
+    if (recheck) {
+        recheck = false;
+        std::ofstream{marker} << "rechecked" << std::endl;
+        LOG_INFO(Debug,
+                 "Bloodborne party: cleared {} owned-weapon flags in save slot {} (weapons this "
+                 "character does not hold)",
+                 cleared, slot);
+    }
+}
+
 } // namespace
 
 namespace Coop {
@@ -1680,6 +1728,7 @@ void TickPlayersOnThisMap() {
     RecheckShopLinesOnce(IsUsablePackedMap(map) ? map : 0);
     GiveBackPhantomKeyItems();
     KeepHeldItemFlagsOwn();
+    KeepOwnedWeaponFlagsOwn();
     KeepHeadstoneFlagsOwn();
     static RecreateAfterJoin recreate_after_join;
     if (recreate_after_join.Tick(IsPartyGuestRole(), in_session,

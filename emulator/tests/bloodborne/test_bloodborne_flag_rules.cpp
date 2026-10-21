@@ -342,12 +342,78 @@ TEST(BloodborneFlagRules, HeldItemFlagsAreEachPlayersOwn) {
         table.emplace_back(held.flag, held.goods);
     }
     EXPECT_EQ(table, dream);
-    // Only those: the flags between them stay the host's.
+    // Only those and the owned-weapon flags: the flags between them stay the host's.
     for (s32 flag = 6600; flag < 6700; ++flag) {
         const bool held = std::ranges::any_of(
             HeldItemFlags, [&](const HeldItemFlag& item) { return item.flag == flag; });
-        EXPECT_EQ(RuleFor(flag).owner == FlagOwner::PerPlayer, held) << flag;
+        const bool owned = std::ranges::any_of(
+            OwnedWeaponFlags, [&](const OwnedWeaponFlag& item) { return item.flag == flag; });
+        EXPECT_EQ(RuleFor(flag).owner == FlagOwner::PerPlayer, held || owned) << flag;
     }
+}
+
+// Kaniel's playtest 2026-10-21: krolebord (level 45) saw Ludwig's Holy Blade, the Uncanny and Lost
+// Holy Moonlight Swords, Bowblades and Rakuyo in the Bath shop. ShopLineupParam (01.09) shows a
+// weapon once its flag is on: a chalice item lot's getItemFlagId, or a common event's "had this
+// weapon" flag (6680-6697, 5500 + slot). As host world flags, the team world put the host's into
+// the guest's save. They are each player's own, and so are the chalice lots' taken flags.
+TEST(BloodborneFlagRules, OwnedWeaponFlagsAreEachPlayersOwn) {
+    for (const OwnedWeaponFlag& owned : OwnedWeaponFlags) {
+        EXPECT_EQ(RuleFor(owned.flag).owner, FlagOwner::PerPlayer) << owned.flag;
+        EXPECT_TRUE(KeepsLocalFlag(true, owned.flag)) << owned.flag;
+        EXPECT_TRUE(CarriesToGuestWorld(owned.flag)) << owned.flag;
+        EXPECT_FALSE(IsWorldFlag(owned.flag)) << owned.flag << ": not in a team's world";
+        EXPECT_FALSE(TakesHostMapFlag(owned.flag)) << owned.flag;
+        EXPECT_FALSE(SharedWithParty(owned.flag)) << owned.flag;
+    }
+    EXPECT_EQ(OwnedWeaponFlags.size(), 70u);
+    // Ludwig's Holy Blade (common event 6680), the Uncanny one (chalice lot 200420000), the
+    // Uncanny Holy Moonlight Sword's (event 5500 slot 0, 23010000), Rakuyo (6697).
+    const auto weapon_of = [](s32 flag) -> u32 {
+        for (const OwnedWeaponFlag& owned : OwnedWeaponFlags) {
+            if (owned.flag == flag) {
+                return owned.weapon;
+            }
+        }
+        return 0;
+    };
+    EXPECT_EQ(weapon_of(6680), 9000000u);
+    EXPECT_EQ(weapon_of(5220), 9010000u);
+    EXPECT_EQ(weapon_of(5500), 23010000u);
+    EXPECT_EQ(weapon_of(5521), 38020000u);
+    EXPECT_EQ(weapon_of(6697), 19100000u);
+    for (const s32 flag : {5000, 5053, 5294, 5299}) {
+        EXPECT_EQ(RuleFor(flag).owner, FlagOwner::PerPlayer) << flag << ": a chalice lot's";
+    }
+    for (const s32 flag : {5300, 5499, 5522, 5901, 6603, 6679, 6698}) {
+        EXPECT_EQ(RuleFor(flag).owner, FlagOwner::Host) << flag;
+    }
+}
+
+// The common events check the weapon at any upgrade level: base id + 100 * level, up to +10.
+TEST(BloodborneFlagRules, AnyUpgradeOfTheWeaponCounts) {
+    const std::vector<u32> held{9000300, 23020000, 7000000};
+    EXPECT_TRUE(HoldsWeapon(9000000, held));
+    EXPECT_TRUE(HoldsWeapon(23020000, held));
+    EXPECT_FALSE(HoldsWeapon(23010000, held)) << "the Lost one, not the Uncanny one";
+    EXPECT_FALSE(HoldsWeapon(7010000, held)) << "Uncanny Saw Cleaver, not the Saw Cleaver";
+    EXPECT_TRUE(HoldsWeapon(9010000, std::vector<u32>{9011000}));
+    EXPECT_FALSE(HoldsWeapon(9010000, std::vector<u32>{9011100}));
+    EXPECT_FALSE(HoldsWeapon(9010000, std::vector<u32>{9010050}));
+    EXPECT_FALSE(HoldsWeapon(9000000, std::vector<u32>{}));
+}
+
+// An owned-weapon flag in a party comes on once the player holds the weapon; it goes off only on
+// the save slot's one recheck (a weapon in the storage box is not seen, so not every second).
+TEST(BloodborneFlagRules, OwnedWeaponFlagFollowsThePlayersWeapons) {
+    EXPECT_EQ(OwnedWeaponFlagFix(true, false, true, false), std::optional<bool>{true});
+    EXPECT_EQ(OwnedWeaponFlagFix(true, false, true, true), std::optional<bool>{true});
+    EXPECT_EQ(OwnedWeaponFlagFix(true, true, false, true), std::optional<bool>{false});
+    EXPECT_EQ(OwnedWeaponFlagFix(true, true, false, false), std::nullopt) << "after the recheck";
+    EXPECT_EQ(OwnedWeaponFlagFix(true, true, true, true), std::nullopt);
+    EXPECT_EQ(OwnedWeaponFlagFix(true, false, false, true), std::nullopt);
+    EXPECT_EQ(OwnedWeaponFlagFix(false, true, false, true), std::nullopt) << "no party";
+    EXPECT_EQ(OwnedWeaponFlagFix(false, false, true, false), std::nullopt) << "no party";
 }
 
 // Kaniel 2026-10-20: back in the Dream the guests' headstones all said "no place to awaken",

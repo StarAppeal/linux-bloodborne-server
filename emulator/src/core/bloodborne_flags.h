@@ -176,6 +176,54 @@ inline constexpr std::array HeldItemFlags{
     HeldItemFlag{6649, 4117}, // Cainhurst Badge
 };
 
+// The Bath messengers' shop sells a weapon once the player has had it (ShopLineupParam's
+// visibility flag, 01.09): a chalice dungeon weapon's item lot flag (ItemLotParam getItemFlagId
+// 5100-5282), or a flag a common event sets once the weapon (any upgrade, base id + 100 * level)
+// is in the player's inventory (common.emevd 6680-6697, and 5500 + slot for the Uncanny and Lost
+// DLC weapons). Each player's own: as the host's world flags, krolebord's shop sold the host's
+// Uncanny and Lost weapons and the DLC ones (Kaniel's playtest 2026-10-21).
+struct OwnedWeaponFlag {
+    s32 flag;
+    u32 weapon;
+};
+inline constexpr std::array OwnedWeaponFlags{
+    OwnedWeaponFlag{5100, 7010000},  OwnedWeaponFlag{5120, 7110000},
+    OwnedWeaponFlag{5121, 22010000}, OwnedWeaponFlag{5140, 5010000},
+    OwnedWeaponFlag{5160, 8010000},  OwnedWeaponFlag{5161, 7120000},
+    OwnedWeaponFlag{5162, 7020000},  OwnedWeaponFlag{5163, 10010000},
+    OwnedWeaponFlag{5180, 11010000}, OwnedWeaponFlag{5200, 8110000},
+    OwnedWeaponFlag{5201, 2010000},  OwnedWeaponFlag{5202, 12010000},
+    OwnedWeaponFlag{5203, 10110000}, OwnedWeaponFlag{5220, 9010000},
+    OwnedWeaponFlag{5221, 5020000},  OwnedWeaponFlag{5222, 13010000},
+    OwnedWeaponFlag{5223, 10020000}, OwnedWeaponFlag{5240, 5120000},
+    OwnedWeaponFlag{5241, 4020000},  OwnedWeaponFlag{5242, 2020000},
+    OwnedWeaponFlag{5243, 12020000}, OwnedWeaponFlag{5244, 10120000},
+    OwnedWeaponFlag{5260, 9020000},  OwnedWeaponFlag{5261, 5110000},
+    OwnedWeaponFlag{5262, 4010000},  OwnedWeaponFlag{5263, 13020000},
+    OwnedWeaponFlag{5264, 11020000}, OwnedWeaponFlag{5280, 8120000},
+    OwnedWeaponFlag{5281, 8020000},  OwnedWeaponFlag{5282, 22020000},
+    OwnedWeaponFlag{5500, 23010000}, OwnedWeaponFlag{5501, 23020000},
+    OwnedWeaponFlag{5502, 24010000}, OwnedWeaponFlag{5503, 24020000},
+    OwnedWeaponFlag{5504, 30010000}, OwnedWeaponFlag{5505, 30020000},
+    OwnedWeaponFlag{5506, 32010000}, OwnedWeaponFlag{5507, 32020000},
+    OwnedWeaponFlag{5508, 26010000}, OwnedWeaponFlag{5509, 26020000},
+    OwnedWeaponFlag{5510, 27010000}, OwnedWeaponFlag{5511, 27020000},
+    OwnedWeaponFlag{5512, 31010000}, OwnedWeaponFlag{5513, 31020000},
+    OwnedWeaponFlag{5514, 28010000}, OwnedWeaponFlag{5515, 28020000},
+    OwnedWeaponFlag{5516, 29010000}, OwnedWeaponFlag{5517, 29020000},
+    OwnedWeaponFlag{5518, 25010000}, OwnedWeaponFlag{5519, 25020000},
+    OwnedWeaponFlag{5520, 38010000}, OwnedWeaponFlag{5521, 38020000},
+    OwnedWeaponFlag{6680, 9000000},  OwnedWeaponFlag{6681, 15000000},
+    OwnedWeaponFlag{6682, 20000000}, OwnedWeaponFlag{6683, 23000000},
+    OwnedWeaponFlag{6684, 24000000}, OwnedWeaponFlag{6685, 30000000},
+    OwnedWeaponFlag{6686, 32000000}, OwnedWeaponFlag{6687, 26000000},
+    OwnedWeaponFlag{6688, 27000000}, OwnedWeaponFlag{6689, 31000000},
+    OwnedWeaponFlag{6690, 28000000}, OwnedWeaponFlag{6691, 29000000},
+    OwnedWeaponFlag{6692, 25000000}, OwnedWeaponFlag{6693, 38000000},
+    OwnedWeaponFlag{6694, 33000000}, OwnedWeaponFlag{6695, 35000000},
+    OwnedWeaponFlag{6696, 34000000}, OwnedWeaponFlag{6697, 19100000},
+};
+
 // The Dream's headstones (m21_00 12105020-12105024, 01.09): each one's flag is on while any of
 // its lamps' active flags is (0 pads a list). Its talk (t210000-t210004) reads only that flag:
 // off, "no place to awaken". Each game works it out from its own lamps (HeadstoneLampsLit).
@@ -210,11 +258,21 @@ inline constexpr std::array FirstRows{
     Range(4000, 4999, FlagOwner::Session, 0,
           "death and multiplayer bookkeeping (4000 a boss fight on, 4047 a player on the way "
           "out): the session's own"),
+    Range(5000, 5299, FlagOwner::PerPlayer, FlagCarriesHome,
+          "a chalice dungeon item lot's \"taken\" flag (ItemLotParam getItemFlagId; the Bath "
+          "shop sells an Uncanny or Lost weapon and the blood stones by them): each player's "
+          "own loot, as the host's a guest's shop sold the host's weapons (Kaniel 2026-10-21)"),
+    Range(5500, 5521, FlagOwner::PerPlayer, FlagCarriesHome,
+          "had an Uncanny or Lost DLC weapon (OwnedWeaponFlags, common event 5500 + slot): the "
+          "Bath shop sells it to this player only"),
     Range(6630, 6633, FlagOwner::PerPlayer, FlagCarriesHome,
           "holds a workshop tool (HeldItemFlags, the Dream's 12100450): what this player holds"),
     Range(6640, 6649, FlagOwner::PerPlayer, FlagCarriesHome,
           "holds a hunter badge (HeldItemFlags): what this player holds; as the host's (a team "
           "world) a guest never got its own Sword Hunter Badge from the Cleric Beast"),
+    Range(6680, 6697, FlagOwner::PerPlayer, FlagCarriesHome,
+          "had a weapon the Bath shop then sells (OwnedWeaponFlags, common events 6680-6697: "
+          "Ludwig's Holy Blade, the DLC weapons): this player's own"),
     Range(9180, 9199, FlagOwner::Session, 0,
           "the bell's bookkeeping (common events 9181-9198), not progress; kept for the "
           "guest's world it gave Insight again"),
