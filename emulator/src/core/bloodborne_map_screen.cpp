@@ -152,6 +152,65 @@ void OverheadCameraStepNow(const GuestRegisterSnapshot* registers) {
             LOG_INFO(Debug, "Bloodborne map screen: the game camera is the game's again");
         }
     }
+    // EXPERIMENT (draw groups, 2026-10-21): BB_OVERHEAD_ALL_GROUPS=1 opens every display group of
+    // the local player (character +0x238, 8 words; the game's character debug view prints them
+    // as DispGroup) while the view is up, and puts its own back after.
+    static const bool all_groups = EnvFlagEnabled("BB_OVERHEAD_ALL_GROUPS");
+    static std::optional<std::array<u32, 8>> own_groups;
+    static u64 groups_of = 0;
+    if (all_groups) {
+        const u64 player = GetLocalPlayer();
+        constexpr u64 DispGroupsAt = 0x238;
+        if (wanted && player >= 0x10000 &&
+            HasMemoryAccess(player + DispGroupsAt, 32, MemoryProt::CpuReadWrite)) {
+            auto* groups = reinterpret_cast<std::array<u32, 8>*>(player + DispGroupsAt);
+            if (!own_groups || groups_of != player) {
+                own_groups = *groups;
+                groups_of = player;
+                LOG_INFO(Debug,
+                         "Overhead groups: own {:08x} {:08x} {:08x} {:08x} {:08x} {:08x} {:08x} "
+                         "{:08x}",
+                         (*groups)[0], (*groups)[1], (*groups)[2], (*groups)[3], (*groups)[4],
+                         (*groups)[5], (*groups)[6], (*groups)[7]);
+            } else if (*groups != std::array<u32, 8>{0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu,
+                                                      0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu,
+                                                      0xFFFFFFFFu, 0xFFFFFFFFu}) {
+                static int rewritten = 0;
+                if (rewritten++ < 5) {
+                    LOG_INFO(Debug, "Overhead groups: the game wrote {:08x} {:08x}", (*groups)[0],
+                             (*groups)[1]);
+                }
+            }
+            groups->fill(0xFFFFFFFFu);
+            // And the floor the player stands on (character +0x288): its groups at +0x24 / +0x44
+            // (the hit debug view's DrawGroup / DispGroup), logged and opened too.
+            static u64 floor_logged = 0;
+            static std::optional<std::array<u32, 8>> floor_own;
+            static u64 floor_of = 0;
+            const u64 floor = ReadValue<u64>(player, 0x288);
+            if (floor >= 0x10000 && HasMemoryAccess(floor, 0x80, MemoryProt::CpuReadWrite)) {
+                auto* disp = reinterpret_cast<std::array<u32, 8>*>(floor + 0x44);
+                if (floor != floor_logged) {
+                    floor_logged = floor;
+                    const auto* draw = reinterpret_cast<const std::array<u32, 8>*>(floor + 0x24);
+                    LOG_INFO(Debug,
+                             "Overhead groups: floor {:#x} vtable {:#x} +0x24 {:08x} {:08x} {:08x} "
+                             "{:08x} +0x44 {:08x} {:08x} {:08x} {:08x}",
+                             floor, ReadValue<u64>(floor, 0), (*draw)[0], (*draw)[1], (*draw)[2],
+                             (*draw)[3], (*disp)[0], (*disp)[1], (*disp)[2], (*disp)[3]);
+                    floor_own = *disp;
+                    floor_of = floor;
+                }
+                (void)disp; // +0x44 is not a group mask there: never written
+            }
+            (void)floor_of;
+        } else if (!wanted && own_groups && groups_of == player && player >= 0x10000 &&
+                   HasMemoryAccess(player + DispGroupsAt, 32, MemoryProt::CpuReadWrite)) {
+            *reinterpret_cast<std::array<u32, 8>*>(player + DispGroupsAt) = *own_groups;
+            own_groups.reset();
+            LOG_INFO(Debug, "Overhead groups: own put back");
+        }
+    }
     const GameCamera drawn = wanted ? OverheadCamera(game, *wanted) : game;
     if (wanted) {
         std::memcpy(reinterpret_cast<void*>(manager + GameCameraAt), &drawn, sizeof(drawn));

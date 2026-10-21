@@ -4838,7 +4838,8 @@ void Refresh() {
     if (view.has_me) {
         bool want = state.floors == 2;
         const auto mine = BbMapCharts::Get(view.map);
-        overhead_enclosed = mine && BbMapArt::UnderRoof(*mine, view.x, view.y, view.z);
+        static const bool all_groups = std::getenv("BB_OVERHEAD_ALL_GROUPS") != nullptr; // EXPERIMENT
+        overhead_enclosed = !all_groups && mine && BbMapArt::UnderRoof(*mine, view.x, view.y, view.z);
         if (state.floors == 0) {
             want = overhead_enclosed;
         }

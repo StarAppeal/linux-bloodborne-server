@@ -2828,6 +2828,21 @@ SCENARIOS = {
     },
     # Kaniel 2026-10-21: the game camera's view moved about (held keys: hold-<name>-<frames>):
     # higher, flatter, turned, low, panned; a lamp picked for travel (asked, not taken); closed.
+    # EXPERIMENT (draw groups 2026-10-21): the game camera's view from enclosed spots, every
+    # display group open.
+    "overhead-groups": {
+        "about": "experiment: the game camera's view at the first lamp and by Iosefka's with every "
+                 "display group open; pictures",
+        "roles": {
+            "host": [START, "godmode", "wait 10", "keys map", "wait 8", "shot groups-first-lamp",
+                     "keys hold-zoomout-60", "wait 5", "shot groups-first-lamp-high", "keys circle", "wait 5",
+                     "shot groups-closed", "teleport -200.0 -40.5 212.8 0.0", "wait 10", "keys map", "wait 8",
+                     "shot groups-iosefka", "keys circle", "wait 3", f"teleport {CENTRAL_YHARNAM_BRIDGE} 0.0",
+                     "wait 10", "keys map", "wait 6", "shot groups-bridge", "keys circle", "wait 3"],
+        },
+        "settings": {"BB_MAP_3D": "3", "BB_OVERHEAD_ALL_GROUPS": "1", "BB_OVERHEAD_FLOOR_GROUPS": "1"},
+        "timeout": 240,
+    },
     "map-overhead-tour": {
         "about": "the map's game camera view zoomed out, tilted, turned, zoomed in and panned; a lamp "
                  "focused and its travel question; closed; pictures of each",
