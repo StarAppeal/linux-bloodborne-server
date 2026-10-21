@@ -3399,28 +3399,38 @@ SCENARIOS["dream-headstones-team"] = {
 
 # Kaniel 2026-10-21: with several players in the Dream the shop messengers rose from the bath and
 # played their tune again and again. m21_00 12105040 rises them (2100211-2100213) while the shop
-# menu is open (12105041, set by their talk t210691) and sinks them after, then restarts; kept in
-# step, one player's end of it restarted the other's. Here the guest keeps its shop open while
-# the host opens and closes its own twice: neither game hears of the other's end of 12105040,
-# and the guest's shop stays open.
+# menu is open (12105041, set by their talk t210691), waits for it to close, sinks them and
+# restarts. Kept in step, one player's end of it ended the other's too (its flag turned on with
+# that player's shop still open; no "the other player ends event" line: not that message), and the
+# restart rose them again. Here the guest keeps its shop open while the host opens and closes its
+# own twice, all through the messengers' own talk (the rig's set-flag sends nothing to the others):
+# the guest's event is still waiting for its own shop to close (12105040 off).
 SHOP_OPEN = 12105041
+SHOP_MESSENGERS = 12105040
+# West of the bath, facing it: X opens the shop, Circle closes it (rig probe 2026-10-22: not yet
+# right after the travel).
+OPEN_THE_SHOP = ["approach 0x10000013 -1.6 0 -1.5708", "wait 2", "press cross 200", "wait 2",
+                 "press cross 200",
+                 f"wait-flag {SHOP_OPEN} 1 10", "wait 3"]
+CLOSE_THE_SHOP = [*[step for _ in range(4) for step in ("press circle 200", "wait 1")],
+                  f"wait-flag {SHOP_OPEN} 0 10", "wait 3"]
 SHOP_MESSENGERS_IN_STEP = r"the other player ends event 12105040 "
 SCENARIOS["dream-shop-messengers"] = {
     "about": "host and guest in the Hunter's Dream: the guest's shop open while the host opens "
-             "and closes its own twice; neither game restarts the other's messengers",
+             "and closes its own twice; the guest's messengers still wait for its own shop",
     "roles": {
         "host": [START, "godmode", "wait-session 2 300", f"travel {HUNTERS_DREAM}",
-                 "wait-members 2 240", "sync shop-both", "sync shop-guest-open",
-                 *[step for _ in range(2) for step in
-                   (f"set-flag {SHOP_OPEN} 1", "wait 5", f"set-flag {SHOP_OPEN} 0", "wait 5")],
-                 f"expect-flag {SHOP_OPEN} 0", "sync shop-done", "expect-session 2"],
+                 "wait-members 2 240", "wait 25", "sync shop-guest-open",
+                 *[step for _ in range(2) for step in (*OPEN_THE_SHOP, *CLOSE_THE_SHOP)],
+                 f"expect-flag {SHOP_MESSENGERS} 1", "sync shop-done", "expect-session 2"],
         "guest": [START, "godmode", "wait-session 2 300", f"travel {HUNTERS_DREAM}",
-                  "wait-members 2 240", "sync shop-both", f"set-flag {SHOP_OPEN} 1", "wait 3",
-                  "sync shop-guest-open", "wait 20", f"expect-flag {SHOP_OPEN} 1",
-                  "sync shop-done", f"set-flag {SHOP_OPEN} 0", "expect-session 2"],
+                  "wait-members 2 240", "wait 25", *OPEN_THE_SHOP, "sync shop-guest-open",
+                  "sync shop-done", f"expect-flag {SHOP_OPEN} 1",
+                  f"expect-flag {SHOP_MESSENGERS} 0", *CLOSE_THE_SHOP,
+                  f"expect-flag {SHOP_MESSENGERS} 1", "expect-session 2"],
     },
     "syncs": {name: {"chapter": "dream-shop-messengers", "roles": ["host", "guest"]}
-              for name in ("shop-both", "shop-guest-open", "shop-done")},
+              for name in ("shop-guest-open", "shop-done")},
     "forbid": {role: SESSION_HOLDS + [SHOP_MESSENGERS_IN_STEP] for role in ("host", "guest")},
     "timeout": 300,
 }
