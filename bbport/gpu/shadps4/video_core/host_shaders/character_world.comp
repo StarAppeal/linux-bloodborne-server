@@ -84,8 +84,21 @@ void main() {
     vec3 w = vec3(uintBitsToFloat(0x7FC00000u));
     const float k = uintBitsToFloat(factor[draw_of[i]]);
     if (ok && k > 0.5 && k < 100.0) {
-        const vec4 at = vec4(view / k, 1.0);
-        w = vec3(dot(world[0], at), dot(world[1], at), dot(world[2], at));
+        const vec3 placed = view / k;
+        // On screen, a corner far behind what is drawn there is a wrong copy (2026-10-22 lamp dump:
+        // half the corners sat 28 m out behind the hunter, drawn at 3.6 m; they cast stray
+        // shadows): left out.
+        const vec2 uv = vec2(placed.x * proj.x, placed.y * proj.y) / placed.z * 0.5 + 0.5;
+        bool behind = false;
+        if (all(greaterThanEqual(uv, vec2(0.0))) && all(lessThan(uv, vec2(1.0)))) {
+            const float depth = texelFetch(depth_tex, ivec2(uv * size), 0).r;
+            const float drawn = depth < 1.0 ? proj.w / min(depth - proj.z, -1e-8) : 1e9;
+            behind = placed.z > drawn + max(1.0, 0.3 * drawn);
+        }
+        if (!behind) {
+            const vec4 at = vec4(placed, 1.0);
+            w = vec3(dot(world[0], at), dot(world[1], at), dot(world[2], at));
+        }
     }
     world_out[i * 3u] = w.x;
     world_out[i * 3u + 1u] = w.y;

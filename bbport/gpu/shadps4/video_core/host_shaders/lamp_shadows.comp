@@ -86,8 +86,10 @@ const float CharacterGap = 0.5;
 // "the character has a lot of shadows").
 // Only the strongest lamp's (one clear shadow; Kaniel 2026-10-21, at 0.6 and 1.5 m: "shadow from
 // player is almost not visible anymore").
-const float CharacterShadowReach = 2.0;
-const float CharacterShadowStrength = 0.85;
+// Now the two strongest lamps', out to 5 m and fading to a third (Kaniel 2026-10-22: at 2 m from
+// 0.5 m out there was almost none).
+const float CharacterShadowReach = 5.0;
+const float CharacterShadowStrength = 0.9;
 // A lamp sits in its own fitting (a lantern's glass, a sconce): the map only counts this far short
 // of it (2026-10-21: the lantern's own housing took its light off the floor beside it).
 const float LampGap = 0.4;
@@ -96,8 +98,9 @@ const float LampGap = 0.4;
 const float SurfaceGap = 0.35;
 
 // How much of the light from `dir` x `dist` is blocked at `from` (on a surface with normal `n`): 1
-// behind the map, with `people` a share near a character (CharacterShadowReach), else 0.
-float Shadow(vec3 from, vec3 n, vec3 dir, float dist, bool people) {
+// behind the map, with `people` a share near a character (CharacterShadowReach) from `body_gap`
+// out, else 0.
+float Shadow(vec3 from, vec3 n, vec3 dir, float dist, bool people, float body_gap) {
     if (dist <= LampGap + SurfaceGap) {
         return 0.0;
     }
@@ -109,12 +112,12 @@ float Shadow(vec3 from, vec3 n, vec3 dir, float dist, bool people) {
     if (rayQueryGetIntersectionTypeEXT(query, true) == gl_RayQueryCommittedIntersectionTriangleEXT) {
         return 1.0;
     }
-    if (!people || dist <= 2.0 * CharacterGap) {
+    if (!people || dist <= body_gap + CharacterGap) {
         return 0.0;
     }
     rayQueryEXT bodies;
     rayQueryInitializeEXT(bodies, scene, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT,
-                          0x02, from, CharacterGap, dir,
+                          0x02, from, body_gap, dir,
                           min(dist - CharacterGap, CharacterShadowReach));
     while (rayQueryProceedEXT(bodies)) {
     }
@@ -122,12 +125,11 @@ float Shadow(vec3 from, vec3 n, vec3 dir, float dist, bool people) {
         return 0.0;
     }
     const float t = rayQueryGetIntersectionTEXT(bodies, true);
-    return CharacterShadowStrength *
-           clamp(1.0 - (t - CharacterGap) / (CharacterShadowReach - CharacterGap), 0.0, 1.0);
+    return CharacterShadowStrength * mix(1.0, 0.33, clamp(t / CharacterShadowReach, 0.0, 1.0));
 }
 
 bool Blocked(vec3 from, vec3 n, vec3 dir, float dist) {
-    return Shadow(from, n, dir, dist, true) > 0.5;
+    return Shadow(from, n, dir, dist, true, CharacterGap) > 0.5;
 }
 
 vec3 Corner(uint index) {
@@ -363,7 +365,9 @@ void main() {
         if (tmax <= ShadowBias) {
             continue;
         }
-        const float shadow = Shadow(wp, wn, to_lamp / dist, dist, k == 0);
+        // A floor's pixel is no body: characters count from right by it (their feet's shadow).
+        const float shadow = Shadow(wp, wn, to_lamp / dist, dist, k < 2,
+                                    wn.y > 0.7 ? 0.05 : CharacterGap);
         if (shadow > 0.0) {
             // What this lamp gave the pixel, in the game's light (its colour times its weight).
             blocked += lamps[best_i[k] * 4 + 1].rgb * LampWeight(p, n, at.xyz, at.w, 1.0) * strength *
