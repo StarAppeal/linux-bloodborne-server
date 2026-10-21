@@ -91,11 +91,14 @@ const float CharacterGap = 0.5;
 const float CharacterShadowReach = 5.0;
 const float CharacterShadowStrength = 0.9;
 // A lamp sits in its own fitting (a lantern's glass, a sconce): the map only counts this far short
-// of it (2026-10-21: the lantern's own housing took its light off the floor beside it).
-const float LampGap = 0.4;
+// of it (2026-10-21: the lantern's own housing took its light off the floor beside it; 2026-10-22 at
+// 0.4: a sconce's took it off the wall around it).
+const float LampGap = 0.6;
 // The map's own bumps (broken planks, the 0.12 m grid) shadow grazing rays near their start: the
-// map only counts from this far out (2026-10-21: the floor near the camera went dark).
+// map only counts from this far out, or from where the ray is SurfaceRise off the surface if that is
+// further (2026-10-22: at 0.35 m alone the floor near the camera still went dark).
 const float SurfaceGap = 0.35;
+const float SurfaceRise = 0.25;
 
 // How much of the light from `dir` x `dist` is blocked at `from` (on a surface with normal `n`): 1
 // behind the map, with `people` a share near a character (CharacterShadowReach) from `body_gap`
@@ -104,9 +107,13 @@ float Shadow(vec3 from, vec3 n, vec3 dir, float dist, bool people, float body_ga
     if (dist <= LampGap + SurfaceGap) {
         return 0.0;
     }
+    const float start = min(max(SurfaceGap, SurfaceRise / max(dot(n, dir), 0.05)), 0.5 * dist);
+    if (start >= dist - LampGap) {
+        return 0.0;
+    }
     rayQueryEXT query;
     rayQueryInitializeEXT(query, scene, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT,
-                          0x01, from + n * ShadowBias, SurfaceGap, dir, dist - LampGap);
+                          0x01, from + n * ShadowBias, start, dir, dist - LampGap);
     while (rayQueryProceedEXT(query)) {
     }
     if (rayQueryGetIntersectionTypeEXT(query, true) == gl_RayQueryCommittedIntersectionTriangleEXT) {
@@ -366,7 +373,7 @@ void main() {
             continue;
         }
         // A floor's pixel is no body: characters count from right by it (their feet's shadow).
-        const float shadow = Shadow(wp, wn, to_lamp / dist, dist, k < 2,
+        const float shadow = Shadow(wp, wn, to_lamp / dist, dist, true,
                                     wn.y > 0.7 ? 0.05 : CharacterGap);
         if (shadow > 0.0) {
             // What this lamp gave the pixel, in the game's light (its colour times its weight).
