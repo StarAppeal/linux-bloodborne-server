@@ -198,6 +198,32 @@ def build_ss_info(template_path, services_url, summon_url, summon_poll=5):
     return base64.b64encode(xml.encode("utf-8"))
 
 
+HOST_NAME = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?")
+
+
+def address_from_host_header(value):
+    """The address a game reached this server at, from its Host header ("1.2.3.4:20443"): what
+    ss.info sends that game back to. A guest over the internet reaches the host's public address
+    while the host's own address is a LAN one (192.168.x.x) no guest can reach. None when the
+    header is missing, not a plain name or IPv4 address, or loopback (nothing another PC can use)."""
+    host = (value or "").strip()
+    if host.count(":") == 1:
+        host, port = host.split(":")
+        if not port.isdigit():
+            return None
+    if not HOST_NAME.fullmatch(host):
+        return None
+    if host.lower() == "localhost" or re.fullmatch(r"127(\.\d{1,3}){3}", host):
+        return None
+    return host
+
+
+def with_host(url, host):
+    """`url` ("http://a.b.c.d:31315") with its host part replaced, the port kept."""
+    parsed = urlparse(url)
+    return "{}://{}{}".format(parsed.scheme, host, ":{}".format(parsed.port) if parsed.port else "")
+
+
 # --------------------------------------------------------------------------
 # Content store (only used with --store)
 # --------------------------------------------------------------------------
@@ -895,8 +921,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
         if path == SS_INFO_PATH:
-            self.log_message("ss.info -> %d bytes", len(self.server.ss_info))
-            self._send(self.server.ss_info, "text/plain; charset=utf-8")
+            ss_info = self.server.ss_info_for(address_from_host_header(self.headers.get("Host")))
+            self.log_message("ss.info -> %d bytes", len(ss_info))
+            self._send(ss_info, "text/plain; charset=utf-8")
             return
         if path == "/status":
             store = self.server.store
@@ -1073,7 +1100,23 @@ def main():
             sys.exit("cannot open content store {}: {}".format(args.store, exc))
 
     httpd = ThreadingHTTPServer(("0.0.0.0", args.port), Handler)
-    httpd.ss_info = ss_info
+    poll = max(1, args.summon_poll)
+    ss_infos = {None: ss_info}
+    ss_info_lock = threading.Lock()
+
+    def ss_info_for(address):
+        # Each player is sent back to the address they reached; --address when the request
+        # does not say one (built once per address: the template is read from disk).
+        with ss_info_lock:
+            if address in ss_infos:
+                return ss_infos[address]
+        built = build_ss_info(args.template, with_host(services_url, address), with_host(summon_url, address), poll)
+        with ss_info_lock:
+            if len(ss_infos) < 64:  # a party has a few addresses; never grow without bound
+                ss_infos[address] = built
+        return built
+
+    httpd.ss_info_for = ss_info_for
     httpd.notice_path = args.notice
     httpd.broadcast_path = args.broadcast
     httpd.login_message_path = args.login_message
@@ -1086,6 +1129,7 @@ def main():
     print("  ss.info      {}{}".format(services_url, SS_INFO_PATH))
     print("  services  -> {}".format(services_url))
     print("  summons   -> {}  (shadNet)".format(summon_url))
+    print("               (each game is sent to the address it connected to; these when it says none)")
     if httpd.store:
         c = httpd.store.counts()
         print("  content   -> {}".format(os.path.abspath(args.store)))

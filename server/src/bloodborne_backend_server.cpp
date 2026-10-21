@@ -11,6 +11,7 @@
 #include <QHttpServerRequest>
 #include <QHttpServerResponder>
 #include <QHttpServerResponse>
+#include <QRegularExpression>
 
 using namespace Bloodborne::Backend;
 
@@ -37,6 +38,31 @@ QString InFolder(const QString& folder, const QString& name) {
     return QDir(folder).filePath(name);
 }
 
+// The address a game reached this server at, from its Host header ("1.2.3.4:20443"), as
+// bb_dummy_server.py's address_from_host_header: a guest over the internet reaches the host's
+// public address while the host's own is a LAN one no guest can reach. Empty when the header is
+// missing, not a plain name or IPv4 address, or loopback.
+QString AddressFromHostHeader(const QByteArray& value) {
+    QString host = QString::fromLatin1(value).trimmed();
+    if (host.count(QLatin1Char(':')) == 1) {
+        const qsizetype colon = host.indexOf(QLatin1Char(':'));
+        const QString port = host.mid(colon + 1);
+        static const QRegularExpression digits(QStringLiteral("^[0-9]+$"));
+        if (!digits.match(port).hasMatch()) {
+            return {};
+        }
+        host.truncate(colon);
+    }
+    static const QRegularExpression name(
+        QStringLiteral("^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$"));
+    static const QRegularExpression loopback(QStringLiteral("^127(\\.[0-9]{1,3}){3}$"));
+    if (!name.match(host).hasMatch() || host.compare(QStringLiteral("localhost"), Qt::CaseInsensitive) == 0 ||
+        loopback.match(host).hasMatch()) {
+        return {};
+    }
+    return host;
+}
+
 } // namespace
 
 BloodborneBackendServer::BloodborneBackendServer(QObject* parent) : QObject(parent) {}
@@ -47,8 +73,8 @@ bool BloodborneBackendServer::Start(ConfigManager* config) {
     const BackendConfig settings = config->GetBackend();
     m_port = settings.port;
     m_webApiPort = config->GetWebApiPort();
-    // The host's address as the players reach it (the kit's HOSTIP); else the address each game
-    // connected to, which is the same thing on a VPN or a LAN.
+    // The host's address (the kit's HOSTIP), for a request whose Host header names none; else the
+    // address the connection came in on. A Host header wins over both (AddressFor).
     m_fixedAddress = qEnvironmentVariable("SHADNET_BACKEND_ADDRESS", settings.address).trimmed();
 
     BackendOptions options;
@@ -121,9 +147,10 @@ bool BloodborneBackendServer::Start(ConfigManager* config) {
     qInfo().nospace().noquote() << "Backend (the game's online services) listening on: " << host
                                 << ":" << m_port;
     qInfo().noquote() << "  ss.info, services and summons at"
+                      << QStringLiteral("the address each game connects to")
                       << (m_fixedAddress.isEmpty()
-                              ? QStringLiteral("the address each game connects to")
-                              : m_fixedAddress);
+                              ? QString()
+                              : QStringLiteral("(%1 when it does not say one)").arg(m_fixedAddress));
     if (m_backend.HasStore()) {
         const Json counts = m_backend.Counts();
         qInfo().noquote() << "  content ->" << QFileInfo(settings.store).absoluteFilePath();
@@ -149,6 +176,12 @@ bool BloodborneBackendServer::Start(ConfigManager* config) {
 }
 
 QString BloodborneBackendServer::AddressFor(const QHttpServerRequest& request) const {
+    // Each game is sent back to the address it connected to; the given one (HOSTIP) when it does
+    // not say one.
+    const QString reached = AddressFromHostHeader(request.value("Host"));
+    if (!reached.isEmpty()) {
+        return reached;
+    }
     if (!m_fixedAddress.isEmpty()) {
         return m_fixedAddress;
     }

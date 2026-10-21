@@ -176,16 +176,19 @@ class SsInfoTest(unittest.TestCase):
     """ss.info drives how often the game polls for summons; retail's 30-35 s makes every
     (re)join take a minute or more, which defeats seamless auto-rejoin."""
 
-    def fetch_ss_info(self, extra_args):
+    def fetch_ss_info(self, extra_args, host=None, address="127.0.0.1"):
         port = free_port()
         proc = subprocess.Popen(
-            [sys.executable, "-u", SERVER, "--address", "127.0.0.1", "--port", str(port)] + extra_args,
+            [sys.executable, "-u", SERVER, "--address", address, "--port", str(port)] + extra_args,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
             deadline = time.time() + 10
             while True:
                 try:
-                    with urllib.request.urlopen("http://127.0.0.1:{}/bb-eu/ss.info".format(port), timeout=1) as r:
+                    request = urllib.request.Request("http://127.0.0.1:{}/bb-eu/ss.info".format(port))
+                    if host is not None:
+                        request.add_header("Host", host)
+                    with urllib.request.urlopen(request, timeout=1) as r:
                         return base64.b64decode(r.read()).decode("utf-8")
                 except OSError:
                     if time.time() > deadline:
@@ -220,6 +223,21 @@ class SsInfoTest(unittest.TestCase):
         self.assertEqual(self.tag(xml, "SummonDataGetListInterval2"), "12")
         # Everything else in the template is left alone.
         self.assertEqual(self.tag(xml, "ReloadServerStatusInfoInterval2"), "300")
+
+    def test_each_game_is_sent_to_the_address_it_reached(self):
+        # No VPN: the host's own address is a LAN one (192.168.x.x) while a guest reaches the host's
+        # public address. ss.info sent the guest to the LAN address, so its game never got online
+        # and the host never saw it (Discord report 2026-10-21).
+        xml = self.fetch_ss_info(["--shadnet-webapi", "http://192.168.4.25:31315"],
+                                 host="203.0.113.7:20443", address="192.168.4.25")
+        self.assertNotIn("192.168.4.25", xml)
+        self.assertIn("http://203.0.113.7:", xml)
+        self.assertIn("http://203.0.113.7:31315", xml)
+
+    def test_the_given_address_without_a_usable_host(self):
+        for host in ("127.0.0.1:20443", "localhost", "bad host<x>"):
+            xml = self.fetch_ss_info([], host=host, address="192.168.4.25")
+            self.assertIn("http://192.168.4.25:", xml, host)
 
 
 if __name__ == "__main__":
