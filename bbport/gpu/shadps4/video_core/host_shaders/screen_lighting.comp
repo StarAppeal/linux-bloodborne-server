@@ -132,7 +132,7 @@ void main() {
                              gl_RayQueryCommittedIntersectionTriangleEXT;
             const float t = hit ? rayQueryGetIntersectionTEXT(query, true) : -1.0;
             occluded += RayOcclusionWeight(t, RayReach);
-            if (hit) {
+            if (hit && rayQueryGetIntersectionInstanceCustomIndexEXT(query, true) == 0) {
                 // The hit surface's light (its corners' colours at the hit), cosine-weighted
                 // directions: their mean is the light arriving.
                 const uint tri = uint(rayQueryGetIntersectionPrimitiveIndexEXT(query, true)) * 3u;

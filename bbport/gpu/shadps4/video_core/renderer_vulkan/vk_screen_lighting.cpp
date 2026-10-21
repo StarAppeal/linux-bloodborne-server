@@ -18,6 +18,7 @@
 #include "video_core/host_shaders/screen_lighting_trace_comp.h"
 #include "video_core/host_shaders/screen_lighting_trace_rt_comp.h"
 #include "video_core/host_shaders/lamp_shadows_comp.h"
+#include "video_core/host_shaders/lamp_bounce_resolve_comp.h"
 #include "video_core/renderer_vulkan/vk_camera_motion.h"
 #include "video_core/renderer_vulkan/vk_image_dump.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -128,6 +129,13 @@ void ScreenLighting::OnFrameStart() {
     done = false;
     lamps.clear();
     lamps_done = false;
+    light_pass_seen = false;
+    sun_dir = {};
+    character_source.clear();
+    character_indices.clear();
+    character_draw_of.clear();
+    character_draws = 0;
+    character_pass = {};
     if (rays && Enabled() && BbSettings::Get().ray_traced_ao) {
         rays->Update();
     }
@@ -170,8 +178,23 @@ struct LampPush {
     s32 count;
     float strength;
     std::array<float, 12> world;
+    s32 bounce_rays;
+    float bounce_strength;
+    float noise;
+    float pad;
+    std::array<float, 4> sun_dir;    ///< view, toward the sun; w 1 when there is one
+    std::array<float, 4> sun_colour; ///< rgb, a: its strength in light0 units
 };
-static_assert(sizeof(LampPush) == 80 && offsetof(LampPush, world) == 32);
+static_assert(sizeof(LampPush) == 128 && offsetof(LampPush, sun_dir) == 96);
+/// lamp_bounce_resolve.comp's push constants.
+struct ResolvePush {
+    std::array<float, 12> reproject;
+    std::array<float, 4> proj, prev_proj;
+    std::array<float, 2> size;
+    float blend;
+    s32 history_valid;
+};
+static_assert(sizeof(ResolvePush) == 96);
 } // namespace
 
 void ScreenLighting::OnLampConstants(const float* data, u32 size) {
@@ -202,6 +225,60 @@ void ScreenLighting::OnLampConstants(const float* data, u32 size) {
     }
 }
 
+bool ScreenLighting::WantsCharacters() const {
+    return rays && Enabled() && BbSettings::Get().ray_traced_ao && rays->Scene();
+}
+
+void ScreenLighting::OnCharacterDraw(u32 store, u32 first_vertex, u32 vertices,
+                                     const void* indices, u32 index_size, u32 count,
+                                     s32 base_vertex, VideoCore::ImageId pass_depth) {
+    if (pass_depth != character_pass) {
+        character_source.clear();
+        character_indices.clear();
+        character_draw_of.clear();
+        character_draws = 0;
+        character_pass = pass_depth;
+    }
+    // At most a million corners and triangles a frame (a party and its enemies).
+    constexpr std::size_t MaxCorners = 1u << 20;
+    if (vertices == 0 || character_source.size() + vertices > MaxCorners ||
+        character_indices.size() + count > 3 * MaxCorners ||
+        character_draws >= RayOcclusion::MaxCharacterDraws) {
+        return;
+    }
+    const u32 base = u32(character_source.size());
+    for (u32 v = 0; v < vertices; ++v) {
+        character_source.push_back(store + v);
+        character_draw_of.push_back(character_draws);
+    }
+    ++character_draws;
+    const auto corner = [&](u32 i) -> s64 {
+        const u32 raw = index_size == 2 ? static_cast<const u16*>(indices)[i]
+                                        : static_cast<const u32*>(indices)[i];
+        const s64 v = s64(raw) + base_vertex - s64(first_vertex);
+        return v >= 0 && v < s64(vertices) ? s64(base) + v : -1;
+    };
+    for (u32 t = 0; t + 2 < count; t += 3) {
+        const s64 a = corner(t), b = corner(t + 1), c = corner(t + 2);
+        if (a < 0 || b < 0 || c < 0) {
+            continue;
+        }
+        character_indices.push_back(u32(a));
+        character_indices.push_back(u32(b));
+        character_indices.push_back(u32(c));
+    }
+}
+
+void ScreenLighting::OnSunConstants(const float* data) {
+    const float x = data[80], y = data[81], z = data[82];
+    const float length = std::sqrt(x * x + y * y + z * z);
+    if (std::abs(length - 1.0f) > 0.01f || !std::isfinite(data[76]) || data[76] < 0.0f) {
+        return;
+    }
+    sun_dir = {x, y, z, 1.0f};
+    sun_colour = {data[76], data[77], data[78], 0.0f};
+}
+
 void ScreenLighting::OnLightingDone() {
     if (lamps_done) {
         return;
@@ -211,10 +288,10 @@ void ScreenLighting::OnLightingDone() {
         !light_targets[0] || !light_targets[1] || !normals) {
         return;
     }
-    const vk::AccelerationStructureKHR scene_as = rays->Scene();
     const auto depth_id = camera_motion.Depth();
     const auto proj = camera_motion.SceneProjection();
     const auto world = camera_motion.SceneInverseView();
+    vk::AccelerationStructureKHR scene_as = rays->Scene();
     if (!scene_as || !depth_id || proj[0] == 0.0f || world[0] == 0.0f && world[1] == 0.0f &&
                                                         world[2] == 0.0f) {
         return;
@@ -238,13 +315,17 @@ void ScreenLighting::OnLightingDone() {
     }
     const auto device = instance.GetDevice();
     if (!lamp_pipeline) {
-        const std::array<vk::DescriptorSetLayoutBinding, 6> bindings{{
+        const std::array<vk::DescriptorSetLayoutBinding, 10> bindings{{
             {0, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute},
             {1, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute},
             {2, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute},
             {3, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute},
             {4, vk::DescriptorType::eAccelerationStructureKHR, 1, vk::ShaderStageFlagBits::eCompute},
             {5, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
+            {6, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
+            {7, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
+            {8, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
+            {9, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute},
         }};
         lamp_desc_layout = Check(device.createDescriptorSetLayoutUnique({
             .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
@@ -269,6 +350,66 @@ void ScreenLighting::OnLightingDone() {
                     .layout = *lamp_layout,
                 }));
         device.destroyShaderModule(module);
+        const std::array<vk::DescriptorSetLayoutBinding, 4> resolve_bindings{{
+            {0, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute},
+            {1, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute},
+            {2, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute},
+            {3, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute},
+        }};
+        resolve_desc_layout = Check(device.createDescriptorSetLayoutUnique({
+            .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
+            .bindingCount = u32(resolve_bindings.size()),
+            .pBindings = resolve_bindings.data(),
+        }));
+        const vk::PushConstantRange resolve_push{.stageFlags = vk::ShaderStageFlagBits::eCompute,
+                                                 .offset = 0,
+                                                 .size = sizeof(ResolvePush)};
+        resolve_layout = Check(device.createPipelineLayoutUnique({
+            .setLayoutCount = 1,
+            .pSetLayouts = &*resolve_desc_layout,
+            .pushConstantRangeCount = 1,
+            .pPushConstantRanges = &resolve_push,
+        }));
+        const auto resolve_module = CompileSPV(LAMP_BOUNCE_RESOLVE_COMP, device);
+        resolve_pipeline = Check(device.createComputePipelineUnique(
+            {}, vk::ComputePipelineCreateInfo{
+                    .stage = {.stage = vk::ShaderStageFlagBits::eCompute,
+                              .module = resolve_module,
+                              .pName = "main"},
+                    .layout = *resolve_layout,
+                }));
+        device.destroyShaderModule(resolve_module);
+    }
+    // Step 2c: the bounce's images at light0's size (a new size starts the history again).
+    if (bounce_width != w || bounce_height != h) {
+        if (bounce_images[0].image) {
+            scheduler.Finish();
+        }
+        for (u32 i = 0; i < bounce_images.size(); ++i) {
+            bounce_views[i].reset();
+            bounce_images[i] = VideoCore::UniqueImage(device, instance.GetAllocator());
+            bounce_images[i].Create(vk::ImageCreateInfo{
+                .imageType = vk::ImageType::e2D,
+                .format = vk::Format::eR16G16B16A16Sfloat,
+                .extent = {w, h, 1},
+                .mipLevels = 1,
+                .arrayLayers = 1,
+                .samples = vk::SampleCountFlagBits::e1,
+                .tiling = vk::ImageTiling::eOptimal,
+                .usage = vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled,
+                .initialLayout = vk::ImageLayout::eUndefined,
+            });
+            bounce_views[i] = Check(device.createImageViewUnique({
+                .image = vk::Image(bounce_images[i]),
+                .viewType = vk::ImageViewType::e2D,
+                .format = vk::Format::eR16G16B16A16Sfloat,
+                .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+            }));
+        }
+        bounce_width = w;
+        bounce_height = h;
+        history_valid = false;
+        history_next = 1;
     }
     // The lamps into the next of three host buffers (the frames before may still read theirs).
     auto& buf = lamp_buffers[lamp_buffer_next];
@@ -316,6 +457,13 @@ void ScreenLighting::OnLightingDone() {
     runtime.Transit(&specular, vk::ImageLayout::eGeneral,
                     vk::PipelineStageFlagBits2::eComputeShader, rw);
     runtime.FlushBarriers();
+    // Step 3: this frame's characters join the map in the ray scene (their depth set against
+    // the depth buffer's, character_world.comp).
+    if (!character_indices.empty() && character_positions && character_pass == depth_id) {
+        rays->BuildCharacters(character_positions, character_source, character_indices,
+                              character_draw_of, character_draws, depth_view, w, h, proj, world);
+        scene_as = rays->Scene();
+    }
     if (!lamps_logged) {
         std::printf("Lamp shadows: %zu lamps, %ux%u\n", lamps.size(), w, h);
         std::fflush(stdout);
@@ -325,13 +473,57 @@ void ScreenLighting::OnLightingDone() {
         .proj = proj,
         .size = {float(w), float(h)},
         .count = s32(lamps.size()),
-        .strength = 0.5f,
+        .strength = 1.0f, // the blocked light taken out whole (Kaniel 2026-10-21: "almost identical")
         .world = world,
+        // Step 2: the lamps' bounce (Bounced light; 2 rays a pixel, the upscaler averages frames).
+        .bounce_rays = BbSettings::Get().screen_lighting == BbSettings::ScreenLightingHigh ? 4 : 2,
+        .bounce_strength = std::clamp(BbSettings::Get().screen_lighting_gi.load(), 0.0f, 4.0f) * 1.0f,
+        .noise = std::fmod(float(frames_seen % 64) * 0.618034f, 1.0f),
+        .pad = 0.0f,
+        .sun_dir = sun_dir,
+        // The street at dusk: light0 rose ~0.04 per unit N.L of the directional light.
+        .sun_colour = {sun_colour[0], sun_colour[1], sun_colour[2], 0.05f},
     };
+    ResolvePush resolve{
+        .proj = proj,
+        .size = {float(w), float(h)},
+        .blend = 0.12f,
+        .history_valid = 0,
+    };
+    resolve.history_valid =
+        history_valid && camera_motion.SceneReprojection(resolve.reproject, resolve.prev_proj) ? 1 : 0;
+    const u32 write_history = history_next, read_history = 3 - history_next;
+    history_next = read_history;
+    const bool first_use = !history_valid;
+    history_valid = true;
+    const std::array<vk::Image, 3> bounce_imgs{vk::Image(bounce_images[0]), vk::Image(bounce_images[1]),
+                                               vk::Image(bounce_images[2])};
+    const vk::ImageView current_v = *bounce_views[0], history_v = *bounce_views[read_history],
+                        next_v = *bounce_views[write_history];
+    const vk::DescriptorBufferInfo map_positions = rays->Positions();
+    const vk::DescriptorBufferInfo map_indices = rays->Indices();
+    const vk::DescriptorBufferInfo map_colors = rays->Colors();
     const vk::Buffer lamp_buffer = buf.buffer;
     scheduler.RecordCrumb(
         {.name = "lamp shadows"},
-        [=, pipeline = *lamp_pipeline, layout = *lamp_layout](vk::CommandBuffer cmdbuf) {
+        [=, pipeline = *lamp_pipeline, layout = *lamp_layout, resolve_pipe = *resolve_pipeline,
+         resolve_lay = *resolve_layout](vk::CommandBuffer cmdbuf) {
+            // The bounce images to General (their first use: from Undefined).
+            for (const vk::Image image : bounce_imgs) {
+                const vk::ImageMemoryBarrier2 to_general{
+                    .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+                    .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
+                    .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+                    .dstAccessMask = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
+                    .oldLayout = first_use ? vk::ImageLayout::eUndefined : vk::ImageLayout::eGeneral,
+                    .newLayout = vk::ImageLayout::eGeneral,
+                    .image = image,
+                    .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+                };
+                cmdbuf.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &to_general});
+            }
+            const vk::DescriptorImageInfo current_info{.imageView = current_v,
+                                                       .imageLayout = vk::ImageLayout::eGeneral};
             const vk::DescriptorImageInfo depth_info{.imageView = depth_view,
                                                      .imageLayout = vk::ImageLayout::eGeneral};
             const vk::DescriptorImageInfo normal_info{.imageView = normal_view,
@@ -345,7 +537,7 @@ void ScreenLighting::OnLightingDone() {
                 .pAccelerationStructures = &scene_as,
             };
             const vk::DescriptorBufferInfo lamps_info{lamp_buffer, 0, VK_WHOLE_SIZE};
-            const std::array<vk::WriteDescriptorSet, 6> writes = {{
+            const std::array<vk::WriteDescriptorSet, 10> writes = {{
                 {.dstBinding = 0, .descriptorCount = 1,
                  .descriptorType = vk::DescriptorType::eSampledImage, .pImageInfo = &depth_info},
                 {.dstBinding = 1, .descriptorCount = 1,
@@ -358,6 +550,14 @@ void ScreenLighting::OnLightingDone() {
                  .descriptorType = vk::DescriptorType::eAccelerationStructureKHR},
                 {.dstBinding = 5, .descriptorCount = 1,
                  .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &lamps_info},
+                {.dstBinding = 6, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &map_positions},
+                {.dstBinding = 7, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &map_indices},
+                {.dstBinding = 8, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &map_colors},
+                {.dstBinding = 9, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eStorageImage, .pImageInfo = &current_info},
             }};
             const vk::MemoryBarrier2 before{
                 .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
@@ -371,6 +571,34 @@ void ScreenLighting::OnLightingDone() {
             cmdbuf.pushConstants(layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(push), &push);
             cmdbuf.dispatch((push.size[0] > 0 ? (u32(push.size[0]) + 7) / 8 : 0),
                             (u32(push.size[1]) + 7) / 8, 1);
+            // Step 2c: the bounce through the history, into light0.
+            const vk::MemoryBarrier2 traced{
+                .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+                .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
+                .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+                .dstAccessMask = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
+            };
+            cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &traced});
+            const vk::DescriptorImageInfo history_info{.imageView = history_v,
+                                                       .imageLayout = vk::ImageLayout::eGeneral};
+            const vk::DescriptorImageInfo next_info{.imageView = next_v,
+                                                    .imageLayout = vk::ImageLayout::eGeneral};
+            const std::array<vk::WriteDescriptorSet, 4> resolve_writes = {{
+                {.dstBinding = 0, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eSampledImage, .pImageInfo = &current_info},
+                {.dstBinding = 1, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eSampledImage, .pImageInfo = &history_info},
+                {.dstBinding = 2, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eStorageImage, .pImageInfo = &next_info},
+                {.dstBinding = 3, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eStorageImage, .pImageInfo = &diffuse_info},
+            }};
+            cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, resolve_pipe);
+            cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, resolve_lay, 0,
+                                        resolve_writes);
+            cmdbuf.pushConstants(resolve_lay, vk::ShaderStageFlagBits::eCompute, 0,
+                                 sizeof(resolve), &resolve);
+            cmdbuf.dispatch((u32(push.size[0]) + 7) / 8, (u32(push.size[1]) + 7) / 8, 1);
             const vk::MemoryBarrier2 after{
                 .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
                 .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
@@ -842,6 +1070,12 @@ void ScreenLighting::OnOpaqueSceneDone(bool temporal) {
     dump_image(color, "scene_after", vk::ImageAspectFlagBits::eColor);
     DumpImages(instance, scheduler, cmdbuf, index,
                {{trace, tw, th, 8, "trace", "R16G16B16A16Sfloat"}});
+    if (rays) {
+        const char* dir = std::getenv("BB_DUMP_DIR");
+        rays->DumpCharacters(std::string(dir && dir[0] ? dir : "out/dump") + "/f" +
+                             (index < 10 ? "00" : index < 100 ? "0" : "") + std::to_string(index) +
+                             "_characters.raw");
+    }
     std::printf("Screen lighting dump %d: proj %.5f %.5f %.6f %.6f, %s\n", index, proj[0],
                 proj[1], proj[2], proj[3], albedo_view ? "albedo found" : "no albedo");
     // The camera (view to world, 3x4 rows): the dump's depth placed in the world, offline.

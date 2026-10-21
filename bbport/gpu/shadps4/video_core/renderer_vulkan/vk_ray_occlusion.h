@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "common/types.h"
@@ -41,8 +42,24 @@ public:
     void Update();
     /// The top level of the player's map once built (else null): for the trace's ray queries.
     [[nodiscard]] vk::AccelerationStructureKHR Scene() const noexcept {
-        return built_map != 0 && built_map == map ? *tlas : vk::AccelerationStructureKHR{};
+        if (built_map == 0 || built_map != map) {
+            return {};
+        }
+        return frame_scene_frame == frames && frame_tlas ? *frame_tlas : *tlas;
     }
+    /// Kaniel 2026-10-21 ("do all steps", step 3): this frame's characters (their corners'
+    /// clip positions in `positions` at the elements of `source`, three of those a triangle in
+    /// `indices`) built into a second instance (custom index 1) beside the map; Scene() is then
+    /// both, until the next frame. Records on the scheduler (before what traces them).
+    /// BB_LIGHTING_DUMP: this frame's character corners (x, y, z floats, world) into `path`.
+    void DumpCharacters(const std::string& path);
+    /// `draw_of`: each corner's draw (of `draws`); a draw's clip depth carries a scale of its
+    /// own, found against `depth` (the scene depth, General layout, `width` x `height`).
+    void BuildCharacters(vk::Buffer positions, const std::vector<u32>& source,
+                         const std::vector<u32>& indices, const std::vector<u32>& draw_of,
+                         u32 draws, vk::ImageView depth, u32 width, u32 height,
+                         const std::array<float, 4>& proj, const std::array<float, 12>& world);
+    static constexpr u32 MaxCharacterDraws = 4096;
     /// With Scene: the map's triangles' corner indices (three a triangle) and its corners' colours
     /// (0xAABBGGRR): a ray's hit brings back that surface's light (Kaniel 2026-10-21, "light to
     /// work more natural, not just darker").
@@ -51,6 +68,10 @@ public:
     }
     [[nodiscard]] vk::DescriptorBufferInfo Colors() const noexcept {
         return {color_buffer.buffer, 0, VK_WHOLE_SIZE};
+    }
+    /// Its corners' positions (x, y, z floats, world): a hit's surface normal.
+    [[nodiscard]] vk::DescriptorBufferInfo Positions() const noexcept {
+        return {position_buffer.buffer, 0, VK_WHOLE_SIZE};
     }
 
 private:
@@ -71,8 +92,22 @@ private:
     u32 map = 0;       ///< the player's map (packed), 0 unknown
     u32 built_map = 0; ///< the map the structures hold
     bool failed_map = false;
-    Buffer blas_buffer, tlas_buffer, index_buffer, color_buffer;
+    Buffer blas_buffer, tlas_buffer, index_buffer, color_buffer, position_buffer;
     vk::UniqueAccelerationStructureKHR blas, tlas;
+    // Step 3 (characters), made once at their largest and reused every frame.
+    static constexpr u32 MaxCharacterCorners = 1u << 20;
+    static constexpr u32 FrameSlots = 3; ///< host-written inputs: one set a frame in flight
+    std::array<Buffer, FrameSlots> char_source{}, char_draw_of{}, char_indices{}, frame_instances{};
+    u32 char_slot = 0;
+    Buffer char_world, char_factor, char_blas_buffer, frame_tlas_buffer, frame_scratch;
+    vk::UniqueAccelerationStructureKHR char_blas, frame_tlas;
+    vk::UniqueDescriptorSetLayout char_desc_layout;
+    vk::UniquePipelineLayout char_layout;
+    vk::UniquePipeline char_pipeline, char_ratio_pipeline;
+    u32 frame_scene_frame = ~0u; ///< `frames` when frame_tlas holds this frame's characters
+    bool char_failed = false;
+    bool char_logged = false;
+    u32 char_corners = 0;
 };
 
 } // namespace Vulkan

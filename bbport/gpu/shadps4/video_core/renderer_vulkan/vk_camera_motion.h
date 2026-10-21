@@ -72,6 +72,10 @@ public:
                : current.valid                       ? current.inv_view
                                                      : std::array<float, 12>{};
     }
+    /// bbport: last frame's view times this frame's inverse view (3x4 rows) and last frame's
+    /// projection, before or after this frame's camera is committed (vk_screen_lighting's
+    /// temporal resolve). False when either camera is unknown.
+    bool SceneReprojection(std::array<float, 12>& rows, std::array<float, 4>& prev_proj) const;
     /// Vertical field of view and near/far planes of the current camera.
     [[nodiscard]] float VerticalFov() const noexcept;
     [[nodiscard]] float Near() const noexcept;

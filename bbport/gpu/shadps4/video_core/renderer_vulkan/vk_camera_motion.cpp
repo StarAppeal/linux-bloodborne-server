@@ -254,6 +254,18 @@ bool CameraMotion::ClipTransforms(std::array<float, 16>& view_to_clip,
     return true;
 }
 
+bool CameraMotion::SceneReprojection(std::array<float, 12>& rows,
+                                     std::array<float, 4>& prev_proj) const {
+    const Camera& now = committed ? current : pass_camera;
+    const Camera& before = committed ? previous : current;
+    if (!now.valid || !before.valid || (!committed && !pass_has_camera)) {
+        return false;
+    }
+    rows = Multiply(before.view, now.inv_view);
+    prev_proj = before.proj;
+    return true;
+}
+
 float CameraMotion::FarPlane(float fallback) const noexcept {
     // depth = zs + zo / z is 1 at the far plane; zs = 1 is an infinite one.
     const float zs = current.proj[2], zo = current.proj[3];

@@ -75,6 +75,7 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
                                                   *camera_motion, *scene_targets);
     screen_lighting = std::make_unique<ScreenLighting>(instance, scheduler, texture_cache, runtime,
                                                        *camera_motion, *scene_targets);
+    screen_lighting->SetCharacterPositions(object_motion->PositionsBuffer());
     if (!EmulatorSettings.IsNullGPU()) {
         liverpool->BindRasterizer(this);
     }
@@ -722,6 +723,10 @@ void Rasterizer::PrepareRenderState(const GraphicsPipeline* pipeline) {
     }
     if (upscaler->Enabled() && cb_descs[0].first) {
         upscaler->OnColorTarget(cb_descs[0].first);
+    }
+    // bbport: the lighting pass's lamp shadows and bounce before the game combines its light.
+    if (screen_lighting->Enabled() && key.mrt_mask != 0 && cb_descs[0].first) {
+        screen_lighting->OnColorDraw(cb_descs[0].first);
     }
     // bbport: the lighting pass (docs/upscaler.md): light volumes into two scene-size B10G11R11
     // targets, the lamps' light the screen lighting leaves alone.
@@ -1868,6 +1873,20 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                 .first_instance = first_instance,
                 .vertices = range,
             });
+            // bbport (step 3): a skinned character's triangles for the rays.
+            const auto& stored = object_motion->LastAllocation();
+            if (push_data.motion_param && stored.store && is_indexed && !gated && gbuffer_draw &&
+                regs.num_instances.NumInstances() == 1 &&
+                regs.primitive_type == AmdGpu::PrimitiveType::TriangleList && index_address &&
+                screen_lighting->WantsCharacters() &&
+                memory->IsValidGpuMapping(index_address, 0) &&
+                memory->ClampRangeSize(index_address, u64(regs.num_indices) * index_size) ==
+                    u64(regs.num_indices) * index_size) {
+                screen_lighting->OnCharacterDraw(
+                    stored.store, stored.first_vertex, stored.vertices,
+                    reinterpret_cast<const void*>(index_address), index_size, regs.num_indices,
+                    s32(base_vertex), db_desc.first);
+            }
         }
     }
     {
@@ -3175,10 +3194,15 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
             // Copied by the GPU command thread into the constant ring (read-only).
             if (!desc.IsSpecial()) {
                 if (light_pass_draw && stage.sw_stage == Shader::SwStage::Fragment &&
-                    ring->size % 144 == 0 && ring->size != 864 &&
-                    memory->IsValidGpuMapping(ring->address, 0)) {
-                    screen_lighting->OnLampConstants(
-                        reinterpret_cast<const float*>(ring->address), u32(ring->size));
+                    ring->size % 144 == 0 && memory->IsValidGpuMapping(ring->address, 0)) {
+                    // 864 bytes: the scene constants (far plane 3000 first: the directional
+                    // light's draw has its direction and colour there), or six lamps.
+                    const auto* consts = reinterpret_cast<const float*>(ring->address);
+                    if (ring->size == 864 && consts[0] == 3000.0f) {
+                        screen_lighting->OnSunConstants(consts);
+                    } else {
+                        screen_lighting->OnLampConstants(consts, u32(ring->size));
+                    }
                 }
                 if (light_pass_log && stage.sw_stage == Shader::SwStage::Fragment &&
                     memory->IsValidGpuMapping(ring->address, 0)) {

@@ -40,6 +40,14 @@ public:
 
     using DrawInfo = Motion::Draw;
     u32 PrepareDraw(const DrawInfo& draw);
+    /// bbport (ray-traced characters): where the last PrepareDraw stores this frame's clip
+    /// positions (element `store` of PositionsBuffer, `vertices` from `first_vertex`), else zero.
+    [[nodiscard]] const Motion::History::Allocation& LastAllocation() const noexcept {
+        return last_allocation;
+    }
+    [[nodiscard]] vk::Buffer PositionsBuffer() const noexcept {
+        return positions_buffer;
+    }
     /// Small skeletons: whether the bone palette changed (Motion::History::Moving).
     bool Moving(const Motion::History::GateKey& key, u64 palette) {
         return history.Moving(key, palette);
@@ -119,6 +127,7 @@ private:
     VmaAllocation params_allocation{};
     u32* params_mapped{};
     vk::Buffer positions_buffer{};
+    Motion::History::Allocation last_allocation{};
     VmaAllocation positions_allocation{};
     vk::UniqueDescriptorSetLayout set_layout;
     vk::UniqueDescriptorPool pool;

@@ -1,0 +1,69 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// bbport: the ray-traced bounce light averaged over frames (Kaniel 2026-10-21, "do all steps", step
+// 2c; vk_screen_lighting.h). lamp_shadows.comp leaves this frame's noisy bounce in `current` (rgb,
+// a: view z). Each pixel finds where it was last frame (the camera's reprojection), takes that
+// frame's average when the surface there is the same (its view z within 3%), blends this frame
+// in, keeps the result as the next history and adds it to light0. A 3x3 depth-aware mean of this
+// frame stands in where nothing is reprojected (new pixels, disocclusions).
+#version 450
+#extension GL_EXT_samplerless_texture_functions : require
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0) uniform texture2D current_tex; // this frame's bounce: rgb, a view z
+layout(binding = 1) uniform texture2D history_tex; // last frame's average: rgb, a view z
+layout(binding = 2, rgba16f) uniform writeonly image2D next_img;
+layout(binding = 3, r11f_g11f_b10f) uniform image2D diffuse_img; // light0
+
+layout(push_constant) uniform Constants {
+    vec4 reproject[3]; // previous view * inverse current view, rows (3x4)
+    vec4 proj;         // current: x scale, y scale, z scale, z offset
+    vec4 prev_proj;    // previous: the same
+    vec2 size;
+    float blend;       // this frame's share (0.1)
+    int history_valid; // 0 after a reset
+};
+
+void main() {
+    const ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    if (pixel.x >= int(size.x) || pixel.y >= int(size.y)) {
+        return;
+    }
+    const vec4 now = texelFetch(current_tex, pixel, 0);
+    const float z = now.a;
+    if (z <= 0.0) {
+        imageStore(next_img, pixel, vec4(0.0));
+        return;
+    }
+    // This frame, 3x3 over the same surface.
+    vec3 spatial = vec3(0.0);
+    float weights = 0.0;
+    for (int y = -1; y <= 1; ++y) {
+        for (int x = -1; x <= 1; ++x) {
+            const vec4 s = texelFetch(current_tex, clamp(pixel + ivec2(x, y), ivec2(0), ivec2(size) - 1), 0);
+            const float w = abs(s.a - z) < 0.03 * z ? 1.0 : 0.0;
+            spatial += s.rgb * w;
+            weights += w;
+        }
+    }
+    spatial /= max(weights, 1.0);
+    vec3 result = spatial;
+    if (history_valid != 0) {
+        const vec2 ndc = (vec2(pixel) + 0.5) / size * 2.0 - 1.0;
+        const vec4 view = vec4(ndc.x * z / proj.x, ndc.y * z / proj.y, z, 1.0);
+        const vec3 prev = vec3(dot(reproject[0], view), dot(reproject[1], view), dot(reproject[2], view));
+        if (prev.z > 0.0) {
+            const vec2 prev_uv = vec2(prev.x * prev_proj.x, prev.y * prev_proj.y) / prev.z * 0.5 + 0.5;
+            const ivec2 prev_pixel = ivec2(prev_uv * size);
+            if (all(greaterThanEqual(prev_pixel, ivec2(0))) && all(lessThan(prev_pixel, ivec2(size)))) {
+                const vec4 h = texelFetch(history_tex, prev_pixel, 0);
+                if (h.a > 0.0 && abs(h.a - prev.z) < 0.03 * prev.z) {
+                    result = mix(h.rgb, now.rgb, blend);
+                }
+            }
+        }
+    }
+    imageStore(next_img, pixel, vec4(result, z));
+    const vec3 light = imageLoad(diffuse_img, pixel).rgb;
+    imageStore(diffuse_img, pixel, vec4(light + result, 1.0));
+}

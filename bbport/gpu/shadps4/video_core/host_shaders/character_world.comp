@@ -1,0 +1,91 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// bbport: the characters' corners in the world for the rays (Kaniel 2026-10-21, "do all steps",
+// step 3; vk_ray_occlusion.h). The G-buffer's skinned draws keep their clip positions (object
+// motion, vk_object_motion.h); each corner the frame's character triangles use is taken from
+// there (`source`), turned into our view space and into the world.
+// The clip positions land on the screen where the game draws them (x / w, y / w), but their depth
+// is off by a factor of each draw's own (the 2026-10-21 check: the hunter's draws read 1x to ~11x
+// his distance). RATIO: each corner's read depth over the depth buffer's at its pixel, the draw's
+// smallest kept off the edges (its visible front, atomicMin on the float bits); PLACE: the corners pulled in by
+// their draw's factor and into the world (a draw with no corner on screen keeps none: zero).
+#version 450
+#extension GL_EXT_samplerless_texture_functions : require
+
+layout(local_size_x = 64) in;
+
+layout(binding = 0, std430) readonly buffer Positions { vec4 positions[]; }; // clip
+layout(binding = 1, std430) readonly buffer Source { uint source[]; };
+layout(binding = 2, std430) readonly buffer DrawOf { uint draw_of[]; };
+layout(binding = 3, std430) coherent buffer Factor { uint factor[]; }; // per draw, float bits
+layout(binding = 4) uniform texture2D depth_tex;
+layout(binding = 5, std430) writeonly buffer World { float world_out[]; }; // x, y, z a corner
+
+layout(push_constant) uniform Constants {
+    vec4 world[3]; // view (ours) to world, 3x4 rows
+    vec4 proj;     // the scene's projection (signs as the screen has them)
+    vec2 size;     // the depth buffer's pixels
+    uint count;
+};
+
+// A corner's position as read: our view space at the depth its clip position says.
+bool ReadCorner(uint i, out vec3 view) {
+    const vec4 clip = positions[source[i]];
+    if (abs(clip.w) < 1e-6) {
+        return false;
+    }
+    const vec3 ndc = clip.xyz / clip.w;
+    const float z = proj.w / min(ndc.z - proj.z, -1e-8);
+    view = vec3(ndc.x * z / abs(proj.x), ndc.y * z / abs(proj.y), z);
+    return z > 0.0;
+}
+
+void main() {
+    const uint i = gl_GlobalInvocationID.x;
+    if (i >= count) {
+        return;
+    }
+    vec3 view;
+    const bool ok = ReadCorner(i, view);
+#ifdef RATIO
+    if (!ok) {
+        return;
+    }
+    // Its pixel (the screen's own signs: x and y scales with their signs).
+    const vec2 ndc = vec2(view.x * proj.x, view.y * proj.y) / view.z;
+    const vec2 uv = ndc * 0.5 + 0.5;
+    if (any(lessThan(uv, vec2(0.0))) || any(greaterThanEqual(uv, vec2(1.0)))) {
+        return;
+    }
+    const ivec2 pixel = ivec2(uv * size);
+    const float depth = texelFetch(depth_tex, pixel, 0).r;
+    if (depth >= 1.0) {
+        return;
+    }
+    const float drawn = proj.w / min(depth - proj.z, -1e-8);
+    // Not on an edge: a corner on its silhouette may fall on the background behind it (and pull
+    // the factor down; the 2026-10-21 check had a third of the hunter 15 m+ away from that).
+    const ivec2 last = ivec2(size) - 1;
+    for (int k = 0; k < 4; ++k) {
+        const ivec2 step = ivec2(k == 0 ? 2 : k == 1 ? -2 : 0, k == 2 ? 2 : k == 3 ? -2 : 0);
+        const float d = texelFetch(depth_tex, clamp(pixel + step, ivec2(0), last), 0).r;
+        const float z = proj.w / min(d - proj.z, -1e-8);
+        if (abs(z - drawn) > 0.05 * drawn) {
+            return;
+        }
+    }
+    const float ratio = view.z / max(drawn, 1e-3);
+    if (ratio > 0.5) {
+        atomicMin(factor[draw_of[i]], floatBitsToUint(ratio));
+    }
+#else
+    vec3 w = vec3(0.0);
+    const float k = uintBitsToFloat(factor[draw_of[i]]);
+    if (ok && k > 0.5 && k < 100.0) {
+        const vec4 at = vec4(view / k, 1.0);
+        w = vec3(dot(world[0], at), dot(world[1], at), dot(world[2], at));
+    }
+    world_out[i * 3u] = w.x;
+    world_out[i * 3u + 1u] = w.y;
+    world_out[i * 3u + 2u] = w.z;
+#endif
+}
