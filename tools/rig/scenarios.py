@@ -3367,6 +3367,35 @@ SCENARIOS["dream-headstones-lit"] = {
 }
 
 
+# Kaniel's play test 2026-10-21 (v1.1.1, #301 in): both guests' headstones said "no place to
+# awaken" again, the host's worked. Each guest came in by the team screen with its save in the
+# Dream: its own lamps lit its headstones there (KeepHeadstoneFlagsOwn "set"), and right after the
+# join's reload (still the Dream) every one read off ("cleared: this player's lamps"), for the
+# whole session. dream-headstones-lit joins outside the team, in Central Yharnam.
+SCENARIOS["dream-headstones-team"] = {
+    "about": "a team from the lobby, both saves in the Hunter's Dream before the guest joins (as "
+             "in Kaniel's play test): the guest's own lamps still light its headstone after the "
+             "join's reload",
+    "roles": {
+        "host": ["team-create", "team-invite rig_guest", "team-wait 2", "team-start", START,
+                 "godmode", f"travel {HUNTERS_DREAM}", "wait-session 2 300", "wait-members 2 240",
+                 "sync dream-both", *headstones_seen({HEADSTONE_LIT: 1}), "sync dream-seen",
+                 "expect-session 2"],
+        "guest": ["team-accept", "team-ready", START, "godmode", f"travel {HUNTERS_DREAM}",
+                  f"wait-flag {HEADSTONE_LIT} 1 60", "wait-session 2 300", "wait-members 2 240",
+                  "sync dream-both", *headstones_seen({HEADSTONE_LIT: 1}), "sync dream-seen",
+                  "expect-session 2"],
+    },
+    "syncs": {name: {"chapter": "dream-headstones-team", "roles": ["host", "guest"]}
+              for name in ("dream-both", "dream-seen")},
+    "expect": {"guest": [r"Co-op team lobby: the save plays in team \w+ as its guest"]},
+    "forbid": {role: SESSION_HOLDS + [HEADSTONE_FLIPS,
+                                      r"headstone flag 12105030 cleared: this player's lamps"]
+               for role in ("host", "guest")},
+    "timeout": 300,
+}
+
+
 # #300 (rig test 2026-10-21): the enemies that rise out of the mist in Hemwick's woods (m22_00
 # event 12204000, a slot each for 2200500-2200508). On each load event 12204010 arms them
 # (MIST_ARMED) for a host with 15 Insight or more (3:26, "SAN値で判定"); unarmed, 12204000 switches
