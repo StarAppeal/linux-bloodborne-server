@@ -19,6 +19,7 @@
 #include "video_core/host_shaders/screen_lighting_trace_rt_comp.h"
 #include "video_core/host_shaders/lamp_shadows_comp.h"
 #include "video_core/host_shaders/lamp_bounce_resolve_comp.h"
+#include "video_core/host_shaders/fog_light_comp.h"
 #include "video_core/renderer_vulkan/vk_camera_motion.h"
 #include "video_core/renderer_vulkan/vk_image_dump.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -504,9 +505,9 @@ void ScreenLighting::OnLightingDone() {
         .world = world,
         // Step 2: the lamps' bounce (Bounced light; 2 rays a pixel, the upscaler averages frames).
         .bounce_rays = BbSettings::Get().screen_lighting == BbSettings::ScreenLightingHigh ? 4 : 2,
-        .bounce_strength = std::clamp(BbSettings::Get().screen_lighting_gi.load(), 0.0f, 4.0f) * 1.0f,
+        .bounce_strength = std::clamp(BbSettings::Get().screen_lighting_gi.load(), 0.0f, 4.0f) * 2.5f,
         .noise = std::fmod(float(frames_seen % 64) * 0.618034f, 1.0f),
-        .sky = 12.0f,
+        .sky = 30.0f,
         .sun_dir = sun_dir,
         // The street at dusk: light0 rose ~0.04 per unit N.L of the directional light.
         .sun_colour = {sun_colour[0], sun_colour[1], sun_colour[2], 0.05f},
@@ -535,6 +536,9 @@ void ScreenLighting::OnLightingDone() {
     const vk::DescriptorBufferInfo map_indices = rays->Indices();
     const vk::DescriptorBufferInfo map_colors = rays->Colors();
     const vk::Buffer lamp_buffer = buf.buffer;
+    fog_lamps = lamp_buffer;
+    fog_lamp_count = u32(lamps.size());
+    fog_frame = frames_seen;
     scheduler.RecordCrumb(
         {.name = "lamp shadows"},
         [=, pipeline = *lamp_pipeline, layout = *lamp_layout, resolve_pipe = *resolve_pipeline,
@@ -780,6 +784,117 @@ bool ScreenLighting::EnsureTraceImage(u32 width, u32 height) {
     trace_width = width;
     trace_height = height;
     return true;
+}
+
+void ScreenLighting::RecordFogLight(vk::ImageView color_view, vk::ImageView depth_view, u32 w,
+                                    u32 h) {
+    if (!rays || !BbSettings::Get().ray_traced_ao || fog_frame != frames_seen || !fog_lamps) {
+        return;
+    }
+    const vk::AccelerationStructureKHR scene_as = rays->Scene();
+    const auto proj = camera_motion.SceneProjection();
+    const auto world = camera_motion.SceneInverseView();
+    if (!scene_as || proj[0] == 0.0f) {
+        return;
+    }
+    const auto device = instance.GetDevice();
+    if (!fog_pipeline) {
+        const std::array<vk::DescriptorSetLayoutBinding, 4> bindings{{
+            {0, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute},
+            {1, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute},
+            {2, vk::DescriptorType::eAccelerationStructureKHR, 1, vk::ShaderStageFlagBits::eCompute},
+            {3, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
+        }};
+        fog_desc_layout = Check(device.createDescriptorSetLayoutUnique({
+            .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
+            .bindingCount = u32(bindings.size()),
+            .pBindings = bindings.data(),
+        }));
+        const vk::PushConstantRange push{.stageFlags = vk::ShaderStageFlagBits::eCompute,
+                                         .offset = 0,
+                                         .size = 128};
+        fog_layout = Check(device.createPipelineLayoutUnique({
+            .setLayoutCount = 1,
+            .pSetLayouts = &*fog_desc_layout,
+            .pushConstantRangeCount = 1,
+            .pPushConstantRanges = &push,
+        }));
+        const auto module = CompileSPV(FOG_LIGHT_COMP, device);
+        fog_pipeline = Check(device.createComputePipelineUnique(
+            {}, vk::ComputePipelineCreateInfo{
+                    .stage = {.stage = vk::ShaderStageFlagBits::eCompute,
+                              .module = module,
+                              .pName = "main"},
+                    .layout = *fog_layout,
+                }));
+        device.destroyShaderModule(module);
+    }
+    struct {
+        std::array<float, 4> proj;
+        std::array<float, 2> size;
+        s32 count;
+        float density;
+        std::array<float, 12> world;
+        std::array<float, 4> sun_dir;
+        std::array<float, 4> sun_colour;
+        float noise;
+        float lamp_strength;
+        float sun_strength;
+        float pad;
+    } push{proj,
+           {float(w), float(h)},
+           s32(fog_lamp_count),
+           0.03f, // stylised: thick air (Kaniel 2026-10-21, "let's try 2")
+           world,
+           sun_dir,
+           {sun_colour[0], sun_colour[1], sun_colour[2], 0.05f},
+           std::fmod(float(frames_seen % 64) * 0.618034f, 1.0f),
+           0.12f, // lamps: a room full of them hazed white at 1 (2026-10-21 hall shot)
+           0.6f,
+           0.0f};
+    static_assert(sizeof(push) == 128);
+    const vk::Buffer lamps_buffer = fog_lamps;
+    scheduler.RecordCrumb(
+        {.name = "fog light"},
+        [=, pipeline = *fog_pipeline, layout = *fog_layout](vk::CommandBuffer cmdbuf) {
+            const vk::MemoryBarrier2 before{
+                .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+                .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
+                .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+                .dstAccessMask = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
+            };
+            cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &before});
+            const vk::DescriptorImageInfo depth_info{.imageView = depth_view,
+                                                     .imageLayout = vk::ImageLayout::eGeneral};
+            const vk::DescriptorImageInfo color_info{.imageView = color_view,
+                                                     .imageLayout = vk::ImageLayout::eGeneral};
+            const vk::WriteDescriptorSetAccelerationStructureKHR scene_info{
+                .accelerationStructureCount = 1,
+                .pAccelerationStructures = &scene_as,
+            };
+            const vk::DescriptorBufferInfo lamps_info{lamps_buffer, 0, VK_WHOLE_SIZE};
+            const std::array<vk::WriteDescriptorSet, 4> writes = {{
+                {.dstBinding = 0, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eSampledImage, .pImageInfo = &depth_info},
+                {.dstBinding = 1, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eStorageImage, .pImageInfo = &color_info},
+                {.pNext = &scene_info, .dstBinding = 2, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eAccelerationStructureKHR},
+                {.dstBinding = 3, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &lamps_info},
+            }};
+            cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline);
+            cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, layout, 0, writes);
+            cmdbuf.pushConstants(layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(push), &push);
+            cmdbuf.dispatch((w + 7) / 8, (h + 7) / 8, 1);
+            const vk::MemoryBarrier2 after{
+                .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+                .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
+                .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+                .dstAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
+            };
+            cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &after});
+        });
 }
 
 void ScreenLighting::KeepLastScene(const VideoCore::Image& color, bool reduced, u32 w, u32 h) {
@@ -1109,6 +1224,9 @@ void ScreenLighting::OnOpaqueSceneDone(bool temporal) {
         };
     if (!dump) {
         scheduler.RecordCrumb({.name = "screen lighting"}, record);
+        if (!reduced) {
+            RecordFogLight(color_view, depth_view, w, h);
+        }
         KeepLastScene(color, reduced, w, h);
         return;
     }

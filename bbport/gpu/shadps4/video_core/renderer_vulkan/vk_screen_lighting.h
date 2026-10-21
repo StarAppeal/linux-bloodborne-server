@@ -133,6 +133,9 @@ public:
     /// Part 2: the lit opaque scene into the fourth bounce image (General layout) for the next
     /// frame's reflections.
     void KeepLastScene(const VideoCore::Image& color, bool reduced, u32 w, u32 h);
+    /// Kaniel 2026-10-21 ("improve the fog"): the moon's and lamps' light in the air, shafts
+    /// cut by the ray scene, into the opaque scene (General layout) before the game's fog.
+    void RecordFogLight(vk::ImageView color_view, vk::ImageView depth_view, u32 w, u32 h);
 
 private:
     struct ViewEntry {
@@ -193,6 +196,13 @@ private:
     vk::UniqueDescriptorSetLayout lamp_desc_layout;
     vk::UniquePipelineLayout lamp_layout;
     vk::UniquePipeline lamp_pipeline;
+    // The fog light: this frame's lamp buffer (the lamp pass's) and its pipeline.
+    vk::Buffer fog_lamps{};
+    u32 fog_lamp_count = 0;
+    u32 fog_frame = ~0u; ///< frames_seen when fog_lamps is this frame's
+    vk::UniqueDescriptorSetLayout fog_desc_layout;
+    vk::UniquePipelineLayout fog_layout;
+    vk::UniquePipeline fog_pipeline;
     /// Step 2c: this frame's bounce and two histories (ping-pong), RGBA16F at light0's size;
     /// fourth, the last frame's opaque scene (the reflections' hits on screen).
     std::array<VideoCore::UniqueImage, 4> bounce_images;

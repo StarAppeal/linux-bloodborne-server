@@ -1,0 +1,129 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// bbport: ray-traced light in the air (Kaniel 2026-10-21, "let's try 2 and also improve the fog";
+// vk_screen_lighting.h). After the opaque scene is lit and before the game's own fog and
+// transparents, each pixel's view ray is marched through the air up to its surface (or FogReach):
+// at each step the moon and the strongest lamp nearby light the air if a shadow ray finds them,
+// so walls, pillars and people cut shafts out of the light. The light scattered toward the eye is
+// added to the scene colour, dimmed by the air in front of it.
+#version 460
+#extension GL_EXT_samplerless_texture_functions : require
+#extension GL_EXT_ray_query : require
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0) uniform texture2D depth_tex;                 // D32, depth 0..1
+layout(binding = 1, rgba16f) uniform image2D scene_img;          // the lit opaque scene
+layout(binding = 2) uniform accelerationStructureEXT scene;       // map + characters, world space
+layout(binding = 3, std430) readonly buffer Lamps { vec4 lamps[]; }; // as lamp_shadows.comp
+
+layout(push_constant) uniform Constants {
+    vec4 proj;      // x scale, y scale, z scale, z offset
+    vec2 size;      // pixels
+    int count;      // lamps
+    float density;  // scattering a metre
+    vec4 world[3];  // view (ours) to world, 3x4 rows
+    vec4 sun_dir;   // view space, toward the sun/moon; w 1 when the frame has one
+    vec4 sun_colour; // rgb, a: its strength in light0 units
+    float noise;    // per frame 0..1
+    float lamp_strength; // the light a lamp of colour 1 gives (lamp_shadows.comp's strength)
+    float sun_strength;  // how much the moon lights the air, of its surface light
+    float pad;
+};
+
+// The march: steps a pixel, how far it reaches.
+const int FogSteps = 12;
+const float FogReach = 40.0;
+const float ShadowBias = 0.05;
+
+vec3 ToWorld(vec3 v, float w) {
+    const vec4 at = vec4(v, w);
+    return vec3(dot(world[0], at), dot(world[1], at), dot(world[2], at));
+}
+
+bool Blocked(vec3 from, vec3 dir, float dist) {
+    rayQueryEXT query;
+    rayQueryInitializeEXT(query, scene, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT,
+                          0xFF, from, ShadowBias, dir, dist);
+    while (rayQueryProceedEXT(query)) {
+    }
+    return rayQueryGetIntersectionTypeEXT(query, true) == gl_RayQueryCommittedIntersectionTriangleEXT;
+}
+
+// Henyey-Greenstein: light scattered from `cos_theta` off its path (g > 0: forward).
+float Phase(float cos_theta, float g) {
+    const float g2 = g * g;
+    return (1.0 - g2) / (4.0 * 3.14159265 * pow(max(1.0 + g2 - 2.0 * g * cos_theta, 1e-4), 1.5));
+}
+
+float Hash(vec2 p) {
+    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
+void main() {
+    const ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    if (pixel.x >= int(size.x) || pixel.y >= int(size.y)) {
+        return;
+    }
+    const float depth = texelFetch(depth_tex, pixel, 0).r;
+    const vec2 ndc = (vec2(pixel) + 0.5) / size * 2.0 - 1.0;
+    // The view ray (our view space: z forward), to the surface or FogReach.
+    const vec3 ray_view = normalize(vec3(ndc.x / proj.x, ndc.y / proj.y, 1.0));
+    float dist = FogReach;
+    if (depth < 1.0) {
+        const float z = proj.w / min(depth - proj.z, -1e-8);
+        dist = min(z / ray_view.z, FogReach);
+    }
+    if (dist <= 0.0) {
+        return;
+    }
+    const vec3 eye = vec3(world[0].w, world[1].w, world[2].w);
+    const vec3 dir = normalize(ToWorld(ray_view, 0.0));
+    const vec3 to_sun = sun_dir.w > 0.0 ? normalize(ToWorld(sun_dir.xyz, 0.0)) : vec3(0.0);
+    const float sun_phase = Phase(dot(dir, to_sun), 0.6) * 4.0 * 3.14159265;
+    const float step_len = dist / float(FogSteps);
+    const float jitter = fract(Hash(vec2(pixel)) + noise);
+    vec3 light = vec3(0.0);
+    float transmittance = 1.0;
+    for (int s = 0; s < FogSteps; ++s) {
+        const float t = (float(s) + jitter) * step_len;
+        const vec3 at = eye + dir * t;
+        vec3 here = vec3(0.0);
+        if (sun_dir.w > 0.0 && !Blocked(at, to_sun, 200.0)) {
+            here += sun_colour.rgb * sun_colour.a * sun_strength * sun_phase;
+        }
+        // The lamps: all of them lighting the air by reach, the strongest only past a shadow ray.
+        float best = 0.0;
+        int best_i = -1;
+        vec3 lamps_light = vec3(0.0);
+        for (int i = 0; i < count; ++i) {
+            const vec4 lamp = lamps[i * 4];
+            const vec3 to_lamp = ToWorld(lamp.xyz, 1.0) - at;
+            const float d2 = dot(to_lamp, to_lamp);
+            const float reach = clamp(1.0 - d2 * lamp.w, 0.0, 1.0);
+            const vec3 l = lamps[i * 4 + 1].rgb * reach * reach;
+            const float m = max(max(l.r, l.g), l.b);
+            if (m <= 0.0) {
+                continue;
+            }
+            lamps_light += l;
+            if (m > best) {
+                best = m;
+                best_i = i;
+            }
+        }
+        if (best_i >= 0) {
+            const vec3 to_lamp = ToWorld(lamps[best_i * 4].xyz, 1.0) - at;
+            const float d = length(to_lamp);
+            if (d > 0.5 && Blocked(at, to_lamp / d, d - 0.4)) {
+                const vec4 lamp = lamps[best_i * 4];
+                const float reach = clamp(1.0 - d * d * lamp.w, 0.0, 1.0);
+                lamps_light -= lamps[best_i * 4 + 1].rgb * reach * reach;
+            }
+        }
+        here += max(lamps_light, vec3(0.0)) * lamp_strength;
+        light += here * transmittance * density * step_len;
+        transmittance *= exp(-density * step_len);
+    }
+    const vec4 colour = imageLoad(scene_img, pixel);
+    imageStore(scene_img, pixel, vec4(colour.rgb * mix(1.0, transmittance, 0.5) + light, colour.a));
+}

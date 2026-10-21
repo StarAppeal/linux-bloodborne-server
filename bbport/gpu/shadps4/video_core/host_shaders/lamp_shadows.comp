@@ -235,7 +235,7 @@ vec3 LampBounce(vec3 wp, vec3 wn, float n1, float n2) {
 // Reflection rays reach this far (across a street).
 const float ReflectionReach = 60.0;
 // How much of the reflection goes in (1: as the surface's specular colour says).
-const float ReflectionStrength = 1.0;
+const float ReflectionStrength = 3.0;
 
 /// Kaniel 2026-10-21 ("let's do 1 and 2", part 2): what a glossy pixel reflects. One mirror ray
 /// (spread by the roughness) against the map; its hit lit by SurfaceLight, or the sky's light.
