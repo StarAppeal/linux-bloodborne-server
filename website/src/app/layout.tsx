@@ -1,3 +1,4 @@
+import { Analytics } from "@vercel/analytics/next";
 import type { Metadata, Viewport } from "next";
 import { EB_Garamond } from "next/font/google";
 
@@ -78,6 +79,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             sameAs: [REPO_URL, ...SOCIAL_LINKS.map((link) => link.href)],
           }}
         />
+        <Analytics />
       </body>
     </html>
   );
