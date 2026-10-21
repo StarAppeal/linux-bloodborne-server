@@ -11,7 +11,7 @@ export const faq: { q: string; a: string }[] = [
   },
   {
     q: "Do I need to rent a server?",
-    a: "No. One player hosts the server on their own PC; the launcher starts it with the game. The others reach that PC over a VPN such as Radmin VPN, Tailscale or ZeroTier, or through forwarded ports.",
+    a: "No. One player hosts the server on their own PC; the launcher starts it with the game. The others reach that PC over a VPN such as Radmin VPN, Tailscale or ZeroTier, or through forwarded ports. The guide walks through Radmin VPN step by step.",
   },
   {
     q: "Is it an emulator?",

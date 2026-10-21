@@ -95,6 +95,7 @@ The illustrated version of this is the
 5. Everyone must reach the host's PC: the same VPN (Radmin VPN, Tailscale, ZeroTier) or the host's
    public IP with ports forwarded: TCP 31313, 31315, 20443 and **UDP 31314**. The UDP port carries
    every game's co-op traffic (the games never talk to each other directly), so it must be open.
+   New to VPNs? The [Radmin VPN guide](https://bloodborne.seamlesscoop.dev/docs/radmin) walks through it.
 
 Requirements: Windows 10 (1903 or later) or 11, 64-bit, and a Vulkan 1.3 graphics card with a
 current driver. Everything else is in the setup. Tested with CUSA03173 (the European Game of the

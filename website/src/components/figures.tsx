@@ -519,6 +519,47 @@ export function JoinFlowFigure() {
   );
 }
 
+/* Radmin VPN: what the host does and what every other player does. */
+export function RadminStepsFigure() {
+  const columns = [
+    {
+      title: "The host",
+      items: [
+        "install Radmin VPN",
+        "create a network: a name and a password",
+        "send both to the others",
+        "type their own 26. address in the launcher",
+      ],
+      accent: true,
+    },
+    {
+      title: "Every other player",
+      items: [
+        "install Radmin VPN",
+        "join the network with that name and password",
+        "copy the host's 26. address",
+        "paste it in the launcher",
+      ],
+    },
+  ];
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      {columns.map((c) => (
+        <div key={c.title} className={cn("panel px-5 py-4", c.accent && "bg-[#1d1710]")}>
+          <p className="text-lg text-bone">{c.title}</p>
+          <ol className="mt-3 space-y-1 text-base text-muted-foreground">
+            {c.items.map((i, n) => (
+              <li key={i}>
+                <span className="text-sm text-title">{String(n + 1).padStart(2, "0")}</span> {i}
+              </li>
+            ))}
+          </ol>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export const figures = {
   architecture: ArchitectureDiagram,
   topology: TopologyFigure,
@@ -528,6 +569,7 @@ export const figures = {
   "packet-path": PacketPathFigure,
   "save-split": SaveSplitFigure,
   "join-flow": JoinFlowFigure,
+  "radmin-steps": RadminStepsFigure,
 } as const;
 
 export type FigureId = keyof typeof figures;

@@ -230,6 +230,10 @@ const install: DocPage = {
           type: "p",
           text: "All co-op traffic goes through UDP 31314. The games never talk to each other directly.",
         },
+        {
+          type: "p",
+          text: "Never set up a VPN before? [Play over Radmin VPN](/docs/radmin) walks through it with pictures.",
+        },
       ],
     },
     {
@@ -268,7 +272,7 @@ const install: DocPage = {
             ],
             [
               "Nobody can join",
-              "The others can't reach the host. Check that everyone is on the same VPN, or that the ports are forwarded, and that the host allowed the firewall prompt.",
+              "The others can't reach the host. Check that everyone is on the same VPN, or that the ports are forwarded, and that the host allowed the firewall prompt. For Radmin VPN, see [its checklist](/docs/radmin#problems).",
             ],
             [
               "A crash",
@@ -1912,7 +1916,156 @@ const credits: DocPage = {
   ],
 };
 
-export const docs: DocPage[] = [install, launcher, play, architecture, netcode, build, credits];
+const radmin: DocPage = {
+  slug: "radmin",
+  title: "Play over Radmin VPN",
+  description:
+    "Step by step: install Radmin VPN, make or join the team's network, and put the host's Radmin address into the launcher so everyone reaches the host's co-op server.",
+  sections: [
+    {
+      id: "why",
+      title: "Why a VPN",
+      icon: "lantern",
+      blocks: [
+        {
+          type: "p",
+          text: "The host's PC runs the co-op server, so every other player has to reach that PC. Radmin VPN is the easiest way: it is free, needs no account and no router settings, and puts everyone's PC on one private network with an address that starts with `26.`. Each player does this once.",
+        },
+        {
+          type: "figure",
+          figure: "radmin-steps",
+          caption: "Who does what.",
+          alt: "Two columns. The host: install Radmin VPN, create a network with a name and password, send them to the others, type their own 26. address in the launcher. Every other player: install Radmin VPN, join the network with that name and password, copy the host's 26. address, paste it in the launcher.",
+        },
+        {
+          type: "note",
+          text: "Tailscale or ZeroTier work the same way: use the host's address on that network. Forwarded ports work too, see [Install and set up](/docs/install#network).",
+        },
+      ],
+    },
+    {
+      id: "install-radmin",
+      title: "1. Install Radmin VPN (everyone)",
+      blocks: [
+        {
+          type: "ol",
+          items: [
+            "Download it from [radmin-vpn.com](https://www.radmin-vpn.com) and run the setup. Windows asks to install a network adapter: allow it.",
+            "Open **Radmin VPN**. If the big power button at the top is off, press it.",
+            "At the top you see your PC's name and its Radmin address, such as `26.12.34.56`. That address stays the same on this PC.",
+          ],
+        },
+      ],
+    },
+    {
+      id: "host-network",
+      title: "2. The host makes a network",
+      blocks: [
+        {
+          type: "ol",
+          items: [
+            "**Network** → **Create a new network**.",
+            "Give it a name nobody else is likely to use (for example `yharnam-hunters-4821`) and a password of at least 6 characters, then **Create**.",
+            "Send the network's name and password to the other players.",
+          ],
+        },
+      ],
+    },
+    {
+      id: "join-network",
+      title: "3. The others join it",
+      blocks: [
+        {
+          type: "ol",
+          items: [
+            "**Network** → **Join an existing network**.",
+            "Type the host's network name and password, then **Join**.",
+            "The network shows up in the list with everyone in it. A green dot next to a name means that PC is online.",
+          ],
+        },
+      ],
+    },
+    {
+      id: "launcher",
+      title: "4. Put the host's address in the launcher",
+      blocks: [
+        {
+          type: "ol",
+          items: [
+            "In Radmin VPN, right-click the host's PC in the network and pick **Copy IP address**. The host copies their own address from the top of the window.",
+            "In the launcher, open **Co-op** and paste it into **Host's IP address**. Everyone, the host included, types the host's `26.` address: that is how the host's launcher knows to start the server.",
+            "Press **Done**, then **PLAY**. The first time, Windows asks once to let co-op through its firewall: say yes.",
+          ],
+        },
+        {
+          type: "image",
+          src: S("radmin-launcher-ip"),
+          width: 1200,
+          height: 693,
+          alt: "The launcher's Co-op page with the host's Radmin address 26.12.34.56 in Host's IP address and Enemies Off.",
+          caption: "The host's Radmin address in the Co-op page. Yours will be different.",
+        },
+        {
+          type: "p",
+          text: "The host starts first. Then everyone makes or joins the team in the game, see [Playing together](/docs/play).",
+        },
+      ],
+    },
+    {
+      id: "check",
+      title: "Check the connection",
+      blocks: [
+        {
+          type: "p",
+          text: "Right-click the host's PC in Radmin VPN and pick **Ping**. A window shows replies with a time in milliseconds: the lower, the better, and anything under about 100 ms plays well. If it says the request timed out, the two PCs can't see each other yet: see below.",
+        },
+      ],
+    },
+    {
+      id: "problems",
+      title: "When it doesn't connect",
+      icon: "skull",
+      blocks: [
+        {
+          type: "terms",
+          items: [
+            [
+              "Another VPN is on",
+              "NordVPN and other VPN apps can block Radmin: one of our players could not connect until NordVPN was dealt with. Turn the other VPN off while you play. If it has to stay on, allow local network or LAN traffic in its settings, or leave Radmin VPN and the launcher out of it (split tunnelling).",
+            ],
+            [
+              "The firewall prompt was refused",
+              "Press **PLAY** again: the launcher asks again until the rules are there. On the host it adds rules for TCP **31313**, **31315** and **20443** and UDP **31314**; on everyone it lets the game's network helper in. They are named `BB coop port`, `BB coop host TCP` and `BB coop host UDP` in Windows Defender Firewall's inbound rules. Other firewalls (antivirus suites) need the same ports allowed.",
+            ],
+            [
+              "The host's name is grey",
+              "The host's PC is off, Radmin VPN is off there, or it lost its connection. The host presses the power button in Radmin VPN.",
+            ],
+            [
+              "Ping works but the game doesn't connect",
+              "Check that **Host's IP address** is the host's `26.` address on every PC, the host's too, and that the host pressed PLAY or **Start server** first. Everyone must be on the same release.",
+            ],
+            [
+              "High ping or lag",
+              "Radmin VPN sends traffic straight between the PCs when it can and through its relay when it can't, which is slower. Restarting Radmin VPN on both PCs sometimes finds the direct route.",
+            ],
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+export const docs: DocPage[] = [
+  install,
+  radmin,
+  launcher,
+  play,
+  architecture,
+  netcode,
+  build,
+  credits,
+];
 
 export function getDoc(slug: string): DocPage | undefined {
   return docs.find((d) => d.slug === slug);
