@@ -536,9 +536,12 @@ void ScreenLighting::OnLightingDone() {
                         : BbSettings::Get().screen_lighting == BbSettings::ScreenLightingHigh ? 4
                                                                                         : 2) |
                        s32((frames_seen % 4) << 8),
-        .bounce_strength = std::clamp(BbSettings::Get().screen_lighting_gi.load(), 0.0f, 4.0f) * 2.5f,
+        // The game's look (Kaniel 2026-10-21, "preserve its style"): x2.5 bounce and sky 30 were
+        // the stylised try; outdoors the sky then gave ~200x the sun's light and washed out the
+        // game's own shadows.
+        .bounce_strength = std::clamp(BbSettings::Get().screen_lighting_gi.load(), 0.0f, 4.0f),
         .noise = std::fmod(float(frames_seen % 64) * 0.618034f, 1.0f),
-        .sky = 30.0f,
+        .sky = 1.5f,
         .sun_dir = sun_dir,
         // The street at dusk: light0 rose ~0.04 per unit N.L of the directional light.
         .sun_colour = {sun_colour[0], sun_colour[1], sun_colour[2], 0.05f},
@@ -912,13 +915,13 @@ void ScreenLighting::RecordFogLight(vk::ImageView color_view, vk::ImageView dept
     } push{proj,
            {float(w), float(h)},
            s32(fog_lamp_count),
-           0.03f, // stylised: thick air (Kaniel 2026-10-21, "let's try 2")
+           0.015f, // the game's look (0.03 was the stylised try, "let's try 2")
            world,
            sun_dir,
            {sun_colour[0], sun_colour[1], sun_colour[2], 0.05f},
            std::fmod(float(frames_seen % 64) * 0.618034f, 1.0f),
            0.12f, // lamps: a room full of them hazed white at 1 (2026-10-21 hall shot)
-           0.6f,
+           0.35f,
            0.0f};
     static_assert(sizeof(push) == 128);
     const vk::Buffer lamps_buffer = fog_lamps;
