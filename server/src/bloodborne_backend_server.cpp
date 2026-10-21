@@ -153,7 +153,8 @@ bool BloodborneBackendServer::Start(ConfigManager* config) {
 QString BloodborneBackendServer::AddressFor(const QHttpServerRequest& request) const {
     // The address the player used (a guest over the internet reached the host's public address,
     // while the host's own is its LAN one), then the host's given address, then the socket's.
-    const QByteArray host = request.headers().value(QHttpHeaders::WellKnownHeader::Host).toByteArray();
+    const QByteArray host =
+        request.headers().value(QHttpHeaders::WellKnownHeader::Host).toByteArray();
     const std::string used = AddressFromHostHeader(std::string_view(host.constData(), host.size()));
     if (!used.empty()) {
         return QString::fromStdString(used);
