@@ -130,7 +130,11 @@ void ScreenLighting::OnFrameStart() {
     lamps.clear();
     lamps_done = false;
     light_pass_seen = false;
-    sun_dir = {};
+    // The sun draw is not in every frame's lighting pass (2026-10-21 log: found, none, found):
+    // the last one stands for a few frames.
+    if (++sun_age > 4) {
+        sun_dir = {};
+    }
     character_source.clear();
     character_indices.clear();
     character_draw_of.clear();
@@ -181,7 +185,7 @@ struct LampPush {
     s32 bounce_rays;
     float bounce_strength;
     float noise;
-    float pad;
+    float sky; ///< the open sky's light, a share of the sun's
     std::array<float, 4> sun_dir;    ///< view, toward the sun; w 1 when there is one
     std::array<float, 4> sun_colour; ///< rgb, a: its strength in light0 units
 };
@@ -276,6 +280,7 @@ void ScreenLighting::OnSunConstants(const float* data) {
         return;
     }
     sun_dir = {x, y, z, 1.0f};
+    sun_age = 0;
     sun_colour = {data[76], data[77], data[78], 0.0f};
 }
 
@@ -464,8 +469,10 @@ void ScreenLighting::OnLightingDone() {
                               character_draw_of, character_draws, depth_view, w, h, proj, world);
         scene_as = rays->Scene();
     }
-    if (!lamps_logged) {
-        std::printf("Lamp shadows: %zu lamps, %ux%u\n", lamps.size(), w, h);
+    if (!lamps_logged || (sun_dir[3] > 0.0f) != sun_logged) {
+        sun_logged = sun_dir[3] > 0.0f;
+        std::printf("Lamp shadows: %zu lamps, %ux%u, sun %s (%.3f %.3f %.3f)\n", lamps.size(), w, h,
+                    sun_logged ? "found" : "none", sun_colour[0], sun_colour[1], sun_colour[2]);
         std::fflush(stdout);
         lamps_logged = true;
     }
@@ -479,7 +486,7 @@ void ScreenLighting::OnLightingDone() {
         .bounce_rays = BbSettings::Get().screen_lighting == BbSettings::ScreenLightingHigh ? 4 : 2,
         .bounce_strength = std::clamp(BbSettings::Get().screen_lighting_gi.load(), 0.0f, 4.0f) * 1.0f,
         .noise = std::fmod(float(frames_seen % 64) * 0.618034f, 1.0f),
-        .pad = 0.0f,
+        .sky = 12.0f,
         .sun_dir = sun_dir,
         // The street at dusk: light0 rose ~0.04 per unit N.L of the directional light.
         .sun_colour = {sun_colour[0], sun_colour[1], sun_colour[2], 0.05f},

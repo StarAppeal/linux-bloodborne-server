@@ -171,6 +171,8 @@ private:
     vk::Buffer character_positions{};
     VideoCore::ImageId character_pass{};
     bool lamps_logged = false;
+    bool sun_logged = false; ///< whether the last log line had a sun
+    u32 sun_age = 0;          ///< frames since the sun draw was last seen
     struct LampBuffer {
         vk::Buffer buffer{};
         void* allocation{}; ///< VmaAllocation

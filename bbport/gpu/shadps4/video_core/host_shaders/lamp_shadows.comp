@@ -35,7 +35,7 @@ layout(push_constant) uniform Constants {
     int bounce_rays;       // step 2: rays a pixel bringing back the lamps' light from what they hit
     float bounce_strength; // how much of it (Bounced light)
     float noise;           // per frame 0..1
-    float pad;
+    float sky;             // the open sky's light, a share of the sun's (sun_colour)
     vec4 sun_dir;    // step 2b: view space, toward the sun/moon; w 1 when the frame has one
     vec4 sun_colour; // rgb, a: its strength in light0 units
 };
@@ -112,6 +112,25 @@ vec3 Corner(uint index) {
 
 // Bounce rays reach this far (a room).
 const float BounceReach = 10.0;
+// A bounce ray upward that leaves the room is checked this far for the open sky.
+const float SkyReach = 150.0;
+
+// The open sky's light along `dir` from `wp` (zero below the horizon, with no sun, or blocked).
+vec3 SkyLight(vec3 wp, vec3 wn, vec3 dir) {
+    if (sun_dir.w <= 0.0 || sky <= 0.0 || dir.y <= 0.02) {
+        return vec3(0.0);
+    }
+    rayQueryEXT query;
+    rayQueryInitializeEXT(query, scene, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT,
+                          0x01, wp + wn * ShadowBias, BounceReach * 0.9, dir, SkyReach);
+    while (rayQueryProceedEXT(query)) {
+    }
+    if (rayQueryGetIntersectionTypeEXT(query, true) == gl_RayQueryCommittedIntersectionTriangleEXT) {
+        return vec3(0.0);
+    }
+    // Brighter toward the zenith (an overcast sky's gradient).
+    return sun_colour.rgb * sun_colour.a * sky * (0.5 + 0.5 * dir.y);
+}
 
 /// Kaniel 2026-10-21 ("do all steps", step 2): the lamps' light a pixel gets from the surfaces
 /// around it. Cosine-weighted rays against the map's models; at a hit, the lamps light that
@@ -130,6 +149,7 @@ vec3 LampBounce(vec3 wp, vec3 wn, float n1, float n2) {
         }
         if (rayQueryGetIntersectionTypeEXT(query, true) !=
             gl_RayQueryCommittedIntersectionTriangleEXT) {
+            sum += SkyLight(wp, wn, dir);
             continue;
         }
         if (rayQueryGetIntersectionInstanceCustomIndexEXT(query, true) != 0 &&
