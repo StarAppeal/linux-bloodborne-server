@@ -3645,3 +3645,27 @@ SCENARIOS["abode-lamp-host-leaves"] = {
     "forbid": {"host": SESSION_HOLDS, "guest": [*SESSION_HOLDS, *ABODE_LAMP_SHOWN]},
     "timeout": 300,
 }
+
+
+# #329 (rig test 2026-10-21): common event 5500 (a slot per Uncanny/Lost DLC weapon) ends unless
+# the local player is a host-type character, and an ended event sets its own flag, so a guest's
+# game turned 5500-5521 on at the join's load and its Bath messenger sold them all.
+# KeepOwnedWeaponFlagsOwn clears them again (the rig's characters hold none of those weapons).
+DLC_WEAPON_FLAGS = range(5500, 5522)
+SCENARIOS["shop-own-weapons"] = {
+    "about": "#329: on new characters (rig/saves/new-character: no DLC weapons), a guest joins "
+             "the host's session: the Uncanny/Lost DLC weapon flags 5500-5521 end up off in the "
+             "guest's game",
+    "saves": "new-character",
+    "roles": {
+        "host": ["godmode", "wait-session 2 300", "sync shop-checked",
+                 *[f"expect-flag {flag} 0" for flag in DLC_WEAPON_FLAGS], "expect-session 2"],
+        "guest": ["godmode", "wait-session 2 300", "wait 15",
+                  *[f"expect-flag {flag} 0" for flag in DLC_WEAPON_FLAGS], "wait 20",
+                  *[f"expect-flag {flag} 0" for flag in DLC_WEAPON_FLAGS], "sync shop-checked",
+                  "expect-session 2"],
+    },
+    "syncs": {"shop-checked": {"chapter": "shop-own-weapons", "roles": ["host", "guest"]}},
+    "forbid": {role: SESSION_HOLDS for role in ("host", "guest")},
+    "timeout": 300,
+}
