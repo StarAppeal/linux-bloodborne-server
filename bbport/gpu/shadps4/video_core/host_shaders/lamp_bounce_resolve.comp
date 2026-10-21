@@ -4,7 +4,8 @@
 // a: view z). Each pixel finds where it was last frame (the camera's reprojection), takes that
 // frame's average when the surface there is the same (its view z within 3%), blends this frame
 // in, keeps the result as the next history and adds it to light0. A 3x3 depth-aware mean of this
-// frame stands in where nothing is reprojected (new pixels, disocclusions).
+// frame stands in where nothing is reprojected (new pixels, disocclusions). Only one pixel of each
+// 2x2 traces a frame (a = -z for the others): what blends in is always that 3x3 mean.
 #version 450
 #extension GL_EXT_samplerless_texture_functions : require
 
@@ -30,7 +31,7 @@ void main() {
         return;
     }
     const vec4 now = texelFetch(current_tex, pixel, 0);
-    const float z = now.a;
+    const float z = abs(now.a);
     if (z <= 0.0) {
         imageStore(next_img, pixel, vec4(0.0));
         return;
@@ -41,7 +42,7 @@ void main() {
     for (int y = -1; y <= 1; ++y) {
         for (int x = -1; x <= 1; ++x) {
             const vec4 s = texelFetch(current_tex, clamp(pixel + ivec2(x, y), ivec2(0), ivec2(size) - 1), 0);
-            const float w = abs(s.a - z) < 0.03 * z ? 1.0 : 0.0;
+            const float w = s.a > 0.0 && abs(s.a - z) < 0.03 * z ? 1.0 : 0.0;
             spatial += s.rgb * w;
             weights += w;
         }
@@ -58,7 +59,8 @@ void main() {
             if (all(greaterThanEqual(prev_pixel, ivec2(0))) && all(lessThan(prev_pixel, ivec2(size)))) {
                 const vec4 h = texelFetch(history_tex, prev_pixel, 0);
                 if (h.a > 0.0 && abs(h.a - prev.z) < 0.03 * prev.z) {
-                    result = mix(h.rgb, now.rgb, blend);
+                    // No sample around this frame (a thin surface): the history alone.
+                    result = weights > 0.0 ? mix(h.rgb, spatial, blend) : h.rgb;
                 }
             }
         }

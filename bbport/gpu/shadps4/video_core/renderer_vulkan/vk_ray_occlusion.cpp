@@ -15,7 +15,9 @@
 #include "../bbcoop.h"
 #include "bbport_map_charts.h"
 #include "video_core/host_shaders/character_ratio_comp.h"
+#include "video_core/host_shaders/character_triangles_comp.h"
 #include "video_core/host_shaders/character_world_comp.h"
+#include "video_core/renderer_vulkan/vk_gpu_profiler.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -45,6 +47,7 @@ RayOcclusion::~RayOcclusion() {
         Free(frame_instances[i]);
     }
     Free(char_world);
+    Free(char_kept);
     Free(char_factor);
     Free(char_blas_buffer);
     Free(frame_tlas_buffer);
@@ -144,30 +147,38 @@ bool RayOcclusion::Build(const BbMapArt::AreaMesh& mesh) {
     const auto device = instance.GetDevice();
     using Usage = vk::BufferUsageFlagBits;
     const auto input = Usage::eAccelerationStructureBuildInputReadOnlyKHR;
-    // The mesh, the instance and the scratch: freed once the GPU has built from them.
-    position_buffer =
-        MakeBuffer(mesh.positions.size() * sizeof(float), input | Usage::eStorageBuffer, true);
+    // Kept with the structures, in video memory: the traces read a hit's corners and their
+    // colours (Kaniel 2026-10-21, "lags really bad": read from host memory, every hit crossed PCIe).
+    // They come in through host copies, freed with the instance and the scratch once built.
+    const vk::DeviceSize position_bytes = mesh.positions.size() * sizeof(float);
+    const vk::DeviceSize index_bytes = mesh.indices.size() * sizeof(u32);
+    const vk::DeviceSize color_bytes = std::max<std::size_t>(mesh.colors.size(), 1) * sizeof(u32);
+    position_buffer = MakeBuffer(position_bytes,
+                                 input | Usage::eStorageBuffer | Usage::eTransferDst, false);
+    index_buffer =
+        MakeBuffer(index_bytes, input | Usage::eStorageBuffer | Usage::eTransferDst, false);
+    color_buffer = MakeBuffer(color_bytes, Usage::eStorageBuffer | Usage::eTransferDst, false);
     Buffer& positions = position_buffer;
-    Buffer instances = MakeBuffer(sizeof(vk::AccelerationStructureInstanceKHR), input, true);
-    // Kept with the structures: the trace reads a hit's corners and their colours.
-    index_buffer = MakeBuffer(mesh.indices.size() * sizeof(u32), input | Usage::eStorageBuffer, true);
-    color_buffer = MakeBuffer(std::max<std::size_t>(mesh.colors.size(), 1) * sizeof(u32),
-                              Usage::eStorageBuffer, true);
     Buffer& indices = index_buffer;
-    auto free_inputs = [this, instances]() mutable {
+    Buffer instances = MakeBuffer(sizeof(vk::AccelerationStructureInstanceKHR), input, true);
+    Buffer upload = MakeBuffer(position_bytes + index_bytes + color_bytes, Usage::eTransferSrc, true);
+    auto free_inputs = [this, instances, upload]() mutable {
         Free(instances);
+        Free(upload);
     };
-    if (!positions.mapped || !indices.mapped || !instances.mapped || !color_buffer.mapped ||
-        mesh.colors.size() != vertices) {
+    if (!positions.buffer || !indices.buffer || !color_buffer.buffer || !instances.mapped ||
+        !upload.mapped || mesh.colors.size() != vertices) {
         free_inputs();
         Free(position_buffer);
         Free(index_buffer);
         Free(color_buffer);
         return false;
     }
-    std::memcpy(positions.mapped, mesh.positions.data(), mesh.positions.size() * sizeof(float));
-    std::memcpy(indices.mapped, mesh.indices.data(), mesh.indices.size() * sizeof(u32));
-    std::memcpy(color_buffer.mapped, mesh.colors.data(), mesh.colors.size() * sizeof(u32));
+    auto* staged = static_cast<u8*>(upload.mapped);
+    std::memcpy(staged, mesh.positions.data(), position_bytes);
+    std::memcpy(staged + position_bytes, mesh.indices.data(), index_bytes);
+    std::memcpy(staged + position_bytes + index_bytes, mesh.colors.data(),
+                mesh.colors.size() * sizeof(u32));
 
     // Bottom level: the map's triangles, opaque (the first hit ends a ray).
     const vk::AccelerationStructureGeometryKHR geometry{
@@ -267,6 +278,19 @@ bool RayOcclusion::Build(const BbMapArt::AreaMesh& mesh) {
     const auto cmdbuf = scheduler.CommandBuffer();
     const vk::AccelerationStructureBuildRangeInfoKHR blas_range{.primitiveCount = triangles};
     const vk::AccelerationStructureBuildRangeInfoKHR tlas_range{.primitiveCount = 1};
+    cmdbuf.copyBuffer(upload.buffer, positions.buffer, vk::BufferCopy{0, 0, position_bytes});
+    cmdbuf.copyBuffer(upload.buffer, indices.buffer,
+                      vk::BufferCopy{position_bytes, 0, index_bytes});
+    cmdbuf.copyBuffer(upload.buffer, color_buffer.buffer,
+                      vk::BufferCopy{position_bytes + index_bytes, 0, color_bytes});
+    const vk::MemoryBarrier2 uploaded{
+        .srcStageMask = vk::PipelineStageFlagBits2::eAllTransfer,
+        .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR |
+                        vk::PipelineStageFlagBits2::eComputeShader,
+        .dstAccessMask = vk::AccessFlagBits2::eShaderRead,
+    };
+    cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &uploaded});
     cmdbuf.buildAccelerationStructuresKHR(blas_info, &blas_range);
     // The top level reads the bottom one, and reuses the scratch.
     const vk::MemoryBarrier2 between{
@@ -296,6 +320,15 @@ bool RayOcclusion::Build(const BbMapArt::AreaMesh& mesh) {
                     .count());
     std::fflush(stdout);
     return true;
+}
+
+void RayOcclusion::CountCharacterFrame(bool built) {
+    built_frames += built ? 1 : 0;
+    if (++counted_frames == 600) {
+        std::printf("Ray occlusion: characters built in %u of the last 600 frames\n", built_frames);
+        std::fflush(stdout);
+        counted_frames = built_frames = 0;
+    }
 }
 
 void RayOcclusion::DumpCharacters(const std::string& path) {
@@ -353,11 +386,15 @@ void RayOcclusion::BuildCharacters(vk::Buffer positions, const std::vector<u32>&
             char_indices[i] = MakeBuffer(3ull * MaxCharacterCorners * sizeof(u32), input, true);
             frame_instances[i] = MakeBuffer(2 * sizeof(vk::AccelerationStructureInstanceKHR), input, true);
         }
-        // Host visible: BB_LIGHTING_DUMP writes the corners out (DumpCharacters).
+        // In video memory (written and built from each frame); host visible only for
+        // BB_LIGHTING_DUMP, which writes the corners out (DumpCharacters).
         char_world = MakeBuffer(3ull * MaxCharacterCorners * sizeof(float),
-                                input | Usage::eStorageBuffer, true);
+                                input | Usage::eStorageBuffer,
+                                std::getenv("BB_LIGHTING_DUMP") != nullptr);
         char_factor = MakeBuffer(MaxCharacterDraws * sizeof(u32),
                                  Usage::eStorageBuffer | Usage::eTransferDst, false);
+        char_kept = MakeBuffer(3ull * MaxCharacterCorners * sizeof(u32),
+                               input | Usage::eStorageBuffer, false);
         const auto geometry = char_geometry(0, 0);
         vk::AccelerationStructureBuildGeometryInfoKHR info{
             .type = vk::AccelerationStructureTypeKHR::eBottomLevel,
@@ -389,7 +426,7 @@ void RayOcclusion::BuildCharacters(vk::Buffer positions, const std::vector<u32>&
         const u64 align = instance.AccelerationScratchAlignment();
         frame_scratch = MakeBuffer(blas_sizes.buildScratchSize + top_sizes.buildScratchSize + 2 * align,
                                    Usage::eStorageBuffer, false);
-        bool ok = char_world.buffer && char_factor.buffer && char_blas_buffer.buffer &&
+        bool ok = char_world.buffer && char_world.address && char_kept.buffer && char_factor.buffer && char_blas_buffer.buffer &&
                   frame_tlas_buffer.buffer &&
                   frame_scratch.buffer;
         for (u32 i = 0; i < FrameSlots; ++i) {
@@ -447,6 +484,34 @@ void RayOcclusion::BuildCharacters(vk::Buffer positions, const std::vector<u32>&
         };
         char_pipeline = compute(CHARACTER_WORLD_COMP);
         char_ratio_pipeline = compute(CHARACTER_RATIO_COMP);
+        const std::array<vk::DescriptorSetLayoutBinding, 3> tri_bindings{{
+            {0, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
+            {1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
+            {2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
+        }};
+        char_tri_desc_layout = Check(device.createDescriptorSetLayoutUnique({
+            .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
+            .bindingCount = u32(tri_bindings.size()),
+            .pBindings = tri_bindings.data(),
+        }));
+        const vk::PushConstantRange tri_push{.stageFlags = vk::ShaderStageFlagBits::eCompute,
+                                             .offset = 0,
+                                             .size = sizeof(u32)};
+        char_tri_layout = Check(device.createPipelineLayoutUnique({
+            .setLayoutCount = 1,
+            .pSetLayouts = &*char_tri_desc_layout,
+            .pushConstantRangeCount = 1,
+            .pPushConstantRanges = &tri_push,
+        }));
+        const auto module = CompileSPV(CHARACTER_TRIANGLES_COMP, device);
+        char_tri_pipeline = Check(device.createComputePipelineUnique(
+            {}, vk::ComputePipelineCreateInfo{
+                    .stage = {.stage = vk::ShaderStageFlagBits::eCompute,
+                              .module = module,
+                              .pName = "main"},
+                    .layout = *char_tri_layout,
+                }));
+        device.destroyShaderModule(module);
     }
     const u32 slot = char_slot;
     char_slot = (char_slot + 1) % FrameSlots;
@@ -487,8 +552,9 @@ void RayOcclusion::BuildCharacters(vk::Buffer positions, const std::vector<u32>&
     const vk::DeviceAddress scratch0 = (frame_scratch.address + align - 1) / align * align;
     const vk::AccelerationStructureKHR char_as = *char_blas, top_as = *frame_tlas;
     const vk::DeviceAddress world_address = char_world.address,
-                            index_address = char_indices[slot].address,
+                            index_address = char_kept.address,
                             instance_address = frame_instances[slot].address;
+    const vk::Buffer indices_buffer = char_indices[slot].buffer, kept_buffer = char_kept.buffer;
     const vk::Buffer source_buffer = char_source[slot].buffer, world_buffer = char_world.buffer,
                      draw_of_buffer = char_draw_of[slot].buffer, factor_buffer = char_factor.buffer;
     const auto geometry_now = char_geometry(world_address, index_address);
@@ -503,10 +569,14 @@ void RayOcclusion::BuildCharacters(vk::Buffer positions, const std::vector<u32>&
         max_triangles).buildScratchSize;
     const vk::DeviceAddress scratch1 = (scratch0 + blas_scratch_size + align - 1) / align * align;
     scheduler.EndRendering();
+    if (auto* profiler = GpuProfiler::Get()) {
+        profiler->Mark(0x5A7E4ull, [] { return std::string{"ray: characters built"}; });
+    }
     scheduler.RecordCrumb(
         {.name = "ray characters"},
         [=, pipeline = *char_pipeline, ratio_pipeline = *char_ratio_pipeline,
-         layout = *char_layout](vk::CommandBuffer cmdbuf) {
+         layout = *char_layout, tri_pipeline = *char_tri_pipeline,
+         tri_layout = *char_tri_layout](vk::CommandBuffer cmdbuf) {
             // The skinned draws wrote the positions; the last frame may still trace the old.
             const vk::MemoryBarrier2 before{
                 .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
@@ -563,6 +633,29 @@ void RayOcclusion::BuildCharacters(vk::Buffer positions, const std::vector<u32>&
             cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, layout, 0, writes);
             cmdbuf.pushConstants(layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(push), &push);
             cmdbuf.dispatch((corners + 63) / 64, 1, 1);
+            // The placed corners' triangles, stretched ones made points (character_triangles).
+            const vk::MemoryBarrier2 placed_corners{
+                .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+                .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
+                .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+                .dstAccessMask = vk::AccessFlagBits2::eShaderRead,
+            };
+            cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &placed_corners});
+            const vk::DescriptorBufferInfo indices_info{indices_buffer, 0, VK_WHOLE_SIZE};
+            const vk::DescriptorBufferInfo kept_info{kept_buffer, 0, VK_WHOLE_SIZE};
+            const std::array<vk::WriteDescriptorSet, 3> tri_writes = {{
+                {.dstBinding = 0, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &world_info},
+                {.dstBinding = 1, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &indices_info},
+                {.dstBinding = 2, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &kept_info},
+            }};
+            cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, tri_pipeline);
+            cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, tri_layout, 0, tri_writes);
+            cmdbuf.pushConstants(tri_layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(u32),
+                                 &triangles);
+            cmdbuf.dispatch((triangles + 63) / 64, 1, 1);
             const vk::MemoryBarrier2 to_build{
                 .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
                 .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,

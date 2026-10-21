@@ -78,7 +78,10 @@ void main() {
         atomicMin(factor[draw_of[i]], floatBitsToUint(ratio));
     }
 #else
-    vec3 w = vec3(0.0);
+    // A corner not placed is NaN, which makes its triangles inactive (Vulkan's rule for a NaN x).
+    // At the world's origin they stretched out to the placed corners, long slivers every ray
+    // had to test (2026-10-21: FPS fell from 57 to 5 over a few minutes of play).
+    vec3 w = vec3(uintBitsToFloat(0x7FC00000u));
     const float k = uintBitsToFloat(factor[draw_of[i]]);
     if (ok && k > 0.5 && k < 100.0) {
         const vec4 at = vec4(view / k, 1.0);

@@ -45,7 +45,10 @@ public:
         if (built_map == 0 || built_map != map) {
             return {};
         }
-        return frame_scene_frame == frames && frame_tlas ? *frame_tlas : *tlas;
+        // A frame without its own build keeps the last one a few frames (their shadows blinked).
+        return frame_tlas && frame_scene_frame != ~0u && frames - frame_scene_frame <= HoldFrames
+                   ? *frame_tlas
+                   : *tlas;
     }
     /// Kaniel 2026-10-21 ("do all steps", step 3): this frame's characters (their corners'
     /// clip positions in `positions` at the elements of `source`, three of those a triangle in
@@ -60,6 +63,11 @@ public:
                          u32 draws, vk::ImageView depth, u32 width, u32 height,
                          const std::array<float, 4>& proj, const std::array<float, 12>& world);
     static constexpr u32 MaxCharacterDraws = 4096;
+    /// Frames the last characters' build stands in for frames without one.
+    static constexpr u32 HoldFrames = 4;
+    /// Counts this frame as one with (or without) the characters' own build; logs the share now
+    /// and then.
+    void CountCharacterFrame(bool built);
     /// With Scene: the map's triangles' corner indices (three a triangle) and its corners' colours
     /// (0xAABBGGRR): a ray's hit brings back that surface's light (Kaniel 2026-10-21, "light to
     /// work more natural, not just darker").
@@ -100,6 +108,10 @@ private:
     std::array<Buffer, FrameSlots> char_source{}, char_draw_of{}, char_indices{}, frame_instances{};
     u32 char_slot = 0;
     Buffer char_world, char_factor, char_blas_buffer, frame_tlas_buffer, frame_scratch;
+    Buffer char_kept; ///< the triangles the build reads (stretched ones made points)
+    vk::UniqueDescriptorSetLayout char_tri_desc_layout;
+    vk::UniquePipelineLayout char_tri_layout;
+    vk::UniquePipeline char_tri_pipeline;
     vk::UniqueAccelerationStructureKHR char_blas, frame_tlas;
     vk::UniqueDescriptorSetLayout char_desc_layout;
     vk::UniquePipelineLayout char_layout;
@@ -108,6 +120,7 @@ private:
     bool char_failed = false;
     bool char_logged = false;
     u32 char_corners = 0;
+    u32 counted_frames = 0, built_frames = 0;
 };
 
 } // namespace Vulkan

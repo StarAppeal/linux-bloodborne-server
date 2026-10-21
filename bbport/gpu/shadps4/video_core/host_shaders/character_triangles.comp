@@ -1,0 +1,39 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// bbport: the characters' triangles the rays see (Kaniel 2026-10-21, "lags really bad... indoors much
+// better than outside"; vk_ray_occlusion.h). After character_world.comp has placed the corners, a
+// triangle longer than a body's part (a corner misplaced by its draw's depth factor: on the street
+// they reached across it) or not placed at all becomes one point: every ray crossed those slivers,
+// and the street's ray passes took 85 ms a frame against 15 ms without the characters.
+#version 450
+
+layout(local_size_x = 64) in;
+
+layout(binding = 0, std430) readonly buffer World { float world[]; };        // x, y, z a corner
+layout(binding = 1, std430) readonly buffer Indices { uint indices[]; };     // three a triangle
+layout(binding = 2, std430) writeonly buffer Kept { uint kept[]; };          // what the build reads
+
+layout(push_constant) uniform Constants {
+    uint count; // triangles
+};
+
+// No triangle of a body (a boss's included) is longer than this, in metres.
+const float LongestEdge = 2.0;
+
+vec3 Corner(uint i) {
+    return vec3(world[i * 3u], world[i * 3u + 1u], world[i * 3u + 2u]);
+}
+
+void main() {
+    const uint t = gl_GlobalInvocationID.x;
+    if (t >= count) {
+        return;
+    }
+    const uint a = indices[t * 3u], b = indices[t * 3u + 1u], c = indices[t * 3u + 2u];
+    const vec3 pa = Corner(a), pb = Corner(b), pc = Corner(c);
+    const float longest2 = max(max(dot(pb - pa, pb - pa), dot(pc - pb, pc - pb)), dot(pa - pc, pa - pc));
+    // NaN corners (not placed) fail the comparison too.
+    const bool keep = longest2 <= LongestEdge * LongestEdge;
+    kept[t * 3u] = a;
+    kept[t * 3u + 1u] = keep ? b : a;
+    kept[t * 3u + 2u] = keep ? c : a;
+}

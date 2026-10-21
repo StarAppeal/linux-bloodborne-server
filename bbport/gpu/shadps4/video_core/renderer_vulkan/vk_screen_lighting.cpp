@@ -19,8 +19,10 @@
 #include "video_core/host_shaders/screen_lighting_trace_rt_comp.h"
 #include "video_core/host_shaders/lamp_shadows_comp.h"
 #include "video_core/host_shaders/lamp_bounce_resolve_comp.h"
+#include "video_core/host_shaders/fog_apply_comp.h"
 #include "video_core/host_shaders/fog_light_comp.h"
 #include "video_core/renderer_vulkan/vk_camera_motion.h"
+#include "video_core/renderer_vulkan/vk_gpu_profiler.h"
 #include "video_core/renderer_vulkan/vk_image_dump.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_ray_occlusion.h"
@@ -33,6 +35,25 @@
 namespace Vulkan {
 
 namespace {
+/// BB_RT_OFF (speed checks): ray-traced parts left out, any of "fog", "bounce", "lamps", "chars".
+bool RayPartOff(const char* part) {
+    static const char* off = std::getenv("BB_RT_OFF");
+    return off && std::strstr(off, part);
+}
+
+/// BB_GPU_PROFILE: a ray pass's segment (`key`), then the game's work after it under its own.
+template <typename Record>
+void Profiled(u64 key, const char* name, Record&& record) {
+    auto* profiler = GpuProfiler::Get();
+    if (profiler) {
+        profiler->Mark(key, [name] { return std::string{name}; });
+    }
+    record();
+    if (profiler) {
+        profiler->Mark(0x5A7E0ull, [] { return std::string{"(game work after a ray pass)"}; });
+    }
+}
+
 /// screen_lighting.comp's push constants (std430).
 struct PushConstants {
     std::array<float, 4> proj;
@@ -290,7 +311,7 @@ void ScreenLighting::OnLightingDone() {
         return;
     }
     lamps_done = true;
-    if (!rays || !Enabled() || !BbSettings::Get().ray_traced_ao || lamps.empty() ||
+    if (!rays || !Enabled() || !BbSettings::Get().ray_traced_ao || lamps.empty() || RayPartOff("lamps") ||
         !light_targets[0] || !light_targets[1] || !normals) {
         return;
     }
@@ -485,11 +506,14 @@ void ScreenLighting::OnLightingDone() {
     runtime.FlushBarriers();
     // Step 3: this frame's characters join the map in the ray scene (their depth set against
     // the depth buffer's, character_world.comp).
-    if (!character_indices.empty() && character_positions && character_pass == depth_id) {
+    const bool characters = !RayPartOff("chars") && !character_indices.empty() && character_positions &&
+                            character_pass == depth_id;
+    rays->CountCharacterFrame(characters);
+    if (characters) {
         rays->BuildCharacters(character_positions, character_source, character_indices,
                               character_draw_of, character_draws, depth_view, w, h, proj, world);
-        scene_as = rays->Scene();
     }
+    scene_as = rays->Scene();
     if (!lamps_logged || (sun_dir[3] > 0.0f) != sun_logged) {
         sun_logged = sun_dir[3] > 0.0f;
         std::printf("Lamp shadows: %zu lamps, %ux%u, sun %s (%.3f %.3f %.3f)\n", lamps.size(), w, h,
@@ -504,7 +528,11 @@ void ScreenLighting::OnLightingDone() {
         .strength = 1.0f, // the blocked light taken out whole (Kaniel 2026-10-21: "almost identical")
         .world = world,
         // Step 2: the lamps' bounce (Bounced light; 2 rays a pixel, the upscaler averages frames).
-        .bounce_rays = BbSettings::Get().screen_lighting == BbSettings::ScreenLightingHigh ? 4 : 2,
+        // A quarter of the pixels a frame, in turn (Kaniel 2026-10-21, "lags really bad").
+        .bounce_rays = (RayPartOff("bounce")                                          ? 0
+                        : BbSettings::Get().screen_lighting == BbSettings::ScreenLightingHigh ? 4
+                                                                                        : 2) |
+                       s32((frames_seen % 4) << 8),
         .bounce_strength = std::clamp(BbSettings::Get().screen_lighting_gi.load(), 0.0f, 4.0f) * 2.5f,
         .noise = std::fmod(float(frames_seen % 64) * 0.618034f, 1.0f),
         .sky = 30.0f,
@@ -539,7 +567,7 @@ void ScreenLighting::OnLightingDone() {
     fog_lamps = lamp_buffer;
     fog_lamp_count = u32(lamps.size());
     fog_frame = frames_seen;
-    scheduler.RecordCrumb(
+    Profiled(0x5A7E1ull, "ray: lamp shadows, bounce, reflections", [&] { scheduler.RecordCrumb(
         {.name = "lamp shadows"},
         [=, pipeline = *lamp_pipeline, layout = *lamp_layout, resolve_pipe = *resolve_pipeline,
          resolve_lay = *resolve_layout](vk::CommandBuffer cmdbuf) {
@@ -653,7 +681,7 @@ void ScreenLighting::OnLightingDone() {
                 .dstAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
             };
             cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &after});
-        });
+        }); });
 }
 
 bool ScreenLighting::Enabled() const {
@@ -788,7 +816,8 @@ bool ScreenLighting::EnsureTraceImage(u32 width, u32 height) {
 
 void ScreenLighting::RecordFogLight(vk::ImageView color_view, vk::ImageView depth_view, u32 w,
                                     u32 h) {
-    if (!rays || !BbSettings::Get().ray_traced_ao || fog_frame != frames_seen || !fog_lamps) {
+    if (!rays || !BbSettings::Get().ray_traced_ao || fog_frame != frames_seen || !fog_lamps ||
+        RayPartOff("fog")) {
         return;
     }
     const vk::AccelerationStructureKHR scene_as = rays->Scene();
@@ -799,11 +828,12 @@ void ScreenLighting::RecordFogLight(vk::ImageView color_view, vk::ImageView dept
     }
     const auto device = instance.GetDevice();
     if (!fog_pipeline) {
-        const std::array<vk::DescriptorSetLayoutBinding, 4> bindings{{
+        const std::array<vk::DescriptorSetLayoutBinding, 5> bindings{{
             {0, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute},
             {1, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute},
             {2, vk::DescriptorType::eAccelerationStructureKHR, 1, vk::ShaderStageFlagBits::eCompute},
             {3, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
+            {4, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute},
         }};
         fog_desc_layout = Check(device.createDescriptorSetLayoutUnique({
             .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
@@ -819,16 +849,51 @@ void ScreenLighting::RecordFogLight(vk::ImageView color_view, vk::ImageView dept
             .pushConstantRangeCount = 1,
             .pPushConstantRanges = &push,
         }));
-        const auto module = CompileSPV(FOG_LIGHT_COMP, device);
-        fog_pipeline = Check(device.createComputePipelineUnique(
-            {}, vk::ComputePipelineCreateInfo{
-                    .stage = {.stage = vk::ShaderStageFlagBits::eCompute,
-                              .module = module,
-                              .pName = "main"},
-                    .layout = *fog_layout,
-                }));
-        device.destroyShaderModule(module);
+        const auto compute = [&](std::span<const u32> code) {
+            const auto module = CompileSPV(code, device);
+            auto pipeline = Check(device.createComputePipelineUnique(
+                {}, vk::ComputePipelineCreateInfo{
+                        .stage = {.stage = vk::ShaderStageFlagBits::eCompute,
+                                  .module = module,
+                                  .pName = "main"},
+                        .layout = *fog_layout,
+                    }));
+            device.destroyShaderModule(module);
+            return pipeline;
+        };
+        fog_pipeline = compute(FOG_LIGHT_COMP);
+        fog_apply_pipeline = compute(FOG_APPLY_COMP);
     }
+    // The march's image at half the scene's size (a new size: the frames before may still read it).
+    const u32 fw = (w + 1) / 2, fh = (h + 1) / 2;
+    if (fog_width != fw || fog_height != fh) {
+        if (fog_image.image) {
+            scheduler.Finish();
+        }
+        fog_view.reset();
+        fog_image = VideoCore::UniqueImage(device, instance.GetAllocator());
+        fog_image.Create(vk::ImageCreateInfo{
+            .imageType = vk::ImageType::e2D,
+            .format = vk::Format::eR16G16B16A16Sfloat,
+            .extent = {fw, fh, 1},
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .samples = vk::SampleCountFlagBits::e1,
+            .tiling = vk::ImageTiling::eOptimal,
+            .usage = vk::ImageUsageFlagBits::eStorage,
+            .initialLayout = vk::ImageLayout::eUndefined,
+        });
+        fog_view = Check(device.createImageViewUnique({
+            .image = vk::Image(fog_image),
+            .viewType = vk::ImageViewType::e2D,
+            .format = vk::Format::eR16G16B16A16Sfloat,
+            .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+        }));
+        fog_width = fw;
+        fog_height = fh;
+    }
+    const vk::Image fog_img = vk::Image(fog_image);
+    const vk::ImageView fog_v = *fog_view;
     struct {
         std::array<float, 4> proj;
         std::array<float, 2> size;
@@ -854,16 +919,31 @@ void ScreenLighting::RecordFogLight(vk::ImageView color_view, vk::ImageView dept
            0.0f};
     static_assert(sizeof(push) == 128);
     const vk::Buffer lamps_buffer = fog_lamps;
-    scheduler.RecordCrumb(
+    Profiled(0x5A7E2ull, "ray: fog light", [&] { scheduler.RecordCrumb(
         {.name = "fog light"},
-        [=, pipeline = *fog_pipeline, layout = *fog_layout](vk::CommandBuffer cmdbuf) {
+        [=, pipeline = *fog_pipeline, apply = *fog_apply_pipeline,
+         layout = *fog_layout](vk::CommandBuffer cmdbuf) {
             const vk::MemoryBarrier2 before{
                 .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
                 .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
                 .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
                 .dstAccessMask = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
             };
-            cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &before});
+            // The march overwrites all of the half image (the last frame's apply read it).
+            const vk::ImageMemoryBarrier2 fog_to_general{
+                .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+                .srcAccessMask = vk::AccessFlagBits2::eNone,
+                .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+                .dstAccessMask = vk::AccessFlagBits2::eShaderWrite,
+                .oldLayout = vk::ImageLayout::eUndefined,
+                .newLayout = vk::ImageLayout::eGeneral,
+                .image = fog_img,
+                .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1},
+            };
+            cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1,
+                                     .pMemoryBarriers = &before,
+                                     .imageMemoryBarrierCount = 1,
+                                     .pImageMemoryBarriers = &fog_to_general});
             const vk::DescriptorImageInfo depth_info{.imageView = depth_view,
                                                      .imageLayout = vk::ImageLayout::eGeneral};
             const vk::DescriptorImageInfo color_info{.imageView = color_view,
@@ -873,7 +953,9 @@ void ScreenLighting::RecordFogLight(vk::ImageView color_view, vk::ImageView dept
                 .pAccelerationStructures = &scene_as,
             };
             const vk::DescriptorBufferInfo lamps_info{lamps_buffer, 0, VK_WHOLE_SIZE};
-            const std::array<vk::WriteDescriptorSet, 4> writes = {{
+            const vk::DescriptorImageInfo fog_info{.imageView = fog_v,
+                                                   .imageLayout = vk::ImageLayout::eGeneral};
+            const std::array<vk::WriteDescriptorSet, 5> writes = {{
                 {.dstBinding = 0, .descriptorCount = 1,
                  .descriptorType = vk::DescriptorType::eSampledImage, .pImageInfo = &depth_info},
                 {.dstBinding = 1, .descriptorCount = 1,
@@ -882,10 +964,22 @@ void ScreenLighting::RecordFogLight(vk::ImageView color_view, vk::ImageView dept
                  .descriptorType = vk::DescriptorType::eAccelerationStructureKHR},
                 {.dstBinding = 3, .descriptorCount = 1,
                  .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &lamps_info},
+                {.dstBinding = 4, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eStorageImage, .pImageInfo = &fog_info},
             }};
             cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline);
             cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, layout, 0, writes);
             cmdbuf.pushConstants(layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(push), &push);
+            cmdbuf.dispatch((fw + 7) / 8, (fh + 7) / 8, 1);
+            const vk::MemoryBarrier2 marched{
+                .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+                .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
+                .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+                .dstAccessMask = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
+            };
+            cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &marched});
+            // The same descriptors and constants; the apply reads the half image back.
+            cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, apply);
             cmdbuf.dispatch((w + 7) / 8, (h + 7) / 8, 1);
             const vk::MemoryBarrier2 after{
                 .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
@@ -894,7 +988,7 @@ void ScreenLighting::RecordFogLight(vk::ImageView color_view, vk::ImageView dept
                 .dstAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
             };
             cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &after});
-        });
+        }); });
 }
 
 void ScreenLighting::KeepLastScene(const VideoCore::Image& color, bool reduced, u32 w, u32 h) {
@@ -1223,7 +1317,8 @@ void ScreenLighting::OnOpaqueSceneDone(bool temporal) {
             cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &after});
         };
     if (!dump) {
-        scheduler.RecordCrumb({.name = "screen lighting"}, record);
+        Profiled(0x5A7E3ull, "ray: screen lighting (occlusion)",
+                 [&] { scheduler.RecordCrumb({.name = "screen lighting"}, record); });
         if (!reduced) {
             RecordFogLight(color_view, depth_view, w, h);
         }

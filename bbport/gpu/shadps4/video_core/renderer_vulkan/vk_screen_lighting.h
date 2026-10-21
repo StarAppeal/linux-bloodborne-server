@@ -202,7 +202,11 @@ private:
     u32 fog_frame = ~0u; ///< frames_seen when fog_lamps is this frame's
     vk::UniqueDescriptorSetLayout fog_desc_layout;
     vk::UniquePipelineLayout fog_layout;
-    vk::UniquePipeline fog_pipeline;
+    vk::UniquePipeline fog_pipeline, fog_apply_pipeline;
+    /// The march's half-resolution result (light rgb, transmittance), for fog_apply.
+    VideoCore::UniqueImage fog_image;
+    vk::UniqueImageView fog_view;
+    u32 fog_width = 0, fog_height = 0;
     /// Step 2c: this frame's bounce and two histories (ping-pong), RGBA16F at light0's size;
     /// fourth, the last frame's opaque scene (the reflections' hits on screen).
     std::array<VideoCore::UniqueImage, 4> bounce_images;
