@@ -403,6 +403,18 @@ TEST(BloodborneFlagRules, AnyUpgradeOfTheWeaponCounts) {
     EXPECT_FALSE(HoldsWeapon(9000000, std::vector<u32>{}));
 }
 
+// krolebord's log (2026-10-21): at the join's load in the session his game set 5500-5521 at once.
+// Common event 5500 ends unless the local player is a host-type character, and an ended event's
+// own flag comes on. Those follow the weapons every second; the others only on the recheck.
+TEST(BloodborneFlagRules, APhantomsEndedWeaponEventsAreUndoneAnyTime) {
+    for (s32 flag = 5500; flag <= 5521; ++flag) {
+        EXPECT_TRUE(RechecksOwnedWeaponFlagAlways(flag)) << flag;
+    }
+    for (const s32 flag : {5499, 5522, 5100, 5220, 6680, 6697}) {
+        EXPECT_FALSE(RechecksOwnedWeaponFlagAlways(flag)) << flag;
+    }
+}
+
 // An owned-weapon flag in a party comes on once the player holds the weapon; it goes off only on
 // the save slot's one recheck (a weapon in the storage box is not seen, so not every second).
 TEST(BloodborneFlagRules, OwnedWeaponFlagFollowsThePlayersWeapons) {

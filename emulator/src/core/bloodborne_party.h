@@ -834,6 +834,12 @@ bool HoldsWeapon(u32 weapon, std::span<const u32> held);
 // weapons only (Kaniel 2026-10-21). The value it must take, else nothing.
 std::optional<bool> OwnedWeaponFlagFix(bool party_configured, bool flag_on, bool holds,
                                        bool recheck);
+// Common events 5500-5521 (the Uncanny and Lost DLC weapons) end at once unless the local player
+// is a host-type character (4:3 10000 type 0, then 1000:2), and an event that ends sets its own
+// flag: a phantom guest's game set all 22 on every load in a session, so the shop sold them all
+// (krolebord's log 2026-10-21, "set ... 5500 ... 5521" at the join's load). These follow the
+// player's weapons every second, not only on the save slot's recheck.
+bool RechecksOwnedWeaponFlagAlways(s32 flag);
 // A Dream headstone's flag (DreamHeadstones) as this player's own lamps make it: on while one of
 // them is lit (`on` reads a flag); nullopt for any other flag.
 std::optional<bool> HeadstoneLampsLit(s32 flag, const std::function<bool(s32)>& on);

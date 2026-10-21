@@ -1606,7 +1606,8 @@ void KeepHeldItemFlagsOwn() {
 
 // See OwnedWeaponFlagFix: every second in a loaded world, an owned-weapon flag comes on once this
 // player holds the weapon; once per save slot (a file marks it done), those of weapons it does not
-// hold go off, so the Bath shop sells this character's own weapons, not the host's.
+// hold go off, so the Bath shop sells this character's own weapons only. 5500-5521 go off at any
+// time (RechecksOwnedWeaponFlagAlways: a phantom's game sets them on each load).
 void KeepOwnedWeaponFlagsOwn() {
     static s64 checked_ms = 0;
     static int checked_slot = -2;
@@ -1629,15 +1630,16 @@ void KeepOwnedWeaponFlagsOwn() {
     int cleared = 0;
     for (const OwnedWeaponFlag& owned : OwnedWeaponFlags) {
         const bool holds = HoldsWeapon(owned.weapon, held);
-        const auto fix = OwnedWeaponFlagFix(true, EventFlagOn(owned.flag), holds, recheck);
+        const auto fix = OwnedWeaponFlagFix(true, EventFlagOn(owned.flag), holds,
+                                            recheck || RechecksOwnedWeaponFlagAlways(owned.flag));
         if (!fix) {
             continue;
         }
         reinterpret_cast<bool PS4_SYSV_ABI (*)(u64, s32, bool)>(
             image_base + PartyGhostSetEventFlagOffset)(0, owned.flag, *fix);
-        if (*fix) {
-            LOG_INFO(Debug, "Bloodborne party: owned-weapon flag {} set: this player holds {}",
-                     owned.flag, owned.weapon);
+        if (*fix || !recheck) {
+            LOG_INFO(Debug, "Bloodborne party: owned-weapon flag {} {}: this player {} {}",
+                     owned.flag, *fix ? "set" : "cleared", *fix ? "holds" : "has no", owned.weapon);
         } else {
             ++cleared;
         }

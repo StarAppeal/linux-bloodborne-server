@@ -1032,6 +1032,10 @@ std::optional<bool> OwnedWeaponFlagFix(bool party_configured, bool flag_on, bool
     return holds;
 }
 
+bool RechecksOwnedWeaponFlagAlways(s32 flag) {
+    return flag >= 5500 && flag <= 5521;
+}
+
 std::optional<bool> HeadstoneLampsLit(s32 flag, const std::function<bool(s32)>& on) {
     for (const HeadstoneLamps& headstone : DreamHeadstones) {
         if (headstone.flag == flag) {
