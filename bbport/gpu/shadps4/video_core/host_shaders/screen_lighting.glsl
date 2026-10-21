@@ -107,3 +107,45 @@ vec3 HemisphereDir(vec3 n, float u1, float u2) {
 float RayOcclusionWeight(float t, float reach) {
     return t < 0.0 ? 0.0 : clamp(1.0 - t / reach, 0.0, 1.0);
 }
+
+/// The visibility with the rays: the rays' times the screen's; open sky leaves the screen's alone
+/// (Kaniel 2026-10-21: squared was too dark, "not just darker").
+float CombineOcclusion(float screen_open, float ray_open) {
+    return screen_open * ray_open;
+}
+
+/// The scene's radiance of a map mesh colour: the 2026-10-21 capture at Central Yharnam's lamp had
+/// the lit scene at ~0.05 of the mesh's linear colour where the mesh lies on the visible surface.
+const float MeshRadianceScale = 0.05;
+
+float SrgbToLinear(float c) {
+    return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
+}
+
+/// A ray's hit brings back the surface's light (Kaniel 2026-10-21, "light to work more natural"):
+/// the map mesh's colour (0xAABBGGRR, sRGB: its texture in the game's baked light) at the scene's
+/// brightness.
+vec3 MeshRadiance(uint packed) {
+    return vec3(SrgbToLinear(float(packed & 255u) / 255.0),
+                SrgbToLinear(float((packed >> 8u) & 255u) / 255.0),
+                SrgbToLinear(float((packed >> 16u) & 255u) / 255.0)) *
+           MeshRadianceScale;
+}
+
+/// Kaniel 2026-10-21 ("do all steps", ray-traced lamp shadows): how much a lamp of the game's
+/// lighting pass lights the surface at `p` (normal `n`, both in view space): its strength, N.L and
+/// (1 - d^2 / r^2)^2 (`inv_r2` = 1 / r^2, the lamp's own value). A fit to the captured light put the
+/// lamp within half a metre of its logged place; only the lamps' shares of a pixel's light are
+/// used, never their sum against the game's.
+float LampWeight(vec3 p, vec3 n, vec3 lamp, float inv_r2, float strength) {
+    const vec3 v = lamp - p;
+    const float d2 = dot(v, v);
+    const float reach = clamp(1.0 - d2 * inv_r2, 0.0, 1.0);
+    const float ndl = max(dot(n, v) / sqrt(max(d2, 1e-8)), 0.0);
+    return strength * ndl * reach * reach;
+}
+
+/// The share of a pixel's lamp light that stays when lamps worth `occluded` of `total` are blocked.
+float LampShadowFactor(float total, float occluded) {
+    return total > 1e-6 ? clamp((total - occluded) / total, 0.0, 1.0) : 1.0;
+}

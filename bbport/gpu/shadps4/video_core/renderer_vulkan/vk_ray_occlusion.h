@@ -43,6 +43,15 @@ public:
     [[nodiscard]] vk::AccelerationStructureKHR Scene() const noexcept {
         return built_map != 0 && built_map == map ? *tlas : vk::AccelerationStructureKHR{};
     }
+    /// With Scene: the map's triangles' corner indices (three a triangle) and its corners' colours
+    /// (0xAABBGGRR): a ray's hit brings back that surface's light (Kaniel 2026-10-21, "light to
+    /// work more natural, not just darker").
+    [[nodiscard]] vk::DescriptorBufferInfo Indices() const noexcept {
+        return {index_buffer.buffer, 0, VK_WHOLE_SIZE};
+    }
+    [[nodiscard]] vk::DescriptorBufferInfo Colors() const noexcept {
+        return {color_buffer.buffer, 0, VK_WHOLE_SIZE};
+    }
 
 private:
     struct Buffer {
@@ -62,7 +71,7 @@ private:
     u32 map = 0;       ///< the player's map (packed), 0 unknown
     u32 built_map = 0; ///< the map the structures hold
     bool failed_map = false;
-    Buffer blas_buffer, tlas_buffer;
+    Buffer blas_buffer, tlas_buffer, index_buffer, color_buffer;
     vk::UniqueAccelerationStructureKHR blas, tlas;
 };
 

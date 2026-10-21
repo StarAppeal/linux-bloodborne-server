@@ -29,6 +29,8 @@ RayOcclusion::~RayOcclusion() {
     blas.reset();
     Free(tlas_buffer);
     Free(blas_buffer);
+    Free(index_buffer);
+    Free(color_buffer);
 }
 
 RayOcclusion::Buffer RayOcclusion::MakeBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
@@ -78,6 +80,8 @@ void RayOcclusion::Drop() {
     blas.reset();
     Free(tlas_buffer);
     Free(blas_buffer);
+    Free(index_buffer);
+    Free(color_buffer);
     built_map = 0;
 }
 
@@ -99,7 +103,7 @@ void RayOcclusion::Update() {
         return;
     }
     // Asking starts the mesh on the map worker (read from user/map/ when made before).
-    const auto mesh = BbMapCharts::GetMesh(map);
+    const auto mesh = BbMapCharts::GetRayMesh(map);
     if (!mesh) {
         return;
     }
@@ -123,19 +127,26 @@ bool RayOcclusion::Build(const BbMapArt::AreaMesh& mesh) {
     const auto input = Usage::eAccelerationStructureBuildInputReadOnlyKHR;
     // The mesh, the instance and the scratch: freed once the GPU has built from them.
     Buffer positions = MakeBuffer(mesh.positions.size() * sizeof(float), input, true);
-    Buffer indices = MakeBuffer(mesh.indices.size() * sizeof(u32), input, true);
     Buffer instances = MakeBuffer(sizeof(vk::AccelerationStructureInstanceKHR), input, true);
-    auto free_inputs = [this, positions, indices, instances]() mutable {
+    // Kept with the structures: the trace reads a hit's corners and their colours.
+    index_buffer = MakeBuffer(mesh.indices.size() * sizeof(u32), input | Usage::eStorageBuffer, true);
+    color_buffer = MakeBuffer(std::max<std::size_t>(mesh.colors.size(), 1) * sizeof(u32),
+                              Usage::eStorageBuffer, true);
+    Buffer& indices = index_buffer;
+    auto free_inputs = [this, positions, instances]() mutable {
         Free(positions);
-        Free(indices);
         Free(instances);
     };
-    if (!positions.mapped || !indices.mapped || !instances.mapped) {
+    if (!positions.mapped || !indices.mapped || !instances.mapped || !color_buffer.mapped ||
+        mesh.colors.size() != vertices) {
         free_inputs();
+        Free(index_buffer);
+        Free(color_buffer);
         return false;
     }
     std::memcpy(positions.mapped, mesh.positions.data(), mesh.positions.size() * sizeof(float));
     std::memcpy(indices.mapped, mesh.indices.data(), mesh.indices.size() * sizeof(u32));
+    std::memcpy(color_buffer.mapped, mesh.colors.data(), mesh.colors.size() * sizeof(u32));
 
     // Bottom level: the map's triangles, opaque (the first hit ends a ray).
     const vk::AccelerationStructureGeometryKHR geometry{

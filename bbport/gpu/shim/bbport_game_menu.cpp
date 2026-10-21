@@ -153,7 +153,7 @@ constexpr int SharpnessSteps = 11;
 constexpr int LodValues[] = {-2, 0, 1, 2};
 constexpr float HighlightsStep = 0.1f; // the game's slider: 0..10 -> 0.0 .. 1.0
 constexpr float LightingAoStep = 0.1f; // 0..10 -> 0.0 .. 1.0
-constexpr float LightingGiStep = 0.2f; // 0..10 -> 0.0 .. 2.0
+constexpr float LightingGiStep = 0.4f; // 0..10 -> 0.0 .. 4.0
 /// Rows with a few ordered choices on the game's 0..10 slider (the quality preset, the output
 /// resolution): a pop-up list let the rows below it show through, so only the last row of a page
 /// is a list. The game keeps its own copy of a slider's value while the page is open, so every

@@ -20,6 +20,7 @@
 
 #include <array>
 #include <memory>
+#include <vector>
 
 #include "common/types.h"
 #include "video_core/renderer_vulkan/vk_common.h"
@@ -63,6 +64,10 @@ public:
             gbuffer[index] = id;
         }
     }
+    /// Frames seen (OnFrameStart), for once-in-a-while logs.
+    [[nodiscard]] u64 FrameNumber() const noexcept {
+        return frames_seen;
+    }
     [[nodiscard]] bool DumpDue() const noexcept {
         return dump_due;
     }
@@ -70,6 +75,16 @@ public:
     void OnAlbedo(VideoCore::ImageId albedo_id) noexcept {
         albedo = albedo_id;
     }
+    /// The lighting pass's two B10G11R11 targets (the lamps' light).
+    void OnLightTargets(VideoCore::ImageId first, VideoCore::ImageId second) noexcept {
+        light_targets = {first, second};
+    }
+    /// A lighting draw's lamp constants (a ring buffer of 144 bytes a lamp; vk_rasterizer): the
+    /// frame's lamps, each once (Kaniel 2026-10-21, "do all steps": ray-traced lamp shadows).
+    void OnLampConstants(const float* data, u32 size);
+    /// The lighting pass is done (the first draw into the scene color): with ray_traced_ao the
+    /// lamps' shadows are traced into its two targets before the game combines them. Once a frame.
+    void OnLightingDone();
     /// The same pass's first target: the normals.
     void OnNormals(VideoCore::ImageId normals_id) noexcept {
         normals = normals_id;
@@ -116,6 +131,20 @@ private:
     VideoCore::ImageId scene_color{};
     VideoCore::ImageId albedo{};
     VideoCore::ImageId normals{};
+    std::array<VideoCore::ImageId, 2> light_targets{};
+    std::vector<std::array<float, 16>> lamps; ///< this frame's, as the lighting pass has them
+    bool lamps_done = false;
+    bool lamps_logged = false;
+    struct LampBuffer {
+        vk::Buffer buffer{};
+        void* allocation{}; ///< VmaAllocation
+        void* mapped = nullptr;
+    };
+    std::array<LampBuffer, 3> lamp_buffers{}; ///< written in turn (frames in flight)
+    u32 lamp_buffer_next = 0;
+    vk::UniqueDescriptorSetLayout lamp_desc_layout;
+    vk::UniquePipelineLayout lamp_layout;
+    vk::UniquePipeline lamp_pipeline;
 
     vk::UniqueDescriptorSetLayout trace_desc_layout, apply_desc_layout;
     vk::UniquePipelineLayout trace_layout, apply_layout;

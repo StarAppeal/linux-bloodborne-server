@@ -26,6 +26,8 @@ layout(binding = 2, rgba16f) uniform writeonly image2D light_img;
 layout(binding = 3) uniform texture2D normal_tex; // the G-buffer's first target: rgb * 2 - 1
 #ifdef RAY_QUERY
 layout(binding = 4) uniform accelerationStructureEXT scene; // the player's map, world space
+layout(binding = 5, std430) readonly buffer MapIndices { uint map_indices[]; };
+layout(binding = 6, std430) readonly buffer MapColors { uint map_colors[]; }; // 0xAABBGGRR
 #endif
 #endif
 
@@ -49,9 +51,10 @@ layout(push_constant) uniform Constants {
 
 #ifdef RAY_QUERY
 // The map's models are thinned on a 0.5 m grid (within ~0.25 m of the surfaces): rays start that
-// far out, and reach past what the screen-space trace sees (alcoves, ceilings, walls behind).
-const float RayBias = 0.35;
-const float RayReach = 3.0;
+// far out, and reach past what the screen-space trace sees (alcoves, ceilings, walls behind):
+// 8 m, a room's or a street's width (Kaniel 2026-10-21: 3 m was too weak to see).
+const float RayBias = 0.15;
+const float RayReach = 8.0;
 #endif
 
 vec3 LightingViewPos(vec2 pixel);
@@ -115,6 +118,7 @@ void main() {
         const vec3 wn =
             normalize(vec3(dot(world[0].xyz, n), dot(world[1].xyz, n), dot(world[2].xyz, n)));
         float occluded = 0.0;
+        vec3 bounced = vec3(0.0);
         for (int i = 0; i < rays; ++i) {
             const vec3 dir = HemisphereDir(wn, fract(n1 + float(i) * 0.618034),
                                            fract(n2 + float(i) * 0.7548777));
@@ -124,13 +128,23 @@ void main() {
                                   wp + wn * RayBias, 0.0, dir, RayReach);
             while (rayQueryProceedEXT(query)) {
             }
-            const float t = rayQueryGetIntersectionTypeEXT(query, true) ==
-                                    gl_RayQueryCommittedIntersectionTriangleEXT
-                                ? rayQueryGetIntersectionTEXT(query, true)
-                                : -1.0;
+            const bool hit = rayQueryGetIntersectionTypeEXT(query, true) ==
+                             gl_RayQueryCommittedIntersectionTriangleEXT;
+            const float t = hit ? rayQueryGetIntersectionTEXT(query, true) : -1.0;
             occluded += RayOcclusionWeight(t, RayReach);
+            if (hit) {
+                // The hit surface's light (its corners' colours at the hit), cosine-weighted
+                // directions: their mean is the light arriving.
+                const uint tri = uint(rayQueryGetIntersectionPrimitiveIndexEXT(query, true)) * 3u;
+                const vec2 b = rayQueryGetIntersectionBarycentricsEXT(query, true);
+                bounced += MeshRadiance(map_colors[map_indices[tri]]) * (1.0 - b.x - b.y) +
+                           MeshRadiance(map_colors[map_indices[tri + 1u]]) * b.x +
+                           MeshRadiance(map_colors[map_indices[tri + 2u]]) * b.y;
+            }
         }
-        result.open = min(result.open, 1.0 - occluded / float(rays));
+        // Light comes back from what the rays hit (off screen too); the screen's where it found more.
+        result.light = max(result.light, bounced / float(rays));
+        result.open = CombineOcclusion(result.open, 1.0 - occluded / float(rays));
     }
 #endif
     imageStore(light_img, tp, vec4(result.light, result.open));
@@ -175,8 +189,12 @@ void main() {
                                ivec2(albedo_size) - 1);
         albedo = texelFetch(albedo_tex, ap, 0).rgb;
     }
-    const float visibility = mix(1.0, clamp(lit.a, 0.0, 1.0), ao_strength);
-    const vec3 bounce = albedo * lit.rgb * gi_strength;
+    // Bloodborne's light is all lamps (2026-10-21: its lighting pass drawn a light at a time): the
+    // shadows only touch contacts (ao_strength), and the bounced lamp light goes where the trace
+    // (screen and rays) lets it reach.
+    const float open = clamp(lit.a, 0.0, 1.0);
+    const float visibility = mix(1.0, open, ao_strength);
+    const vec3 bounce = albedo * lit.rgb * gi_strength * open;
     vec3 result = color.rgb * visibility + bounce;
     // The debug views at the scene's brightness (Bloodborne's scene averages ~0.02).
     if (view == 1) {

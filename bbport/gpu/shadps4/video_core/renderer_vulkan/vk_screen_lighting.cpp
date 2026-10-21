@@ -6,14 +6,18 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstring>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+
+#include <vk_mem_alloc.h>
 
 #include "bbport_settings.h"
 #include "video_core/host_shaders/screen_lighting_apply_comp.h"
 #include "video_core/host_shaders/screen_lighting_trace_comp.h"
 #include "video_core/host_shaders/screen_lighting_trace_rt_comp.h"
+#include "video_core/host_shaders/lamp_shadows_comp.h"
 #include "video_core/renderer_vulkan/vk_camera_motion.h"
 #include "video_core/renderer_vulkan/vk_image_dump.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -102,6 +106,13 @@ ScreenLighting::ScreenLighting(const Instance& instance_, Scheduler& scheduler_,
 }
 
 ScreenLighting::~ScreenLighting() {
+    for (auto& b : lamp_buffers) {
+        if (b.buffer) {
+            scheduler.Finish();
+            vmaDestroyBuffer(instance.GetAllocator(), b.buffer, static_cast<VmaAllocation>(b.allocation));
+            b = {};
+        }
+    }
     if (trace_pipeline || trace_image.image) {
         scheduler.Finish();
     }
@@ -115,6 +126,8 @@ ScreenLighting::~ScreenLighting() {
 
 void ScreenLighting::OnFrameStart() {
     done = false;
+    lamps.clear();
+    lamps_done = false;
     if (rays && Enabled() && BbSettings::Get().ray_traced_ao) {
         rays->Update();
     }
@@ -145,6 +158,227 @@ void ScreenLighting::OnFrameStart() {
         dump_due = true;
         gbuffer = {};
     }
+}
+
+namespace {
+/// Lamps a frame at most (the Central Yharnam hall has 91).
+constexpr std::size_t MaxLamps = 512;
+/// lamp_shadows.comp's push constants.
+struct LampPush {
+    std::array<float, 4> proj;
+    std::array<float, 2> size;
+    s32 count;
+    float strength;
+    std::array<float, 12> world;
+};
+static_assert(sizeof(LampPush) == 80 && offsetof(LampPush, world) == 32);
+} // namespace
+
+void ScreenLighting::OnLampConstants(const float* data, u32 size) {
+    // 144 bytes a lamp: 16 floats each first (position, 1/r^2, diffuse, specular, ...), then the
+    // lamps' other data. Only plausible lamps are kept (another layout reads as nonsense).
+    const u32 count = size / 144;
+    for (u32 i = 0; i < count && lamps.size() < MaxLamps; ++i) {
+        const float* l = data + i * 16;
+        bool ok = l[3] > 1e-5f && l[3] < 100.0f && l[2] > -1000.0f && l[2] < 1000.0f;
+        for (int c = 0; c < 16 && ok; ++c) {
+            ok = std::isfinite(l[c]);
+        }
+        for (int c = 4; c < 7 && ok; ++c) {
+            ok = l[c] >= 0.0f && l[c] < 1000.0f;
+        }
+        if (!ok || (l[4] == 0.0f && l[5] == 0.0f && l[6] == 0.0f)) {
+            continue;
+        }
+        const bool seen = std::any_of(lamps.begin(), lamps.end(), [&](const auto& k) {
+            return std::abs(k[0] - l[0]) < 1e-3f && std::abs(k[1] - l[1]) < 1e-3f &&
+                   std::abs(k[2] - l[2]) < 1e-3f;
+        });
+        if (!seen) {
+            std::array<float, 16> lamp{};
+            std::copy(l, l + 16, lamp.begin());
+            lamps.push_back(lamp);
+        }
+    }
+}
+
+void ScreenLighting::OnLightingDone() {
+    if (lamps_done) {
+        return;
+    }
+    lamps_done = true;
+    if (!rays || !Enabled() || !BbSettings::Get().ray_traced_ao || lamps.empty() ||
+        !light_targets[0] || !light_targets[1] || !normals) {
+        return;
+    }
+    const vk::AccelerationStructureKHR scene_as = rays->Scene();
+    const auto depth_id = camera_motion.Depth();
+    const auto proj = camera_motion.SceneProjection();
+    const auto world = camera_motion.SceneInverseView();
+    if (!scene_as || !depth_id || proj[0] == 0.0f || world[0] == 0.0f && world[1] == 0.0f &&
+                                                        world[2] == 0.0f) {
+        return;
+    }
+    auto& diffuse = texture_cache.GetImage(light_targets[0]);
+    auto& specular = texture_cache.GetImage(light_targets[1]);
+    auto& depth = texture_cache.GetImage(depth_id);
+    auto& normal = texture_cache.GetImage(normals);
+    const u32 w = diffuse.info.size.width, h = diffuse.info.size.height;
+    // Native scene size only for now (live resolution draws into reduced proxies).
+    if (scene_targets.Reduced() || !(diffuse.usage_flags & vk::ImageUsageFlagBits::eStorage) ||
+        !(specular.usage_flags & vk::ImageUsageFlagBits::eStorage) ||
+        depth.info.size.width != w || depth.info.size.height != h ||
+        normal.info.size.width != w || normal.info.size.height != h) {
+        if (!lamps_logged) {
+            std::printf("Lamp shadows: not at this size or format (reduced %d)\n",
+                        int(scene_targets.Reduced()));
+            lamps_logged = true;
+        }
+        return;
+    }
+    const auto device = instance.GetDevice();
+    if (!lamp_pipeline) {
+        const std::array<vk::DescriptorSetLayoutBinding, 6> bindings{{
+            {0, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute},
+            {1, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute},
+            {2, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute},
+            {3, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute},
+            {4, vk::DescriptorType::eAccelerationStructureKHR, 1, vk::ShaderStageFlagBits::eCompute},
+            {5, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
+        }};
+        lamp_desc_layout = Check(device.createDescriptorSetLayoutUnique({
+            .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
+            .bindingCount = u32(bindings.size()),
+            .pBindings = bindings.data(),
+        }));
+        const vk::PushConstantRange push{.stageFlags = vk::ShaderStageFlagBits::eCompute,
+                                         .offset = 0,
+                                         .size = sizeof(LampPush)};
+        lamp_layout = Check(device.createPipelineLayoutUnique({
+            .setLayoutCount = 1,
+            .pSetLayouts = &*lamp_desc_layout,
+            .pushConstantRangeCount = 1,
+            .pPushConstantRanges = &push,
+        }));
+        const auto module = CompileSPV(LAMP_SHADOWS_COMP, device);
+        lamp_pipeline = Check(device.createComputePipelineUnique(
+            {}, vk::ComputePipelineCreateInfo{
+                    .stage = {.stage = vk::ShaderStageFlagBits::eCompute,
+                              .module = module,
+                              .pName = "main"},
+                    .layout = *lamp_layout,
+                }));
+        device.destroyShaderModule(module);
+    }
+    // The lamps into the next of three host buffers (the frames before may still read theirs).
+    auto& buf = lamp_buffers[lamp_buffer_next];
+    lamp_buffer_next = (lamp_buffer_next + 1) % u32(lamp_buffers.size());
+    if (!buf.buffer) {
+        const VkBufferCreateInfo buffer_ci{
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .size = MaxLamps * 16 * sizeof(float),
+            .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        };
+        const VmaAllocationCreateInfo alloc_ci{
+            .flags = VMA_ALLOCATION_CREATE_MAPPED_BIT |
+                     VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
+            .usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
+        };
+        VkBuffer handle{};
+        VmaAllocation allocation{};
+        VmaAllocationInfo info{};
+        if (vmaCreateBuffer(instance.GetAllocator(), &buffer_ci, &alloc_ci, &handle, &allocation,
+                            &info) != VK_SUCCESS) {
+            return;
+        }
+        buf = {handle, allocation, info.pMappedData};
+    }
+    std::memcpy(buf.mapped, lamps.data(), lamps.size() * sizeof(lamps[0]));
+    vmaFlushAllocation(instance.GetAllocator(), static_cast<VmaAllocation>(buf.allocation), 0,
+                       VK_WHOLE_SIZE);
+
+    scheduler.EndRendering();
+    const auto rw = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite;
+    const vk::ImageView depth_view =
+        CachedView(depth, depth.info.pixel_format, vk::ImageAspectFlagBits::eDepth);
+    const vk::ImageView normal_view =
+        CachedView(normal, normal.info.pixel_format, vk::ImageAspectFlagBits::eColor);
+    const vk::ImageView diffuse_view =
+        CachedView(diffuse, diffuse.info.pixel_format, vk::ImageAspectFlagBits::eColor);
+    const vk::ImageView specular_view =
+        CachedView(specular, specular.info.pixel_format, vk::ImageAspectFlagBits::eColor);
+    runtime.Transit(&depth, vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eComputeShader,
+                    vk::AccessFlagBits2::eShaderRead);
+    runtime.Transit(&normal, vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eComputeShader,
+                    vk::AccessFlagBits2::eShaderRead);
+    runtime.Transit(&diffuse, vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eComputeShader,
+                    rw);
+    runtime.Transit(&specular, vk::ImageLayout::eGeneral,
+                    vk::PipelineStageFlagBits2::eComputeShader, rw);
+    runtime.FlushBarriers();
+    if (!lamps_logged) {
+        std::printf("Lamp shadows: %zu lamps, %ux%u\n", lamps.size(), w, h);
+        std::fflush(stdout);
+        lamps_logged = true;
+    }
+    const LampPush push{
+        .proj = proj,
+        .size = {float(w), float(h)},
+        .count = s32(lamps.size()),
+        .strength = 0.5f,
+        .world = world,
+    };
+    const vk::Buffer lamp_buffer = buf.buffer;
+    scheduler.RecordCrumb(
+        {.name = "lamp shadows"},
+        [=, pipeline = *lamp_pipeline, layout = *lamp_layout](vk::CommandBuffer cmdbuf) {
+            const vk::DescriptorImageInfo depth_info{.imageView = depth_view,
+                                                     .imageLayout = vk::ImageLayout::eGeneral};
+            const vk::DescriptorImageInfo normal_info{.imageView = normal_view,
+                                                      .imageLayout = vk::ImageLayout::eGeneral};
+            const vk::DescriptorImageInfo diffuse_info{.imageView = diffuse_view,
+                                                       .imageLayout = vk::ImageLayout::eGeneral};
+            const vk::DescriptorImageInfo specular_info{.imageView = specular_view,
+                                                        .imageLayout = vk::ImageLayout::eGeneral};
+            const vk::WriteDescriptorSetAccelerationStructureKHR scene_info{
+                .accelerationStructureCount = 1,
+                .pAccelerationStructures = &scene_as,
+            };
+            const vk::DescriptorBufferInfo lamps_info{lamp_buffer, 0, VK_WHOLE_SIZE};
+            const std::array<vk::WriteDescriptorSet, 6> writes = {{
+                {.dstBinding = 0, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eSampledImage, .pImageInfo = &depth_info},
+                {.dstBinding = 1, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eSampledImage, .pImageInfo = &normal_info},
+                {.dstBinding = 2, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eStorageImage, .pImageInfo = &diffuse_info},
+                {.dstBinding = 3, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eStorageImage, .pImageInfo = &specular_info},
+                {.pNext = &scene_info, .dstBinding = 4, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eAccelerationStructureKHR},
+                {.dstBinding = 5, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &lamps_info},
+            }};
+            const vk::MemoryBarrier2 before{
+                .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+                .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
+                .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+                .dstAccessMask = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
+            };
+            cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &before});
+            cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline);
+            cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, layout, 0, writes);
+            cmdbuf.pushConstants(layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(push), &push);
+            cmdbuf.dispatch((push.size[0] > 0 ? (u32(push.size[0]) + 7) / 8 : 0),
+                            (u32(push.size[1]) + 7) / 8, 1);
+            const vk::MemoryBarrier2 after{
+                .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+                .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
+                .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+                .dstAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
+            };
+            cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &after});
+        });
 }
 
 bool ScreenLighting::Enabled() const {
@@ -193,7 +427,7 @@ void ScreenLighting::CreatePipelines() {
     const auto layout = [&](std::initializer_list<vk::DescriptorType> types,
                             vk::UniqueDescriptorSetLayout& set_layout,
                             vk::UniquePipelineLayout& pipeline_layout) {
-        std::array<vk::DescriptorSetLayoutBinding, 5> bindings{};
+        std::array<vk::DescriptorSetLayoutBinding, 7> bindings{};
         u32 count = 0;
         for (const auto type : types) {
             bindings[count] = {.binding = count,
@@ -237,7 +471,7 @@ void ScreenLighting::CreatePipelines() {
     trace_pipeline = compute(SCREEN_LIGHTING_TRACE_COMP, *trace_layout);
     if (rays) {
         layout({T::eSampledImage, T::eStorageImage, T::eStorageImage, T::eSampledImage,
-                T::eAccelerationStructureKHR},
+                T::eAccelerationStructureKHR, T::eStorageBuffer, T::eStorageBuffer},
                trace_rt_desc_layout, trace_rt_layout);
         trace_rt_pipeline = compute(SCREEN_LIGHTING_TRACE_RT_COMP, *trace_rt_layout);
     }
@@ -384,6 +618,13 @@ void ScreenLighting::OnOpaqueSceneDone(bool temporal) {
     // BB_LIGHTING_DUMP: the G-buffer targets as they are (native scene size only).
     const bool dump = dump_due && !reduced;
     if (dump) {
+        for (const auto id : light_targets) {
+            if (id) {
+                runtime.Transit(&texture_cache.GetImage(id), vk::ImageLayout::eGeneral,
+                                vk::PipelineStageFlagBits2::eTransfer,
+                                vk::AccessFlagBits2::eTransferRead);
+            }
+        }
         for (const auto id : gbuffer) {
             if (id && id != scene_color) {
                 runtime.Transit(&texture_cache.GetImage(id), vk::ImageLayout::eGeneral,
@@ -413,7 +654,7 @@ void ScreenLighting::OnOpaqueSceneDone(bool temporal) {
         // Golden-ratio steps: each frame's directions fall between the last ones'.
         .noise = temporal ? std::fmod(float(frame % 64) * 0.618034f, 1.0f) : 0.0f,
         .ao_strength = std::clamp(settings.screen_lighting_ao.load(), 0.0f, 1.0f),
-        .gi_strength = std::clamp(settings.screen_lighting_gi.load(), 0.0f, 2.0f),
+        .gi_strength = std::clamp(settings.screen_lighting_gi.load(), 0.0f, 4.0f),
         .directions = high ? 3 : 2,
         .steps = high ? 10 : 6,
         .view = view_mode,
@@ -424,6 +665,9 @@ void ScreenLighting::OnOpaqueSceneDone(bool temporal) {
     // The map's acceleration structure, once built: the trace's rays go against it too.
     const vk::AccelerationStructureKHR scene_as =
         rays && settings.ray_traced_ao ? rays->Scene() : vk::AccelerationStructureKHR{};
+    const vk::DescriptorBufferInfo map_indices =
+        scene_as ? rays->Indices() : vk::DescriptorBufferInfo{};
+    const vk::DescriptorBufferInfo map_colors = scene_as ? rays->Colors() : vk::DescriptorBufferInfo{};
     // No camera yet (all zero): no rays.
     const bool has_world = push.world[0] != 0.0f || push.world[1] != 0.0f || push.world[2] != 0.0f;
     PushConstants push_rt = push;
@@ -477,7 +721,7 @@ void ScreenLighting::OnOpaqueSceneDone(bool temporal) {
                 .accelerationStructureCount = 1,
                 .pAccelerationStructures = &scene_as,
             };
-            const std::array<vk::WriteDescriptorSet, 5> trace_writes = {{
+            const std::array<vk::WriteDescriptorSet, 7> trace_writes = {{
                 {.dstBinding = 0,
                  .descriptorCount = 1,
                  .descriptorType = vk::DescriptorType::eSampledImage,
@@ -498,11 +742,19 @@ void ScreenLighting::OnOpaqueSceneDone(bool temporal) {
                  .dstBinding = 4,
                  .descriptorCount = 1,
                  .descriptorType = vk::DescriptorType::eAccelerationStructureKHR},
+                {.dstBinding = 5,
+                 .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eStorageBuffer,
+                 .pBufferInfo = &map_indices},
+                {.dstBinding = 6,
+                 .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eStorageBuffer,
+                 .pBufferInfo = &map_colors},
             }};
             cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, trace_pipe);
             cmdbuf.pushDescriptorSetKHR(
                 vk::PipelineBindPoint::eCompute, trace_lay, 0,
-                vk::ArrayProxy<const vk::WriteDescriptorSet>(scene_as ? 5u : 4u,
+                vk::ArrayProxy<const vk::WriteDescriptorSet>(scene_as ? 7u : 4u,
                                                              trace_writes.data()));
             cmdbuf.pushConstants(trace_lay, vk::ShaderStageFlagBits::eCompute, 0,
                                  sizeof(push_rt), &push_rt);
@@ -575,6 +827,12 @@ void ScreenLighting::OnOpaqueSceneDone(bool temporal) {
     for (u32 i = 0; i < gbuffer.size(); ++i) {
         if (gbuffer[i] && gbuffer[i] != scene_color) {
             dump_image(texture_cache.GetImage(gbuffer[i]), "gbuffer" + std::to_string(i),
+                       vk::ImageAspectFlagBits::eColor);
+        }
+    }
+    for (u32 i = 0; i < light_targets.size(); ++i) {
+        if (light_targets[i]) {
+            dump_image(texture_cache.GetImage(light_targets[i]), "light" + std::to_string(i),
                        vk::ImageAspectFlagBits::eColor);
         }
     }

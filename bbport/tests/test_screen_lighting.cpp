@@ -47,6 +47,8 @@ inline float cos(float v) { return std::cos(v); }
 inline float sin(float v) { return std::sin(v); }
 inline float fract(float v) { return v - std::floor(v); }
 inline float sqrt(float v) { return std::sqrt(v); }
+using uint = unsigned;
+inline float pow(float x, double y) { return std::pow(x, float(y)); }
 inline float max(float a, double b) { return std::max(a, float(b)); }
 inline float min(float a, double b) { return std::min(a, float(b)); }
 inline float clamp(float x, double lo, double hi) { return std::min(std::max(x, float(lo)), float(hi)); }
@@ -190,6 +192,43 @@ int main() {
     assert(RayOcclusionWeight(0.0f, 4.0f) == 1.0f && RayOcclusionWeight(4.0f, 4.0f) == 0.0f);
     assert(RayOcclusionWeight(1.0f, 4.0f) > RayOcclusionWeight(3.0f, 4.0f));
     assert(RayOcclusionWeight(-1.0f, 4.0f) == 0.0f && "no hit");
+    // Kaniel 2026-10-21 ("I would have expected light to work more natural, not just be darker"):
+    // the rays' visibility multiplies the screen's (halfway between the first, too weak, and the
+    // squared, too dark); it never brightens what either sees as occluded.
+    assert(std::fabs(CombineOcclusion(1.0f, 0.5f) - 0.5f) < 1e-6f && "halfway");
+    assert(CombineOcclusion(0.8f, 0.5f) <= 0.8f * 0.5f + 1e-6f && "no lighter than both");
+    assert(CombineOcclusion(0.8f, 1.0f) == 0.8f && "open sky: the screen's alone");
+    assert(CombineOcclusion(0.3f, 0.9f) <= 0.3f);
+    // A ray's hit brings back the surface's light: the map mesh's colour (0xAABBGGRR, sRGB: the
+    // texture in the game's baked light) at the scene's brightness (~0.05 of it, the 2026-10-21
+    // capture at Central Yharnam's lamp).
+    {
+        const vec3 white = MeshRadiance(0xFFFFFFFFu);
+        assert(std::fabs(white.x - MeshRadianceScale) < 1e-6f && white.x == white.y && white.y == white.z);
+        const vec3 red = MeshRadiance(0xFF0000FFu);
+        assert(red.x > 0.0f && red.y == 0.0f && red.z == 0.0f && "red is the low byte");
+        const vec3 mid = MeshRadiance(0xFF808080u);
+        assert(std::fabs(mid.x / MeshRadianceScale - 0.2158605f) < 1e-3f && "sRGB decoded");
+        assert(MeshRadianceScale > 0.02f && MeshRadianceScale < 0.2f);
+    }
+
+    // Kaniel 2026-10-21 ("do all steps": ray-traced lamp shadows). A lamp of the game's lighting
+    // pass lights a surface by its colour, N.L and (1 - d^2/r^2)^2 (a fit to the captured light:
+    // the lamp within half a metre of its logged place, its reach 6 m against the logged 7).
+    {
+        const vec3 p(0.0, 0.0, 5.0), up(0.0, -1.0, 0.0);
+        const float inv_r2 = 1.0f / 49.0f;
+        const float near = LampWeight(p, up, vec3(0.0, -1.0, 5.0), inv_r2, 1.0f);
+        const float far = LampWeight(p, up, vec3(0.0, -4.0, 5.0), inv_r2, 1.0f);
+        assert(near > far && far > 0.0f && "closer is brighter");
+        assert(std::fabs(near - (1.0f - 1.0f / 49.0f) * (1.0f - 1.0f / 49.0f)) < 1e-5f);
+        assert(LampWeight(p, up, vec3(0.0, -8.0, 5.0), inv_r2, 1.0f) == 0.0f && "beyond its reach");
+        assert(LampWeight(p, up, vec3(0.0, 2.0, 5.0), inv_r2, 1.0f) == 0.0f && "behind the surface");
+        assert(std::fabs(LampWeight(p, up, vec3(0.0, -1.0, 5.0), inv_r2, 3.0f) - 3.0f * near) < 1e-5f);
+        // The light that stays: what the unblocked lamps give, of all the lamps give; no lamp, all.
+        assert(LampShadowFactor(4.0f, 1.0f) == 0.75f && LampShadowFactor(0.0f, 0.0f) == 1.0f);
+        assert(LampShadowFactor(2.0f, 2.0f) == 0.0f && LampShadowFactor(1.0f, 3.0f) == 0.0f);
+    }
 
     // The noise is in 0..1.
     for (int i = 0; i < 100; ++i) {

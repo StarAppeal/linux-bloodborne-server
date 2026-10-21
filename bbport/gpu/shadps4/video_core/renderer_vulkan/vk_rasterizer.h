@@ -460,6 +460,9 @@ private:
     bool motion_draw = false;
     u64 motion_geometry{};    ///< vertex-stream identity of the current direct draw
     bool gbuffer_draw = false;
+    bool light_pass_skip = false; ///< bbport: BB_LIGHT_ONLY_FILE skips this lighting draw
+    bool light_pass_log = false;  ///< bbport: BB_LIGHTING_PASS_LOG prints this draw's constants
+    bool light_pass_draw = false; ///< bbport: a lighting pass draw (its lamps to ScreenLighting)
     std::unique_ptr<TemporalUpscaler> upscaler; // bbport: FSR (docs/upscaler.md)
     std::unique_ptr<ScreenLighting> screen_lighting; // bbport: screen-space AO + indirect light
     std::array<float, 2> draw_jitter{};         ///< viewport offset of the current draw, pixels

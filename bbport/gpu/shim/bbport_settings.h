@@ -148,8 +148,10 @@ struct Values {
     /// Screen-space lighting (ScreenLighting, off by default) and how strong its ambient
     /// occlusion (0..1, screen_lighting_ao) and bounced light (0..2, screen_lighting_gi) are. Live.
     std::atomic<int> screen_lighting{ScreenLightingOff};
-    std::atomic<float> screen_lighting_ao{0.7f};
-    std::atomic<float> screen_lighting_gi{1.0f};
+    /// Kaniel 2026-10-21 ("not just darker"): Bloodborne's light is all lamps (no ambient term), so
+    /// the shadows only touch contacts (0.3) and the bounced lamp light is strong (2, up to 4).
+    std::atomic<float> screen_lighting_ao{0.3f};
+    std::atomic<float> screen_lighting_gi{2.0f};
     /// Kaniel 2026-10-21 ("continue with ray tracing"): the screen lighting's shadows also traced
     /// against the map's own models (vk_ray_occlusion.h; bbport.ini ray_traced_ao, off by default).
     /// Vulkan ray query is switched on at start, so turning it on needs a restart.

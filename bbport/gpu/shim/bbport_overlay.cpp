@@ -1923,7 +1923,7 @@ void EffectsTab() {
                 "Насколько темнеют углы и места касания с экранным освещением."),
               lighting_on);
     SliderRow("screen_lighting_gi", T("Bounced light", "Отражённый свет"), s.screen_lighting_gi,
-              0.0f, 2.0f, 0.1f,
+              0.0f, 4.0f, 0.2f,
               T("How much colour nearby surfaces cast onto each other with screen lighting.",
                 "Сколько цвета ближние поверхности отбрасывают друг на друга с экранным "
                 "освещением."),

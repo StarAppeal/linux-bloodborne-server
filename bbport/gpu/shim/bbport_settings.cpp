@@ -119,7 +119,7 @@ void Set(Values& v, const std::string& key, const std::string& value) {
     } else if (key == "screen_lighting_ao") {
         v.screen_lighting_ao = Clamp(f, 0.0f, 1.0f);
     } else if (key == "screen_lighting_gi") {
-        v.screen_lighting_gi = Clamp(f, 0.0f, 2.0f);
+        v.screen_lighting_gi = Clamp(f, 0.0f, 4.0f);
     } else if (key == "ray_traced_ao") {
         v.ray_traced_ao = i != 0;
     } else if (key == "map_fog") {

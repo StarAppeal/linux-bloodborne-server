@@ -101,6 +101,11 @@ std::condition_variable wake;
 std::map<std::uint32_t, std::shared_ptr<const BbMapArt::Chart>> ready;
 std::map<std::uint32_t, std::shared_ptr<const BbMapArt::AreaMesh>> ready_meshes;
 constexpr std::uint32_t MeshKey = 7; // `map | MeshKey` in the queue: the mesh, not a picture
+constexpr std::uint32_t RayMeshKey = 6; // the ray tracing's finer mesh (GetRayMesh)
+/// Kaniel 2026-10-21 (ray-traced lamp shadows): the 3D map's 0.5 m grid made the floor shadow
+/// itself; the rays get the models on a 0.12 m grid.
+constexpr float RayMeshCell = 0.12f;
+std::map<std::uint32_t, std::shared_ptr<const BbMapArt::AreaMesh>> ready_ray_meshes;
 std::set<std::uint32_t> failed, asked;
 std::deque<std::uint32_t> queue;
 bool worker_started = false;
@@ -130,15 +135,16 @@ std::shared_ptr<const BbMapArt::Chart> Make(std::uint32_t key) {
     return std::make_shared<const BbMapArt::Chart>(std::move(*drawn));
 }
 
-std::shared_ptr<const BbMapArt::AreaMesh> MakeMesh(std::uint32_t packed_map) {
-    const auto cache = MapFolder() / (BbMapArt::MapNameOf(packed_map) + ".bbmesh");
+std::shared_ptr<const BbMapArt::AreaMesh> MakeMesh(std::uint32_t packed_map, float cell = 0.5f,
+                                                  const char* suffix = ".bbmesh") {
+    const auto cache = MapFolder() / (BbMapArt::MapNameOf(packed_map) + suffix);
     if (auto kept = BbMapArt::LoadMesh(ReadFile(cache))) {
         std::printf("Map: read %s's mesh\n", BbMapArt::MapNameOf(packed_map).c_str());
         return std::make_shared<const BbMapArt::AreaMesh>(std::move(*kept));
     }
     const auto start = std::chrono::steady_clock::now();
     const int threads = int(std::clamp(std::thread::hardware_concurrency() / 2, 1u, 4u));
-    auto made = BbMapArt::MeshOf(packed_map, ReadGameFile, threads, ReadGameRange, 0.5f);
+    auto made = BbMapArt::MeshOf(packed_map, ReadGameFile, threads, ReadGameRange, cell);
     if (!made) {
         return nullptr;
     }
@@ -163,6 +169,16 @@ void Work() {
             wake.wait(lock, [] { return !queue.empty(); });
             next = queue.front();
             queue.pop_front();
+        }
+        if ((next & 7u) == RayMeshKey) {
+            auto mesh = MakeMesh(next & ~7u, RayMeshCell, ".rtmesh");
+            std::scoped_lock lock{mutex};
+            if (mesh) {
+                ready_ray_meshes[next & ~7u] = std::move(mesh);
+            } else {
+                failed.insert(next);
+            }
+            continue;
         }
         if ((next & 7u) == MeshKey) {
             auto mesh = MakeMesh(next & ~7u);
@@ -238,6 +254,23 @@ std::shared_ptr<const BbMapArt::Chart> Get(std::uint32_t packed_map) {
     }
     if (packed_map != 0 && !failed.contains(packed_map) && asked.insert(packed_map).second) {
         queue.push_back(packed_map);
+        if (!worker_started) {
+            worker_started = true;
+            std::thread(Work).detach();
+        }
+        wake.notify_one();
+    }
+    return nullptr;
+}
+
+std::shared_ptr<const BbMapArt::AreaMesh> GetRayMesh(std::uint32_t packed_map) {
+    std::scoped_lock lock{mutex};
+    if (const auto found = ready_ray_meshes.find(packed_map); found != ready_ray_meshes.end()) {
+        return found->second;
+    }
+    const std::uint32_t key = packed_map | RayMeshKey;
+    if (packed_map != 0 && !failed.contains(key) && asked.insert(key).second) {
+        queue.push_back(key);
         if (!worker_started) {
             worker_started = true;
             std::thread(Work).detach();

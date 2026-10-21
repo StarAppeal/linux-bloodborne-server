@@ -275,7 +275,9 @@ int main() {
         setenv("BB_CONFIG", lighting_file, 1);
         BbSettings::Load();
         assert(s.screen_lighting == BbSettings::ScreenLightingOff && "off by default");
-        assert(s.screen_lighting_ao == 0.7f && s.screen_lighting_gi == 1.0f);
+        // Kaniel 2026-10-21 ("not just darker"): Bloodborne's light is all lamps, so the shadows only
+        // touch contacts and the bounced lamp light is what the lighting adds.
+        assert(s.screen_lighting_ao == 0.3f && s.screen_lighting_gi == 2.0f && "light contacts, strong bounce");
         assert(!s.ray_traced_ao && "ray tracing off by default");
         s.screen_lighting = BbSettings::ScreenLightingHigh;
         s.screen_lighting_ao = 0.5f;
@@ -294,17 +296,17 @@ int main() {
                s.screen_lighting_gi == 1.5f && s.ray_traced_ao);
         s.ray_traced_ao = false;
         const int wfd = open(lighting_file, O_WRONLY | O_TRUNC);
-        const char ini[] = "screen_lighting=low\nscreen_lighting_ao=7\nscreen_lighting_gi=-1\n";
+        const char ini[] = "screen_lighting=low\nscreen_lighting_ao=7\nscreen_lighting_gi=9\n";
         assert(write(wfd, ini, sizeof(ini) - 1) == ssize_t(sizeof(ini) - 1));
         close(wfd);
         BbSettings::Load();
         assert(s.screen_lighting == BbSettings::ScreenLightingLow);
-        assert(s.screen_lighting_ao == 1.0f && s.screen_lighting_gi == 0.0f && "clamped");
+        assert(s.screen_lighting_ao == 1.0f && s.screen_lighting_gi == 4.0f && "clamped");
         assert(std::string(BbSettings::ScreenLightingNames[BbSettings::ScreenLightingOff]) == "off");
         unlink(lighting_file);
         s.screen_lighting = BbSettings::ScreenLightingOff;
-        s.screen_lighting_ao = 0.7f;
-        s.screen_lighting_gi = 1.0f;
+        s.screen_lighting_ao = 0.3f;
+        s.screen_lighting_gi = 2.0f;
     }
     std::puts("PASS: screen lighting settings");
 

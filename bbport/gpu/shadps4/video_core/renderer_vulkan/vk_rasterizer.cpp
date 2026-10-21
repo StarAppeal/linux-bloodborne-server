@@ -649,6 +649,8 @@ VideoCore::ImageId Rasterizer::FindTargetMemoized(VideoCore::TextureCache::Image
 
 void Rasterizer::PrepareRenderState(const GraphicsPipeline* pipeline) {
     BB_SECTION(PrepareRenderState);
+    light_pass_log = false;
+    light_pass_draw = false;
     // Prefetch render targets to handle overlaps with bound textures (e.g. mipgen)
     const auto& key = pipeline->GetGraphicsKey();
     const auto& regs = Regs();
@@ -721,6 +723,61 @@ void Rasterizer::PrepareRenderState(const GraphicsPipeline* pipeline) {
     if (upscaler->Enabled() && cb_descs[0].first) {
         upscaler->OnColorTarget(cb_descs[0].first);
     }
+    // bbport: the lighting pass (docs/upscaler.md): light volumes into two scene-size B10G11R11
+    // targets, the lamps' light the screen lighting leaves alone.
+    if (screen_lighting->Enabled() && std::popcount(key.mrt_mask) == 2 && cb_descs[0].first &&
+        cb_descs[1].first && db_desc.first && db_desc.first == camera_motion->Depth()) {
+        const auto& l0 = texture_cache.GetImage(cb_descs[0].first);
+        const auto& l1 = texture_cache.GetImage(cb_descs[1].first);
+        const auto& depth = texture_cache.GetImage(db_desc.first);
+        if (l0.info.pixel_format == vk::Format::eB10G11R11UfloatPack32 &&
+            l1.info.pixel_format == vk::Format::eB10G11R11UfloatPack32 &&
+            l0.info.size.width == depth.info.size.width &&
+            l0.info.size.height == depth.info.size.height) {
+            screen_lighting->OnLightTargets(cb_descs[0].first, cb_descs[1].first);
+            light_pass_draw = true;
+            static const char* only_file = std::getenv("BB_LIGHT_ONLY_FILE");
+            static u64 only_ps = 0, only_read_frame = ~0ull;
+            if (only_file && only_read_frame != screen_lighting->FrameNumber() / 30) {
+                only_read_frame = screen_lighting->FrameNumber() / 30;
+                if (FILE* f = std::fopen(only_file, "r")) {
+                    unsigned long long hash = 0;
+                    only_ps = std::fscanf(f, "%llx", &hash) == 1 ? hash : 0;
+                    std::fclose(f);
+                }
+            }
+            const auto* only_info = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
+            light_pass_skip = only_ps != 0 && (!only_info || only_info->pgm_hash != only_ps);
+            static const bool pass_log = std::getenv("BB_LIGHTING_PASS_LOG") != nullptr;
+            static u64 logged_frame = ~0ull;
+            static u32 frame_draws = 0;
+            const u64 frame_no = screen_lighting->FrameNumber();
+            light_pass_log = pass_log && frame_no % 300 == 150;
+            if (light_pass_log) {
+                if (logged_frame != frame_no) {
+                    logged_frame = frame_no;
+                    frame_draws = 0;
+                }
+                std::printf("Lighting pass %llu draw %u: indices %u instances %u blend %d "
+                            "src %d dst %d depth test %d write %d stencil %d vs %016llx ps %016llx\n",
+                            static_cast<unsigned long long>(frame_no), frame_draws++,
+                            regs.num_indices, regs.num_instances.NumInstances(),
+                            int(regs.blend_control[0].enable),
+                            int(regs.blend_control[0].color_src_factor),
+                            int(regs.blend_control[0].color_dst_factor),
+                            int(regs.depth_control.depth_enable),
+                            int(regs.depth_control.depth_write_enable),
+                            int(regs.depth_control.stencil_enable),
+                            static_cast<unsigned long long>(
+                                pipeline->GetStage(Shader::SwStage::Vertex).pgm_hash),
+                            static_cast<unsigned long long>(
+                                pipeline->GetStages()[u32(Shader::SwStage::Fragment)]
+                                    ? pipeline->GetStages()[u32(Shader::SwStage::Fragment)]->pgm_hash
+                                    : 0));
+                std::fflush(stdout);
+            }
+        }
+    }
     // bbport: scene color: a full-size RGBA16F target drawn with the scene depth.
     const bool scene_hooks = upscaler->Enabled() || screen_lighting->Enabled();
     if (scene_hooks && db_desc.first && db_desc.first == camera_motion->Depth() &&
@@ -730,6 +787,8 @@ void Rasterizer::PrepareRenderState(const GraphicsPipeline* pipeline) {
         if (color.info.pixel_format == vk::Format::eR16G16B16A16Sfloat &&
             color.info.size.width == depth.info.size.width &&
             color.info.size.height == depth.info.size.height) {
+            // The lighting pass is done: its lamps' shadows before the game combines its light.
+            screen_lighting->OnLightingDone();
             upscaler->OnSceneColor(cb_descs[0].first);
             screen_lighting->OnSceneColor(cb_descs[0].first);
             // Blended geometry without depth writes (not full-screen passes): transparents and
@@ -748,6 +807,18 @@ void Rasterizer::PrepareRenderState(const GraphicsPipeline* pipeline) {
             }
         }
     }
+}
+
+/// bbport BB_LIGHTING_PASS_LOG: a lighting draw's constants (at most 64 floats).
+static void LogLightConstants(const char* what, const void* data, u32 size) {
+    const auto* f = static_cast<const float*>(data);
+    const u32 count = std::min(size / 4, 512u);
+    std::printf("  %s %u bytes:", what, size);
+    for (u32 i = 0; i < count; ++i) {
+        std::printf("%s%.6g", i % 8 == 0 ? "\n    " : " ", f[i]);
+    }
+    std::printf("\n");
+    std::fflush(stdout);
 }
 
 static std::pair<u32, u32> GetDrawOffsets(const AmdGpu::Regs& regs, const Shader::Info& info,
@@ -1824,7 +1895,9 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
 
     const vk::Pipeline handle = pipeline->Handle();
     const u32 num_indices = regs.num_indices;
-    const u32 num_instances = regs.num_instances.NumInstances();
+    // bbport: BB_LIGHT_ONLY_FILE: a skipped lighting draw draws no instance (all else as usual).
+    const u32 num_instances = light_pass_skip ? 0u : regs.num_instances.NumInstances();
+    light_pass_skip = false;
     const u32 first_vertex = vertex_offset;
     const u32 first_instance = instance_offset;
     const auto* ps_info = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
@@ -3101,6 +3174,17 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
         if (ring) {
             // Copied by the GPU command thread into the constant ring (read-only).
             if (!desc.IsSpecial()) {
+                if (light_pass_draw && stage.sw_stage == Shader::SwStage::Fragment &&
+                    ring->size % 144 == 0 && ring->size != 864 &&
+                    memory->IsValidGpuMapping(ring->address, 0)) {
+                    screen_lighting->OnLampConstants(
+                        reinterpret_cast<const float*>(ring->address), u32(ring->size));
+                }
+                if (light_pass_log && stage.sw_stage == Shader::SwStage::Fragment &&
+                    memory->IsValidGpuMapping(ring->address, 0)) {
+                    LogLightConstants("ring", reinterpret_cast<const void*>(ring->address),
+                                      u32(ring->size));
+                }
                 if (ring->size == 864 && gbuffer_draw &&
                     memory->IsValidGpuMapping(ring->address, 0)) {
                     camera_motion->OnConstants(reinterpret_cast<const float*>(ring->address));
@@ -3118,6 +3202,9 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
             } else if (desc.buffer_type == Shader::BufferType::Flatbuf) {
                 auto& vk_buffer = buffer_cache.GetStreamBuffer();
                 const u32 ubo_size = stage.FlatUserData().size() * sizeof(u32);
+                if (light_pass_log && stage.sw_stage == Shader::SwStage::Fragment) {
+                    LogLightConstants("user", stage.FlatUserData().data(), ubo_size);
+                }
                 if (FrameCapture::Active()) {
                     FrameCapture::Buffer(stage.pgm_hash, binding.buffer, 0,
                                          stage.FlatUserData().data(), ubo_size);
@@ -3179,6 +3266,12 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                               (unsigned long long)vsharp.base_address, u32(vsharp.GetSize()),
                               u32(vsharp.GetStride()), f[0], f[1], f[2], f[3]);
                 FrameCapture::Note(note);
+            }
+            if (light_pass_log && stage.sw_stage == Shader::SwStage::Fragment &&
+                vsharp.base_address != 0 && vsharp.GetSize() != 0 && vsharp.GetSize() <= 4096 &&
+                memory->IsValidGpuMapping(vsharp.base_address, 0)) {
+                LogLightConstants("buffer", reinterpret_cast<const void*>(vsharp.base_address),
+                                  u32(vsharp.GetSize()));
             }
             if (FrameCapture::Active() && vsharp.base_address != 0 && vsharp.GetSize() != 0 &&
                 memory->IsValidGpuMapping(vsharp.base_address, 0)) {
