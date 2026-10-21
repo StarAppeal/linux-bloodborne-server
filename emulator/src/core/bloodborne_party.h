@@ -718,8 +718,12 @@ RecreatePlan PlanRecreate(std::span<const std::optional<std::string>> members,
 class BoardMembersSeen {
 public:
     void Take(std::span<const MemberMap> board, std::string_view self);
-    void Clear() { names.clear(); }
-    const std::vector<std::string>& Names() const { return names; }
+    void Clear() {
+        names.clear();
+    }
+    const std::vector<std::string>& Names() const {
+        return names;
+    }
 
 private:
     std::vector<std::string> names;

@@ -537,8 +537,8 @@ RecreatePlan PlanRecreate(std::span<const std::optional<std::string>> found,
             member.reset();
         }
     }
-    const auto others_on_board = static_cast<size_t>(std::ranges::count_if(
-        board, [&](const MemberMap& entry) { return entry.member != self; }));
+    const auto others_on_board = static_cast<size_t>(
+        std::ranges::count_if(board, [&](const MemberMap& entry) { return entry.member != self; }));
     if (std::ranges::any_of(members, [](const auto& member) { return !member.has_value(); })) {
         // Everyone else in the session, not only those on the board: one off it is elsewhere.
         if (others_on_board >= members.size() && EveryoneElseOnMap(board, self, map)) {
