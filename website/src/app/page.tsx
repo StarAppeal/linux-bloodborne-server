@@ -6,10 +6,11 @@ import { DownloadButton } from "@/components/download-button";
 import { Emblem } from "@/components/logo";
 import { Heading } from "@/components/ornament";
 import { StartSteps, type StartStep } from "@/components/start-steps";
+import { TrailerPlayer } from "@/components/trailer-player";
 import { VideoSlot } from "@/components/video-slot";
 import type { IconName } from "@/content/docs";
 import { JsonLd } from "@/lib/json-ld";
-import { REPO_URL, absoluteUrl, site, siteUrl } from "@/lib/site";
+import { GAMEPLAY_VIDEOS, REPO_URL, absoluteUrl, site, siteUrl } from "@/lib/site";
 
 // The rest of what changes: four short ones with an icon, then two with a picture.
 const changes: { term: string; icon: IconName; text: string }[] = [
@@ -228,6 +229,22 @@ export default function Home() {
 
       <section aria-label="Trailer" className="mx-auto max-w-6xl px-4 sm:px-6">
         <VideoSlot />
+      </section>
+
+      <section aria-labelledby="gameplay" className="mx-auto mt-28 max-w-6xl px-4 sm:px-6">
+        <Heading id="gameplay">Gameplay</Heading>
+        <div className="mt-10 grid gap-6 md:grid-cols-2">
+          {GAMEPLAY_VIDEOS.map((v) => (
+            <TrailerPlayer
+              key={v.id}
+              id={v.id}
+              title={v.title}
+              label={v.title}
+              poster={v.poster}
+              small
+            />
+          ))}
+        </div>
       </section>
 
       <section aria-labelledby="features" className="mx-auto mt-28 max-w-6xl px-4 sm:px-6">

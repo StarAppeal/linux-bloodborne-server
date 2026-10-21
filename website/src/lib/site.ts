@@ -84,6 +84,12 @@ export function absoluteUrl(path = "/"): string {
 export const TRAILER_YOUTUBE_ID = "MBlRNpzBqmo";
 export const youtubeWatchUrl = (id: string) => `https://www.youtube.com/watch?v=${id}`;
 
+// Longer gameplay videos, shown under the trailer on the landing page (and near the top of the README).
+export const GAMEPLAY_VIDEOS = [
+  { id: "2p2LF5YfhRM", title: "Gameplay showcase 1", poster: "/docs/chalice3-team.webp" },
+  { id: "JzaeJXrHaFE", title: "Gameplay showcase 2", poster: "/docs/compass-outside.webp" },
+] as const;
+
 /**
  * The trailer. NEXT_PUBLIC_TRAILER_YOUTUBE_ID may hold a YouTube video id or a full YouTube URL;
  * unset or not a video, the landing page plays TRAILER_YOUTUBE_ID.

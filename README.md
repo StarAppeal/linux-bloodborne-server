@@ -7,6 +7,12 @@ together through lamp trips, deaths, boss fights and chalice dungeons.
 
 **Website, download and guides: <https://bloodborne.seamlesscoop.dev>**
 
+**New here? Follow the [easy setup guide](https://bloodborne.seamlesscoop.dev/docs/install).**
+
+| [Trailer](https://www.youtube.com/watch?v=MBlRNpzBqmo) | [Gameplay showcase 1](https://youtu.be/2p2LF5YfhRM) | [Gameplay showcase 2](https://youtu.be/JzaeJXrHaFE) |
+| :---: | :---: | :---: |
+| [![Trailer](https://img.youtube.com/vi/MBlRNpzBqmo/hqdefault.jpg)](https://www.youtube.com/watch?v=MBlRNpzBqmo) | [![Gameplay showcase 1](https://img.youtube.com/vi/2p2LF5YfhRM/hqdefault.jpg)](https://youtu.be/2p2LF5YfhRM) | [![Gameplay showcase 2](https://img.youtube.com/vi/JzaeJXrHaFE/hqdefault.jpg)](https://youtu.be/JzaeJXrHaFE) |
+
 - [Download](https://bloodborne.seamlesscoop.dev/download): the newest release
 - [Install and set up](https://bloodborne.seamlesscoop.dev/docs/install): the setup, the
   launcher's Co-op page, reaching the host
