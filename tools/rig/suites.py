@@ -234,6 +234,9 @@ def trip_back(role: str, players: int, back: str) -> list[str]:
             f"wait-members {players} 300", f"sync {back}"]
 
 
+# Back at the first lamp with everyone, for the chapters after one that ends in the Dream.
+BACK_TO_WARD = [f"travel {CENTRAL_YHARNAM_LAMP}", "wait-members 3 300"]
+
 PARTY3 = ("host", "guest", "guest2")
 PARTY2 = ("host", "guest")
 
@@ -1320,6 +1323,25 @@ SUITES = {
                      "guest": trip_back("guest", 3, "ta-back") + ["wait 25",
                                                                   "expect-others-near 2 15"],
                      "guest2": ["sync ta-back", "wait 25", "expect-others-near 2 15"]},
+                    forbid=holds(PARTY3)),
+            # Kaniel's playtest 2026-10-21 (v1.1.2): Lisara's link went quiet while the host and
+            # krolebord arrived in Yahar'gul, so she fell off their map boards; their re-create
+            # took her for the host and ended. She arrived later, saw both, and neither saw her.
+            chapter("late-quiet3", "the host and one guest go to the Dream; the second guest's "
+                                   "link drops for 10 s while they are there, then it follows "
+                                   "them: every game sees both others",
+                    {"host": [f"travel {HUNTERS_DREAM}", "sync lq-there", "sync lq-cut",
+                              "wait-members 3 300", "sync lq-all", "wait 25",
+                              "expect-session 3", "expect-others-near 2 15", *BACK_TO_WARD],
+                     "guest": ["wait 5", f"travel {HUNTERS_DREAM}", "sync lq-there", "sync lq-cut",
+                               "wait-members 3 300", "sync lq-all", "wait 25",
+                               "expect-session 3", "expect-others-near 2 15", *BACK_TO_WARD],
+                     "guest2": ["sync lq-there", "wait 10", "cut-link 10", "wait 15",
+                                "sync lq-cut", f"travel {HUNTERS_DREAM}", "wait-members 3 300",
+                                "sync lq-all", "wait 25", "expect-session 3",
+                                "expect-others-near 2 15", *BACK_TO_WARD]},
+                    expect={role: [r"re-creating (?:\S+ )*rig_guest2 (?:\S+ )*on map 0x15000000"]
+                            for role in ("host", "guest")},
                     forbid=holds(PARTY3)),
             # guest-to-guest-hp (Kaniel 2026-10-14: lag between guests too): every direction on its
             # own, guest to guest and guest to host as well as host to guest (the plan runs it at

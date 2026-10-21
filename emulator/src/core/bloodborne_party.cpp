@@ -527,12 +527,21 @@ std::optional<std::string> FindOnlineIdIn(std::span<const u8> bytes,
     return found;
 }
 
-RecreatePlan PlanRecreate(std::span<const std::optional<std::string>> members,
+RecreatePlan PlanRecreate(std::span<const std::optional<std::string>> found,
                           std::span<const MemberMap> board, std::string_view self, u32 map,
                           const std::set<std::string>& handled) {
     RecreatePlan plan;
+    std::vector<std::optional<std::string>> members{found.begin(), found.end()};
+    for (auto& member : members) {
+        if (member && std::ranges::count(found, member) > 1) {
+            member.reset();
+        }
+    }
+    const auto others_on_board = static_cast<size_t>(std::ranges::count_if(
+        board, [&](const MemberMap& entry) { return entry.member != self; }));
     if (std::ranges::any_of(members, [](const auto& member) { return !member.has_value(); })) {
-        if (EveryoneElseOnMap(board, self, map)) {
+        // Everyone else in the session, not only those on the board: one off it is elsewhere.
+        if (others_on_board >= members.size() && EveryoneElseOnMap(board, self, map)) {
             for (size_t index = 0; index < members.size(); ++index) {
                 plan.now.push_back(index);
             }
@@ -566,6 +575,14 @@ RecreatePlan PlanRecreate(std::span<const std::optional<std::string>> members,
         plan.now = std::move(here);
     }
     return plan;
+}
+
+void BoardMembersSeen::Take(std::span<const MemberMap> board, std::string_view self) {
+    for (const MemberMap& entry : board) {
+        if (entry.member != self && std::ranges::find(names, entry.member) == names.end()) {
+            names.push_back(entry.member);
+        }
+    }
 }
 
 bool HostIsHere(std::optional<u32> host_map, std::span<const MemberMap> board,

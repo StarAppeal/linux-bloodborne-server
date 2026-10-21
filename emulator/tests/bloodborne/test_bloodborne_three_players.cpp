@@ -338,6 +338,43 @@ TEST(BloodborneThreePlayers, AKillStandsUntilEveryKillerTakesItBack) {
     EXPECT_FALSE(kills.Contains(268517532));
 }
 
+// Kaniel's playtest 2026-10-21 (v1.1.2): krolebord and the host went to Yahar'gul while Lisara
+// was in Hemwick. Her link went quiet and she fell off the map board, so the only name left to
+// look for was the host's, and her session member came out as the host's name too. Both looked
+// handled, the re-create ended, and when she arrived nobody made her character: she saw them,
+// they never saw her and her hits did nothing.
+TEST(BloodborneThreePlayers, AMemberOffTheBoardKeepsTheReCreateWaiting) {
+    const std::vector<MemberMap> quiet{{"me", 0x1c000000}, {"host", 0x1c000000}};
+    const std::vector<std::optional<std::string>> both_host{"host", "host"};
+    auto plan = PlanRecreate(both_host, quiet, "me", 0x1c000000, {"host"});
+    EXPECT_TRUE(plan.now.empty());
+    EXPECT_FALSE(plan.done) << "two members with one name: one of them is not known";
+
+    // A member not told apart: "everyone else is here" counts the session, not the board.
+    const std::vector<std::optional<std::string>> unknown{"host", std::nullopt};
+    plan = PlanRecreate(unknown, quiet, "me", 0x1c000000, {"host"});
+    EXPECT_TRUE(plan.now.empty()) << "creating her into a map she is not on drops her";
+    EXPECT_FALSE(plan.done);
+
+    const std::vector<MemberMap> arrived{
+        {"me", 0x1c000000}, {"host", 0x1c000000}, {"lisara", 0x1c000000}};
+    const std::vector<std::optional<std::string>> members{"host", "lisara"};
+    plan = PlanRecreate(members, arrived, "me", 0x1c000000, {"host"});
+    EXPECT_EQ(plan.now, (std::vector<size_t>{0, 1}));
+    EXPECT_TRUE(plan.done);
+}
+
+// The names to look for in session members: every member seen on the board in this session,
+// so one that drops off it for a moment is still found as itself.
+TEST(BloodborneThreePlayers, BoardNamesSeenStayCandidates) {
+    BoardMembersSeen seen;
+    seen.Take(std::vector<MemberMap>{{"me", 1}, {"host", 1}, {"lisara", 2}}, "me");
+    seen.Take(std::vector<MemberMap>{{"me", 1}, {"host", 1}}, "me");
+    EXPECT_EQ(seen.Names(), (std::vector<std::string>{"host", "lisara"}));
+    seen.Clear();
+    EXPECT_TRUE(seen.Names().empty());
+}
+
 // More of the same rules at their edges.
 TEST(BloodborneThreePlayers, ReCreationWaitsForMembersNotOnTheBoard) {
     const std::vector<MemberMap> board{{"me", 0x18010000}, {"guestA", 0x18010000}};
