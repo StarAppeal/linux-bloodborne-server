@@ -110,6 +110,9 @@ foreach ($exe in "bb-probe.exe", "bb-gpu-capabilities.exe", "bb-play.exe") {
     if (-not (Test-Path (Join-Path $bbport "out\$exe"))) { throw "No bbport\out\${exe}: build the port first (drop -SkipPortBuild)" }
 }
 if (-not (Test-Path (Join-Path $bbport "fsr4_shaders"))) {
+    # From the download cache the checkouts share: a fresh checkout copies the 189 files instead of
+    # downloading them again (about a minute and a half for v1.1.2).
+    $env:BB_FSR4_CACHE = (& (Join-Path $msys "usr\bin\cygpath.exe") -u (Join-Path $env:BB_ROOT "cache\fsr4")).Trim()
     try { Invoke-Clang64 "bash tools/fetch_fsr4_assets.sh" }
     catch { Write-Host "  FSR 4 assets could not be fetched: the release has FSR 3.1 only, FSR 4 downloads from the launcher" -ForegroundColor Yellow }
 }
@@ -139,7 +142,8 @@ if (-not $env:WINPYTHON) {
         Sort-Object { [int]($_.Directory.Name -replace '\D', '') } | Select-Object -Last 1
     if ($python) { $env:WINPYTHON = (& (Join-Path $msys "usr\bin\cygpath.exe") -u $python.FullName).Trim() }
 }
-Invoke-Clang64 "bash packaging/windows/package.sh"
+# Only the staged package: the release needs neither dist\bbport-windows.zip nor the playable copy.
+Invoke-Clang64 "BB_PACKAGE_STAGE_ONLY=1 bash packaging/windows/package.sh"
 $package = Join-Path $bbport "out\stage\bbport-windows"
 
 # --- 2. the server -----------------------------------------------------------------------------

@@ -42,6 +42,10 @@ UninstallDisplayIcon={app}\BLauncher.exe
 UninstallDisplayName={#AppName}
 Compression=lzma2
 SolidCompression=yes
+; Several threads, each on its own block of the solid stream (make-release.ps1 waited over a minute on
+; one thread for v1.1.2). The files a player gets are the same; the setup is a little larger.
+LZMAUseSeparateProcess=yes
+LZMANumBlockThreads=8
 ; The launcher's look (Kaniel 2026-10-17): Inno's dark style recolored to the launcher's slate,
 ; parchment and gold (setup_style.py; make-release.ps1 passes it as StyleFile) with its own title bar
 ; and frame, the hunter logo and night street (setup_art.py draws tools\release\art), gold titles from

@@ -179,6 +179,12 @@ if [[ -n $(find "$dest" \( -type d -iname fsr4vk -o -iname 'amd_fidelityfx_upsca
     echo 'an fsr4vk file ended up in the package; it must be downloaded by the launcher' >&2
     exit 1
 fi
+# BB_PACKAGE_STAGE_ONLY=1 (make-release.ps1): the staged package is all a release takes, so no zip
+# and no refresh of the playable copy (about a minute).
+if [[ ${BB_PACKAGE_STAGE_ONLY:-} == 1 ]]; then
+    du -sh "$dest"
+    exit 0
+fi
 mkdir -p dist
 rm -f dist/bbport-windows.zip
 # Forward slashes in every entry name (Compress-Archive of Windows PowerShell stored backslashes).
