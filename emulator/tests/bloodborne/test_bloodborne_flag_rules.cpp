@@ -396,6 +396,25 @@ TEST(BloodborneFlagRules, AHeadstoneIsLitByThisPlayersOwnLamps) {
               std::optional<bool>{true});
 }
 
+// Kaniel's play test 2026-10-21: a team guest's join reload (back as the host's phantom) gave its
+// game a new flag store with no lamp lit (rig: Central Yharnam's 12417810/30/70 on before, none
+// after), and every headstone said "no place to awaken". The guest keeps the lamps it had lit
+// and lights them again, with the team's world's; a lamp's light request (the flag after its
+// active flag) and other flags are no lamps.
+TEST(BloodborneFlagRules, AGuestLightsItsOwnAndTheTeamsLampsAgain) {
+    const std::set<s32> before{12417810, 12417830, 12417870, 12105030, 12410999};
+    const auto was_on = [&](s32 flag) { return before.contains(flag); };
+    EXPECT_EQ(LitHeadstoneLamps(was_on), (std::vector<s32>{12417810, 12417830, 12417870}));
+
+    const std::set<s32> kept{12417810, 12417830, 12417870};
+    const std::vector<s32> team{12407810, 12407811, 12417810, 12410999, 9401};
+    const std::set<s32> after{12417830};
+    const auto on = [&](s32 flag) { return after.contains(flag); };
+    EXPECT_EQ(LampsToRelight(kept, team, on), (std::vector<s32>{12407810, 12417810, 12417870}));
+    EXPECT_TRUE(LampsToRelight(kept, team, [](s32) { return true; }).empty());
+    EXPECT_TRUE(LampsToRelight({}, {}, on).empty());
+}
+
 // A held-item flag follows what this player holds: on while it holds the item (as 12100450 sets
 // it), off while it does not (a save that took the host's value from a team world got it back
 // wrong, so the boss, NPC or pickup never gave the item). Outside a party, the game's own.

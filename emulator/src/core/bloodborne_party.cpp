@@ -1028,6 +1028,36 @@ std::optional<bool> HeadstoneLampsLit(s32 flag, const std::function<bool(s32)>& 
     return std::nullopt;
 }
 
+std::vector<s32> LitHeadstoneLamps(const std::function<bool(s32)>& on) {
+    std::vector<s32> lit;
+    for (const HeadstoneLamps& headstone : DreamHeadstones) {
+        for (const s32 lamp : headstone.lamps) {
+            if (lamp != 0 && on(lamp)) {
+                lit.push_back(lamp);
+            }
+        }
+    }
+    std::ranges::sort(lit);
+    lit.erase(std::unique(lit.begin(), lit.end()), lit.end());
+    return lit;
+}
+
+std::vector<s32> LampsToRelight(const std::set<s32>& kept, std::span<const s32> team,
+                                const std::function<bool(s32)>& on) {
+    std::set<s32> lamps;
+    for (const s32 flag : kept) {
+        if (LampOfActiveFlag(flag) && !on(flag)) {
+            lamps.insert(flag);
+        }
+    }
+    for (const s32 flag : team) {
+        if (LampOfActiveFlag(flag) && !on(flag)) {
+            lamps.insert(flag);
+        }
+    }
+    return {lamps.begin(), lamps.end()};
+}
+
 std::vector<s32> GuestProgressFlags(bool guest, bool in_session, u32 map, bool dream_visited,
                                     bool workshop_opened) {
     constexpr u32 HuntersDream = 0x15000000;

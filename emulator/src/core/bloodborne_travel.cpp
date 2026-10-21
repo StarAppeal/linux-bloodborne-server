@@ -1562,6 +1562,48 @@ void GiveBackPhantomKeyItems() {
     }
 }
 
+// See LampsToRelight: the lamps this character has lit (cleared for a new character or another
+// save slot), and in a session a guest's lamps, its own and the team's world's, lit again when
+// they read off (its join's reload gives its game a new flag store with none lit).
+std::atomic<bool> kept_lamps_reset{false};
+[[maybe_unused]] const bool kept_lamps_registered = RegisterLifecycleReset(
+    "kept lamps", {Lifecycle::NewCharacter}, [] { kept_lamps_reset.store(true); });
+
+void KeepGuestLampsLit() {
+    static std::set<s32> kept;
+    static int kept_slot = -1;
+    const int slot = character_slot.load();
+    if (kept_lamps_reset.exchange(false) || slot != kept_slot) {
+        kept.clear();
+        kept_slot = slot;
+    }
+    if (!IsPartyGuestRole() || !InPartySession()) {
+        for (const s32 lamp : LitHeadstoneLamps(EventFlagOn)) {
+            kept.insert(lamp);
+        }
+        return;
+    }
+    const std::vector<s32> team = TeamWorldFlagsOnForGuest();
+    const std::vector<s32> relight = LampsToRelight(kept, team, EventFlagOn);
+    if (!relight.empty()) {
+        using SetFlag = void PS4_SYSV_ABI (*)(u64, s32, bool);
+        std::vector<s32> lamps;
+        std::string named;
+        for (const s32 flag : relight) {
+            reinterpret_cast<SetFlag>(image_base + PartyGhostSetEventFlagOffset)(0, flag, true);
+            lamps.push_back(*LampOfActiveFlag(flag));
+            named += fmt::format(" {}", flag);
+        }
+        ListLamps(lamps);
+        LOG_INFO(Debug,
+                 "Bloodborne party: lamps lit again for this guest (its own and the team's):{}",
+                 named);
+    }
+    for (const s32 lamp : LitHeadstoneLamps(EventFlagOn)) {
+        kept.insert(lamp);
+    }
+}
+
 // See HeadstoneLampsLit: every second in a party, each Dream headstone's flag follows this
 // player's own lamps (in a session its own event's set reaches it only over a flag message).
 void KeepHeadstoneFlagsOwn() {
@@ -1571,6 +1613,7 @@ void KeepHeadstoneFlagsOwn() {
         return;
     }
     checked_ms = now_ms;
+    KeepGuestLampsLit();
     for (const HeadstoneLamps& headstone : DreamHeadstones) {
         const bool lit = *HeadstoneLampsLit(headstone.flag, EventFlagOn);
         if (EventFlagOn(headstone.flag) == lit) {

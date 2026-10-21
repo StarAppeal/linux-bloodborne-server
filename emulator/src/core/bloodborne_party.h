@@ -828,6 +828,14 @@ std::optional<bool> HeldItemFlagFix(bool party_configured, bool flag_on, bool ho
 // A Dream headstone's flag (DreamHeadstones) as this player's own lamps make it: on while one of
 // them is lit (`on` reads a flag); nullopt for any other flag.
 std::optional<bool> HeadstoneLampsLit(s32 flag, const std::function<bool(s32)>& on);
+// The headstones' lamps (DreamHeadstones) this player has lit (`on` reads a flag).
+std::vector<s32> LitHeadstoneLamps(const std::function<bool(s32)>& on);
+// A party guest's lamps to light again: its own lit ones (`kept`) and the team's world's
+// (`team`, any of its flags), each a lamp's active flag that is off now. Kaniel's play test
+// 2026-10-21: a guest's join reload (it comes back as the host's phantom) gives its game a new
+// flag store with no lamp lit, and its headstones said "no place to awaken".
+std::vector<s32> LampsToRelight(const std::set<s32>& kept, std::span<const s32> team,
+                                const std::function<bool(s32)>& on);
 // Whether a load of the guest's world gets the kept world changes before its map items and
 // events: at home, and on a party trip (its own world loads while the session stays up).
 bool SetsGuestWorldChangesOnLoad(bool in_session, bool on_trip);

@@ -3388,7 +3388,8 @@ SCENARIOS["dream-headstones-team"] = {
     },
     "syncs": {name: {"chapter": "dream-headstones-team", "roles": ["host", "guest"]}
               for name in ("dream-both", "dream-seen")},
-    "expect": {"guest": [r"Co-op team lobby: the save plays in team \w+ as its guest"]},
+    "expect": {"guest": [r"Co-op team lobby: the save plays in team \w+ as its guest",
+                         r"lamps lit again for this guest \(its own and the team's\):.* 12417810"]},
     "forbid": {role: SESSION_HOLDS + [HEADSTONE_FLIPS,
                                       r"headstone flag 12105030 cleared: this player's lamps"]
                for role in ("host", "guest")},

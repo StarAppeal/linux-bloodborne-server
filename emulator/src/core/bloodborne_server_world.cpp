@@ -2013,6 +2013,14 @@ void ApplyTeamWorldOnLoad(bool trip) {
              store->blocks.size(), changed, world->version());
 }
 
+std::vector<s32> TeamWorldFlagsOnForGuest() {
+    std::scoped_lock lock{team_mutex};
+    if (!team_switch || team_host || !team_world || !team_world->exists()) {
+        return {};
+    }
+    return WorldFlagsOf(*team_world).on;
+}
+
 void TickTeamWorld(s64 now_ms) {
     if (!team_switch) {
         return;

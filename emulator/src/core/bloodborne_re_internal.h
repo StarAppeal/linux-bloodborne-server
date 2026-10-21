@@ -866,6 +866,9 @@ bool IsTeamTitleVerb(std::string_view verb);
 // `trip`: a guest's party trip, whose load gives its game its own saved world back: every block
 // takes the team's world again (TakesTeamWorldBlock).
 void ApplyTeamWorldOnLoad(bool trip = false);
+// A team guest's copy of the team's world: its flags on (none for the team's host, or with no
+// world yet).
+std::vector<s32> TeamWorldFlagsOnForGuest();
 // Puts lamps (entities, LampOfActiveFlag) on this character's lamp list, so they stay lit for it.
 void ListLamps(std::span<const s32> lamps);
 void TickTeamWorld(s64 now_ms);
