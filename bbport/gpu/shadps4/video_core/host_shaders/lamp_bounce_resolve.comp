@@ -3,9 +3,9 @@
 // 2c; vk_screen_lighting.h). lamp_shadows.comp leaves this frame's noisy bounce in `current` (rgb,
 // a: view z). Each pixel finds where it was last frame (the camera's reprojection), takes that
 // frame's average when the surface there is the same (its view z within 3%), blends this frame
-// in, keeps the result as the next history and adds it to light0. A 3x3 depth-aware mean of this
+// in, keeps the result as the next history and adds it to light0. A 5x5 depth-aware mean of this
 // frame stands in where nothing is reprojected (new pixels, disocclusions). Only one pixel of each
-// 2x2 traces a frame (a = -z for the others): what blends in is always that 3x3 mean.
+// 2x2 traces a frame (a = -z for the others): what blends in is always that 5x5 mean.
 #version 450
 #extension GL_EXT_samplerless_texture_functions : require
 
@@ -36,11 +36,12 @@ void main() {
         imageStore(next_img, pixel, vec4(0.0));
         return;
     }
-    // This frame, 3x3 over the same surface.
+    // This frame, 5x5 over the same surface (a quarter of it traced; Kaniel 2026-10-21, "bounced
+    // light also flickering a bit").
     vec3 spatial = vec3(0.0);
     float weights = 0.0;
-    for (int y = -1; y <= 1; ++y) {
-        for (int x = -1; x <= 1; ++x) {
+    for (int y = -2; y <= 2; ++y) {
+        for (int x = -2; x <= 2; ++x) {
             const vec4 s = texelFetch(current_tex, clamp(pixel + ivec2(x, y), ivec2(0), ivec2(size) - 1), 0);
             const float w = s.a > 0.0 && abs(s.a - z) < 0.03 * z ? 1.0 : 0.0;
             spatial += s.rgb * w;

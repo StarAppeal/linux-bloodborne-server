@@ -80,9 +80,12 @@ const float ShadowBias = 0.12;
 // of a shadow ray: their ray model is placed from the depth buffer within ~15% (the 2026-10-21
 // check), so a character would shadow itself, and a lamp it carries (the lantern) sits inside it.
 const float CharacterGap = 0.5;
-// A character's shadow only falls this far from it: by a lamp, a body shadowed the whole room behind
-// it (Kaniel 2026-10-21, "why is half of the room dark here?").
-const float CharacterShadowReach = 3.0;
+// A character's shadow only falls this far from it, fading out on the way, and takes at most this
+// much of a lamp's light: by a lamp, a body shadowed the whole room behind it, and with the game's
+// own shadow maps a character had several (Kaniel 2026-10-21, "half of the room is still dark",
+// "the character has a lot of shadows").
+const float CharacterShadowReach = 1.5;
+const float CharacterShadowStrength = 0.6;
 // A lamp sits in its own fitting (a lantern's glass, a sconce): the map only counts this far short
 // of it (2026-10-21: the lantern's own housing took its light off the floor beside it).
 const float LampGap = 0.4;
@@ -90,10 +93,11 @@ const float LampGap = 0.4;
 // map only counts from this far out (2026-10-21: the floor near the camera went dark).
 const float SurfaceGap = 0.35;
 
-// Whether something stands between `from` (on a surface with normal `n`) and `dir` x `dist`.
-bool Blocked(vec3 from, vec3 n, vec3 dir, float dist) {
+// How much of the light from `dir` x `dist` is blocked at `from` (on a surface with normal `n`): 1
+// behind the map, a share near a character (CharacterShadowReach), else 0.
+float Shadow(vec3 from, vec3 n, vec3 dir, float dist) {
     if (dist <= LampGap + SurfaceGap) {
-        return false;
+        return 0.0;
     }
     rayQueryEXT query;
     rayQueryInitializeEXT(query, scene, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT,
@@ -101,10 +105,10 @@ bool Blocked(vec3 from, vec3 n, vec3 dir, float dist) {
     while (rayQueryProceedEXT(query)) {
     }
     if (rayQueryGetIntersectionTypeEXT(query, true) == gl_RayQueryCommittedIntersectionTriangleEXT) {
-        return true;
+        return 1.0;
     }
     if (dist <= 2.0 * CharacterGap) {
-        return false;
+        return 0.0;
     }
     rayQueryEXT people;
     rayQueryInitializeEXT(people, scene, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT,
@@ -112,8 +116,16 @@ bool Blocked(vec3 from, vec3 n, vec3 dir, float dist) {
                           min(dist - CharacterGap, CharacterShadowReach));
     while (rayQueryProceedEXT(people)) {
     }
-    return rayQueryGetIntersectionTypeEXT(people, true) ==
-           gl_RayQueryCommittedIntersectionTriangleEXT;
+    if (rayQueryGetIntersectionTypeEXT(people, true) != gl_RayQueryCommittedIntersectionTriangleEXT) {
+        return 0.0;
+    }
+    const float t = rayQueryGetIntersectionTEXT(people, true);
+    return CharacterShadowStrength *
+           clamp(1.0 - (t - CharacterGap) / (CharacterShadowReach - CharacterGap), 0.0, 1.0);
+}
+
+bool Blocked(vec3 from, vec3 n, vec3 dir, float dist) {
+    return Shadow(from, n, dir, dist) > 0.5;
 }
 
 vec3 Corner(uint index) {
@@ -343,9 +355,11 @@ void main() {
         if (tmax <= ShadowBias) {
             continue;
         }
-        if (Blocked(wp, wn, to_lamp / dist, dist)) {
+        const float shadow = Shadow(wp, wn, to_lamp / dist, dist);
+        if (shadow > 0.0) {
             // What this lamp gave the pixel, in the game's light (its colour times its weight).
-            blocked += lamps[best_i[k] * 4 + 1].rgb * LampWeight(p, n, at.xyz, at.w, 1.0) * strength;
+            blocked += lamps[best_i[k] * 4 + 1].rgb * LampWeight(p, n, at.xyz, at.w, 1.0) * strength *
+                       shadow;
         }
     }
     // Part 2: what a glossy surface reflects, into the specular light.

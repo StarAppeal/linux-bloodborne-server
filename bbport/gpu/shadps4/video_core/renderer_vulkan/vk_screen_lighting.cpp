@@ -543,7 +543,7 @@ void ScreenLighting::OnLightingDone() {
     ResolvePush resolve{
         .proj = proj,
         .size = {float(w), float(h)},
-        .blend = 0.12f,
+        .blend = 0.06f, // ~16 frames (0.12 flickered)
         .history_valid = 0,
     };
     resolve.history_valid =
