@@ -12,7 +12,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import discord_notes as tool  # noqa: E402
 
 
-def release(body="**What's new**\n- A fix", **extra):
+def release(body="**What's new since v1.2.2**\n- A fix", **extra):
     data = {
         "tag_name": "v1.2.3",
         "name": "Yharnam Together v1.2.3",
@@ -40,6 +40,57 @@ class MarkdownTest(unittest.TestCase):
         self.assertEqual(tool.to_discord("a\r\nb"), "a\nb")
 
 
+V114 = """**What's new since v1.1.3**
+- The Impurity rune now works in co-op.
+- Fog walls are off on every map.
+
+Everyone, the host included, must update to v1.1.4.
+
+---
+
+Seamless co-op for Bloodborne on Bloodborne PC.
+
+1. Download `YharnamTogether-v1.1.4-setup.exe` and run it.
+
+Built from 0758ae9f. SHA-256 of the setup: `cade`
+"""
+
+V011 = """Seamless co-op for Bloodborne.
+
+### Getting started
+1. Download the zip.
+   - everyone runs `1 - SETUP`;
+
+### Fixed in v0.1.1
+- **Portraits now show.** Replace v0.1.0.
+
+### What's in this release
+- **Seamless co-op.** Join each other.
+- **Party death is always on**:
+  - A killing blow puts you down.
+
+### Known gaps
+- Joining occasionally stalls.
+
+Built from 2a89c38f1e3f (main).
+"""
+
+
+class ChangesTest(unittest.TestCase):
+    def test_only_the_change_list_stays(self):
+        self.assertEqual(tool.changes(V114),
+                         "**What's new**\n- The Impurity rune now works in co-op.\n- Fog walls are off on every map.")
+
+    def test_old_layout_keeps_fixed_and_whats_in_sections(self):
+        self.assertEqual(tool.changes(V011),
+                         "**Fixed in v0.1.1**\n- **Portraits now show.** Replace v0.1.0.\n\n"
+                         "**What's in this release**\n- **Seamless co-op.** Join each other.\n"
+                         "- **Party death is always on**:\n  - A killing blow puts you down.")
+
+    def test_notes_without_changes_are_empty(self):
+        self.assertEqual(tool.changes("Seamless co-op.\n\n1. Download the zip."), "")
+
+
 class SplitTest(unittest.TestCase):
     def test_short_text_is_one_chunk(self):
         self.assertEqual(tool.split("hello", 100), ["hello"])
@@ -60,29 +111,33 @@ class MessagesTest(unittest.TestCase):
     def test_one_embed_with_title_link_and_notes(self):
         [message] = tool.messages(release())
         [embed] = message["embeds"]
-        self.assertEqual(embed["title"], "Yharnam Together v1.2.3")
+        self.assertEqual(embed["title"], "v1.2.3 is out!")
         self.assertEqual(embed["url"], "https://github.com/o/r/releases/tag/v1.2.3")
         self.assertEqual(embed["description"], "**What's new**\n- A fix")
         self.assertEqual(embed["timestamp"], "2026-10-22T18:12:00Z")
         self.assertEqual(message["allowed_mentions"], {"parse": []})
+        self.assertNotIn("footer", embed)
 
     def test_pre_release_is_marked(self):
         [message] = tool.messages(release(prerelease=True))
         self.assertIn("Pre-release", message["embeds"][0]["footer"]["text"])
 
-    def test_title_falls_back_to_the_tag(self):
-        [message] = tool.messages(release(name=""))
-        self.assertEqual(message["embeds"][0]["title"], "v1.2.3")
+    def test_full_release_notes_post_only_the_changes(self):
+        [message] = tool.messages(release(body=V114, tag_name="v1.1.4"))
+        embed = message["embeds"][0]
+        self.assertEqual(embed["title"], "v1.1.4 is out!")
+        self.assertNotIn("Download", embed["description"])
+        self.assertNotIn("must update", embed["description"])
 
     def test_long_notes_split_within_discord_limits(self):
-        body = "\n".join(f"- change number {i} " + "y" * 60 for i in range(400))
+        body = "**What's new**\n" + "\n".join(f"- change number {i} " + "y" * 60 for i in range(400))
         sent = tool.messages(release(body=body))
         self.assertGreater(len(sent), 1)
         for message in sent:
             for embed in message["embeds"]:
                 self.assertLessEqual(len(embed["description"]), tool.DESCRIPTION_LIMIT)
                 self.assertLessEqual(len(embed.get("title", "")), tool.TITLE_LIMIT)
-            total = sum(len(e["description"]) + len(e.get("title", "")) + len(e["footer"]["text"])
+            total = sum(len(e["description"]) + len(e.get("title", "")) + len(e.get("footer", {}).get("text", ""))
                         for e in message["embeds"])
             self.assertLessEqual(total, tool.MESSAGE_LIMIT)
         self.assertIn("(continued)", sent[1]["embeds"][0]["footer"]["text"])
@@ -90,7 +145,7 @@ class MessagesTest(unittest.TestCase):
 
     def test_empty_notes(self):
         [message] = tool.messages(release(body=None))
-        self.assertEqual(message["embeds"][0]["description"], "No release notes.")
+        self.assertEqual(message["embeds"][0]["description"], "Download and setup on the release page.")
 
 
 class BackfillOrderTest(unittest.TestCase):

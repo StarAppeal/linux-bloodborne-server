@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Posts GitHub release notes to a Discord channel webhook, as embeds.
 
+Only the change list goes to Discord: the "What's new", "Fixed in" and "What's in this
+release" sections with their bullets, under "vX is out!". The setup steps, notes and build
+info stay on the GitHub release, which the title links to.
+
 Used by .github/workflows/discord-release-notes.yml. The webhook URL comes from the
 DISCORD_WEBHOOK environment variable and is never printed.
 
@@ -37,6 +41,34 @@ def to_discord(markdown: str) -> str:
     return text.strip()
 
 
+# A section heading: "**What's new since v1.1.3**" or "### Fixed in v0.1.1".
+SECTION = re.compile(r"^(?:#{1,6}\s+|\*\*)(what's new|what’s new|fixed in|what's in this release)(.*?)(?:\*\*)?\s*$", re.I)
+
+
+def changes(markdown: str) -> str:
+    """Just the release's change list: each change section's heading and its bullets."""
+    lines = (markdown or "").replace("\r\n", "\n").split("\n")
+    out, inside = [], False
+    for line in lines:
+        match = SECTION.match(line.strip())
+        if match:
+            title = match.group(1)[0].upper() + match.group(1)[1:]
+            rest = match.group(2).strip()
+            if rest and not rest.lower().startswith("since"):
+                title += " " + rest
+            if out:
+                out.append("")
+            out.append(f"**{title}**")
+            inside = True
+        elif inside and (line.lstrip().startswith(("- ", "* ")) or (line.startswith("  ") and line.strip())):
+            out.append(line.rstrip())
+        elif inside and out and out[-1].startswith("**") and not line.strip():
+            continue  # a blank line between the heading and its first bullet
+        else:
+            inside = False
+    return "\n".join(out)
+
+
 def split(text: str, limit: int) -> list[str]:
     """Pieces of at most `limit` characters, cut at line ends where a line fits."""
     chunks, current = [], ""
@@ -60,16 +92,18 @@ def split(text: str, limit: int) -> list[str]:
 
 def messages(rel: dict) -> list[dict]:
     """The webhook payloads for one release: one embed each, the first with title and link."""
-    title = (rel.get("name") or rel["tag_name"])[:TITLE_LIMIT]
-    footer = rel["tag_name"] + (" · Pre-release" if rel.get("prerelease") else "")
-    body = to_discord(rel.get("body") or "") or "No release notes."
+    title = f"{rel['tag_name']} is out!"[:TITLE_LIMIT]
+    footer = "Pre-release" if rel.get("prerelease") else ""
+    body = to_discord(changes(rel.get("body") or "")) or "Download and setup on the release page."
     # Leave room for the title and footer inside the 6000 total.
     room = min(DESCRIPTION_LIMIT, MESSAGE_LIMIT - TITLE_LIMIT - len(footer) - 32)
     parts = split(body, room)
     out = []
     for i, part in enumerate(parts):
-        embed = {"description": part, "color": COLOR,
-                 "footer": {"text": footer if i == 0 else f"{footer} (continued)"}}
+        embed = {"description": part, "color": COLOR}
+        note = footer if i == 0 else " ".join(filter(None, [footer, "(continued)"]))
+        if note:
+            embed["footer"] = {"text": note}
         if i == 0:
             embed["title"] = title
             embed["url"] = rel["html_url"]
