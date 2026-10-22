@@ -100,6 +100,7 @@ private:
     void Free(Buffer& buffer);
     void Drop();
     bool Build(const BbMapArt::AreaMesh& mesh);
+    bool MakeCharacterParts();
 
     const Instance& instance;
     Scheduler& scheduler;

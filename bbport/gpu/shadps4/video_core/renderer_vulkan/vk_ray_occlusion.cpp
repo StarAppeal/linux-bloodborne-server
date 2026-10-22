@@ -143,6 +143,8 @@ void RayOcclusion::Update() {
 
 bool RayOcclusion::Build(const BbMapArt::AreaMesh& mesh) {
     const auto start = std::chrono::steady_clock::now();
+    // The characters' parts first: in video memory while there is room (MakeCharacterParts).
+    MakeCharacterParts();
     const u32 vertices = u32(mesh.positions.size() / 3);
     const u32 triangles = u32(mesh.indices.size() / 3);
     if (vertices == 0 || triangles == 0) {
@@ -215,7 +217,8 @@ bool RayOcclusion::Build(const BbMapArt::AreaMesh& mesh) {
     };
     vk::AccelerationStructureBuildGeometryInfoKHR blas_info{
         .type = vk::AccelerationStructureTypeKHR::eBottomLevel,
-        .flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace,
+        .flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace |
+                 vk::BuildAccelerationStructureFlagBitsKHR::eAllowCompaction,
         .mode = vk::BuildAccelerationStructureModeKHR::eBuild,
         .geometryCount = 1,
         .pGeometries = &geometry,
@@ -314,24 +317,76 @@ bool RayOcclusion::Build(const BbMapArt::AreaMesh& mesh) {
         .dstAccessMask = vk::AccessFlagBits2::eShaderRead,
     };
     cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &uploaded});
+    // Its compacted size asked for once built (Kaniel 2026-10-22: graphics memory for the rest).
+    auto sizes = Check(device.createQueryPoolUnique({
+        .queryType = vk::QueryType::eAccelerationStructureCompactedSizeKHR,
+        .queryCount = 1,
+    }));
+    cmdbuf.resetQueryPool(*sizes, 0, 1);
     cmdbuf.buildAccelerationStructuresKHR(blas_info, &blas_range);
-    // The top level reads the bottom one, and reuses the scratch.
+    // The top level (and the size query) read the bottom one; the top level reuses the scratch.
     const vk::MemoryBarrier2 between{
         .srcStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR,
         .srcAccessMask = vk::AccessFlagBits2::eAccelerationStructureWriteKHR,
-        .dstStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR,
+        .dstStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR |
+                        vk::PipelineStageFlagBits2::eAccelerationStructureCopyKHR,
         .dstAccessMask = vk::AccessFlagBits2::eAccelerationStructureReadKHR |
                          vk::AccessFlagBits2::eAccelerationStructureWriteKHR,
     };
     cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &between});
-    cmdbuf.buildAccelerationStructuresKHR(tlas_info, &tlas_range);
+    cmdbuf.writeAccelerationStructuresPropertiesKHR(
+        *blas, vk::QueryType::eAccelerationStructureCompactedSizeKHR, *sizes, 0);
+    scheduler.Finish();
+    vk::DeviceSize compact_size = 0;
+    const auto got = device.getQueryPoolResults(*sizes, 0, 1, sizeof(compact_size), &compact_size,
+                                                sizeof(compact_size),
+                                                vk::QueryResultFlagBits::e64 | vk::QueryResultFlagBits::eWait);
+    const vk::DeviceSize full_size = blas_sizes.accelerationStructureSize;
+    auto copy_cmdbuf = scheduler.CommandBuffer();
+    if (got == vk::Result::eSuccess && compact_size > 0 && compact_size < full_size) {
+        Buffer compact_buffer = MakeBuffer(compact_size, Usage::eAccelerationStructureStorageKHR, false);
+        if (compact_buffer.buffer) {
+            auto compact = Check(device.createAccelerationStructureKHRUnique({
+                .buffer = compact_buffer.buffer,
+                .size = compact_size,
+                .type = vk::AccelerationStructureTypeKHR::eBottomLevel,
+            }));
+            copy_cmdbuf.copyAccelerationStructureKHR({
+                .src = *blas,
+                .dst = *compact,
+                .mode = vk::CopyAccelerationStructureModeKHR::eCompact,
+            });
+            const vk::MemoryBarrier2 copied{
+                .srcStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureCopyKHR,
+                .srcAccessMask = vk::AccessFlagBits2::eAccelerationStructureWriteKHR,
+                .dstStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR,
+                .dstAccessMask = vk::AccessFlagBits2::eAccelerationStructureReadKHR,
+            };
+            copy_cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &copied});
+            // The full one goes once the copy is done.
+            scheduler.DeferOperation([this, old = std::make_shared<vk::UniqueAccelerationStructureKHR>(
+                                                std::move(blas)),
+                                      old_buffer = blas_buffer]() mutable {
+                old->reset();
+                Free(old_buffer);
+            });
+            blas = std::move(compact);
+            blas_buffer = compact_buffer;
+            placed.accelerationStructureReference =
+                device.getAccelerationStructureAddressKHR({.accelerationStructure = *blas});
+            std::memcpy(instances.mapped, &placed, sizeof(placed));
+            std::printf("Ray occlusion: compacted %.1f MB to %.1f MB\n", double(full_size) / 1e6,
+                        double(compact_size) / 1e6);
+        }
+    }
+    copy_cmdbuf.buildAccelerationStructuresKHR(tlas_info, &tlas_range);
     const vk::MemoryBarrier2 to_trace{
         .srcStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR,
         .srcAccessMask = vk::AccessFlagBits2::eAccelerationStructureWriteKHR,
         .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
         .dstAccessMask = vk::AccessFlagBits2::eAccelerationStructureReadKHR,
     };
-    cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &to_trace});
+    copy_cmdbuf.pipelineBarrier2({.memoryBarrierCount = 1, .pMemoryBarriers = &to_trace});
     scheduler.DeferOperation([this, free_inputs, scratch]() mutable {
         free_inputs();
         Free(scratch);
@@ -372,6 +427,166 @@ void RayOcclusion::DumpCharacters(const std::string& path) {
     });
 }
 
+/// Kaniel 2026-10-22: the characters' buffers, structures and pipelines, made once and before the
+/// map's structures (made after them, with graphics memory tight, they landed in host memory).
+bool RayOcclusion::MakeCharacterParts() {
+    if (char_pipeline || char_failed) {
+        return !char_failed;
+    }
+    const auto device = instance.GetDevice();
+    using Usage = vk::BufferUsageFlagBits;
+    const auto input = Usage::eAccelerationStructureBuildInputReadOnlyKHR;
+    const u32 max_triangles = MaxCharacterCorners;
+    auto char_geometry = [&](vk::DeviceAddress vertices, vk::DeviceAddress index_data) {
+        return vk::AccelerationStructureGeometryKHR{
+            .geometryType = vk::GeometryTypeKHR::eTriangles,
+            .geometry = {.triangles = vk::AccelerationStructureGeometryTrianglesDataKHR{
+                             .vertexFormat = vk::Format::eR32G32B32Sfloat,
+                             .vertexData = {.deviceAddress = vertices},
+                             .vertexStride = 3 * sizeof(float),
+                             .maxVertex = MaxCharacterCorners - 1,
+                             .indexType = vk::IndexType::eUint32,
+                             .indexData = {.deviceAddress = index_data},
+                         }},
+            .flags = vk::GeometryFlagBitsKHR::eOpaque,
+        };
+    };
+    // Made once: the inputs (three sets), the corners in the world, the structures.
+    for (u32 i = 0; i < FrameSlots; ++i) {
+        char_source[i] = MakeBuffer(MaxCharacterCorners * sizeof(u32), Usage::eStorageBuffer, true);
+        char_draw_of[i] = MakeBuffer(MaxCharacterCorners * sizeof(u32), Usage::eStorageBuffer, true);
+        char_indices[i] = MakeBuffer(3ull * MaxCharacterCorners * sizeof(u32), input, true);
+        frame_instances[i] = MakeBuffer(2 * sizeof(vk::AccelerationStructureInstanceKHR), input, true);
+    }
+    // In video memory (written and built from each frame); host visible only for
+    // BB_LIGHTING_DUMP, which writes the corners out (DumpCharacters).
+    char_world = MakeBuffer(3ull * MaxCharacterCorners * sizeof(float),
+                            input | Usage::eStorageBuffer,
+                            std::getenv("BB_LIGHTING_DUMP") != nullptr);
+    char_factor = MakeBuffer(MaxCharacterDraws * sizeof(u32),
+                             Usage::eStorageBuffer | Usage::eTransferDst, false);
+    char_kept = MakeBuffer(3ull * MaxCharacterCorners * sizeof(u32),
+                           input | Usage::eStorageBuffer, false);
+    const auto geometry = char_geometry(0, 0);
+    vk::AccelerationStructureBuildGeometryInfoKHR info{
+        .type = vk::AccelerationStructureTypeKHR::eBottomLevel,
+        .flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild,
+        .mode = vk::BuildAccelerationStructureModeKHR::eBuild,
+        .geometryCount = 1,
+        .pGeometries = &geometry,
+    };
+    const auto blas_sizes = device.getAccelerationStructureBuildSizesKHR(
+        vk::AccelerationStructureBuildTypeKHR::eDevice, info, max_triangles);
+    const vk::AccelerationStructureGeometryKHR instances_geometry{
+        .geometryType = vk::GeometryTypeKHR::eInstances,
+        .geometry = {.instances = vk::AccelerationStructureGeometryInstancesDataKHR{}},
+        .flags = vk::GeometryFlagBitsKHR::eOpaque,
+    };
+    vk::AccelerationStructureBuildGeometryInfoKHR top{
+        .type = vk::AccelerationStructureTypeKHR::eTopLevel,
+        .flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace,
+        .mode = vk::BuildAccelerationStructureModeKHR::eBuild,
+        .geometryCount = 1,
+        .pGeometries = &instances_geometry,
+    };
+    const auto top_sizes = device.getAccelerationStructureBuildSizesKHR(
+        vk::AccelerationStructureBuildTypeKHR::eDevice, top, 2u);
+    char_blas_buffer = MakeBuffer(blas_sizes.accelerationStructureSize,
+                                  Usage::eAccelerationStructureStorageKHR, false);
+    frame_tlas_buffer = MakeBuffer(top_sizes.accelerationStructureSize,
+                                   Usage::eAccelerationStructureStorageKHR, false);
+    const u64 align = instance.AccelerationScratchAlignment();
+    frame_scratch = MakeBuffer(blas_sizes.buildScratchSize + top_sizes.buildScratchSize + 2 * align,
+                               Usage::eStorageBuffer, false);
+    bool ok = char_world.buffer && char_world.address && char_kept.buffer && char_factor.buffer && char_blas_buffer.buffer &&
+              frame_tlas_buffer.buffer &&
+              frame_scratch.buffer;
+    for (u32 i = 0; i < FrameSlots; ++i) {
+        ok = ok && char_source[i].mapped && char_draw_of[i].mapped && char_indices[i].mapped &&
+             frame_instances[i].mapped;
+    }
+    if (!ok) {
+        char_failed = true;
+        std::printf("Ray occlusion: no memory for the characters\n");
+        return false;
+    }
+    char_blas = Check(device.createAccelerationStructureKHRUnique({
+        .buffer = char_blas_buffer.buffer,
+        .size = blas_sizes.accelerationStructureSize,
+        .type = vk::AccelerationStructureTypeKHR::eBottomLevel,
+    }));
+    frame_tlas = Check(device.createAccelerationStructureKHRUnique({
+        .buffer = frame_tlas_buffer.buffer,
+        .size = top_sizes.accelerationStructureSize,
+        .type = vk::AccelerationStructureTypeKHR::eTopLevel,
+    }));
+    const std::array<vk::DescriptorSetLayoutBinding, 6> bindings{{
+        {0, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
+        {1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
+        {2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
+        {3, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
+        {4, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute},
+        {5, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
+    }};
+    char_desc_layout = Check(device.createDescriptorSetLayoutUnique({
+        .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
+        .bindingCount = u32(bindings.size()),
+        .pBindings = bindings.data(),
+    }));
+    const vk::PushConstantRange push{.stageFlags = vk::ShaderStageFlagBits::eCompute,
+                                     .offset = 0,
+                                     .size = 80};
+    char_layout = Check(device.createPipelineLayoutUnique({
+        .setLayoutCount = 1,
+        .pSetLayouts = &*char_desc_layout,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &push,
+    }));
+    const auto compute = [&](std::span<const u32> code) {
+        const auto module = CompileSPV(code, device);
+        auto pipeline = Check(device.createComputePipelineUnique(
+            {}, vk::ComputePipelineCreateInfo{
+                    .stage = {.stage = vk::ShaderStageFlagBits::eCompute,
+                              .module = module,
+                              .pName = "main"},
+                    .layout = *char_layout,
+                }));
+        device.destroyShaderModule(module);
+        return pipeline;
+    };
+    char_pipeline = compute(CHARACTER_WORLD_COMP);
+    char_ratio_pipeline = compute(CHARACTER_RATIO_COMP);
+    const std::array<vk::DescriptorSetLayoutBinding, 3> tri_bindings{{
+        {0, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
+        {1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
+        {2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
+    }};
+    char_tri_desc_layout = Check(device.createDescriptorSetLayoutUnique({
+        .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
+        .bindingCount = u32(tri_bindings.size()),
+        .pBindings = tri_bindings.data(),
+    }));
+    const vk::PushConstantRange tri_push{.stageFlags = vk::ShaderStageFlagBits::eCompute,
+                                         .offset = 0,
+                                         .size = sizeof(u32)};
+    char_tri_layout = Check(device.createPipelineLayoutUnique({
+        .setLayoutCount = 1,
+        .pSetLayouts = &*char_tri_desc_layout,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &tri_push,
+    }));
+    const auto module = CompileSPV(CHARACTER_TRIANGLES_COMP, device);
+    char_tri_pipeline = Check(device.createComputePipelineUnique(
+        {}, vk::ComputePipelineCreateInfo{
+                .stage = {.stage = vk::ShaderStageFlagBits::eCompute,
+                          .module = module,
+                          .pName = "main"},
+                .layout = *char_tri_layout,
+            }));
+    device.destroyShaderModule(module);
+    return true;
+}
+
 void RayOcclusion::BuildCharacters(vk::Buffer positions, const std::vector<u32>& source,
                                    const std::vector<u32>& indices,
                                    const std::vector<u32>& draw_of, u32 draws,
@@ -402,140 +617,8 @@ void RayOcclusion::BuildCharacters(vk::Buffer positions, const std::vector<u32>&
             .flags = vk::GeometryFlagBitsKHR::eOpaque,
         };
     };
-    if (!char_pipeline) {
-        // Made once: the inputs (three sets), the corners in the world, the structures.
-        for (u32 i = 0; i < FrameSlots; ++i) {
-            char_source[i] = MakeBuffer(MaxCharacterCorners * sizeof(u32), Usage::eStorageBuffer, true);
-            char_draw_of[i] = MakeBuffer(MaxCharacterCorners * sizeof(u32), Usage::eStorageBuffer, true);
-            char_indices[i] = MakeBuffer(3ull * MaxCharacterCorners * sizeof(u32), input, true);
-            frame_instances[i] = MakeBuffer(2 * sizeof(vk::AccelerationStructureInstanceKHR), input, true);
-        }
-        // In video memory (written and built from each frame); host visible only for
-        // BB_LIGHTING_DUMP, which writes the corners out (DumpCharacters).
-        char_world = MakeBuffer(3ull * MaxCharacterCorners * sizeof(float),
-                                input | Usage::eStorageBuffer,
-                                std::getenv("BB_LIGHTING_DUMP") != nullptr);
-        char_factor = MakeBuffer(MaxCharacterDraws * sizeof(u32),
-                                 Usage::eStorageBuffer | Usage::eTransferDst, false);
-        char_kept = MakeBuffer(3ull * MaxCharacterCorners * sizeof(u32),
-                               input | Usage::eStorageBuffer, false);
-        const auto geometry = char_geometry(0, 0);
-        vk::AccelerationStructureBuildGeometryInfoKHR info{
-            .type = vk::AccelerationStructureTypeKHR::eBottomLevel,
-            .flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild,
-            .mode = vk::BuildAccelerationStructureModeKHR::eBuild,
-            .geometryCount = 1,
-            .pGeometries = &geometry,
-        };
-        const auto blas_sizes = device.getAccelerationStructureBuildSizesKHR(
-            vk::AccelerationStructureBuildTypeKHR::eDevice, info, max_triangles);
-        const vk::AccelerationStructureGeometryKHR instances_geometry{
-            .geometryType = vk::GeometryTypeKHR::eInstances,
-            .geometry = {.instances = vk::AccelerationStructureGeometryInstancesDataKHR{}},
-            .flags = vk::GeometryFlagBitsKHR::eOpaque,
-        };
-        vk::AccelerationStructureBuildGeometryInfoKHR top{
-            .type = vk::AccelerationStructureTypeKHR::eTopLevel,
-            .flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace,
-            .mode = vk::BuildAccelerationStructureModeKHR::eBuild,
-            .geometryCount = 1,
-            .pGeometries = &instances_geometry,
-        };
-        const auto top_sizes = device.getAccelerationStructureBuildSizesKHR(
-            vk::AccelerationStructureBuildTypeKHR::eDevice, top, 2u);
-        char_blas_buffer = MakeBuffer(blas_sizes.accelerationStructureSize,
-                                      Usage::eAccelerationStructureStorageKHR, false);
-        frame_tlas_buffer = MakeBuffer(top_sizes.accelerationStructureSize,
-                                       Usage::eAccelerationStructureStorageKHR, false);
-        const u64 align = instance.AccelerationScratchAlignment();
-        frame_scratch = MakeBuffer(blas_sizes.buildScratchSize + top_sizes.buildScratchSize + 2 * align,
-                                   Usage::eStorageBuffer, false);
-        bool ok = char_world.buffer && char_world.address && char_kept.buffer && char_factor.buffer && char_blas_buffer.buffer &&
-                  frame_tlas_buffer.buffer &&
-                  frame_scratch.buffer;
-        for (u32 i = 0; i < FrameSlots; ++i) {
-            ok = ok && char_source[i].mapped && char_draw_of[i].mapped && char_indices[i].mapped &&
-                 frame_instances[i].mapped;
-        }
-        if (!ok) {
-            char_failed = true;
-            std::printf("Ray occlusion: no memory for the characters\n");
-            return;
-        }
-        char_blas = Check(device.createAccelerationStructureKHRUnique({
-            .buffer = char_blas_buffer.buffer,
-            .size = blas_sizes.accelerationStructureSize,
-            .type = vk::AccelerationStructureTypeKHR::eBottomLevel,
-        }));
-        frame_tlas = Check(device.createAccelerationStructureKHRUnique({
-            .buffer = frame_tlas_buffer.buffer,
-            .size = top_sizes.accelerationStructureSize,
-            .type = vk::AccelerationStructureTypeKHR::eTopLevel,
-        }));
-        const std::array<vk::DescriptorSetLayoutBinding, 6> bindings{{
-            {0, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
-            {1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
-            {2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
-            {3, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
-            {4, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute},
-            {5, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
-        }};
-        char_desc_layout = Check(device.createDescriptorSetLayoutUnique({
-            .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
-            .bindingCount = u32(bindings.size()),
-            .pBindings = bindings.data(),
-        }));
-        const vk::PushConstantRange push{.stageFlags = vk::ShaderStageFlagBits::eCompute,
-                                         .offset = 0,
-                                         .size = 80};
-        char_layout = Check(device.createPipelineLayoutUnique({
-            .setLayoutCount = 1,
-            .pSetLayouts = &*char_desc_layout,
-            .pushConstantRangeCount = 1,
-            .pPushConstantRanges = &push,
-        }));
-        const auto compute = [&](std::span<const u32> code) {
-            const auto module = CompileSPV(code, device);
-            auto pipeline = Check(device.createComputePipelineUnique(
-                {}, vk::ComputePipelineCreateInfo{
-                        .stage = {.stage = vk::ShaderStageFlagBits::eCompute,
-                                  .module = module,
-                                  .pName = "main"},
-                        .layout = *char_layout,
-                    }));
-            device.destroyShaderModule(module);
-            return pipeline;
-        };
-        char_pipeline = compute(CHARACTER_WORLD_COMP);
-        char_ratio_pipeline = compute(CHARACTER_RATIO_COMP);
-        const std::array<vk::DescriptorSetLayoutBinding, 3> tri_bindings{{
-            {0, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
-            {1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
-            {2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
-        }};
-        char_tri_desc_layout = Check(device.createDescriptorSetLayoutUnique({
-            .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
-            .bindingCount = u32(tri_bindings.size()),
-            .pBindings = tri_bindings.data(),
-        }));
-        const vk::PushConstantRange tri_push{.stageFlags = vk::ShaderStageFlagBits::eCompute,
-                                             .offset = 0,
-                                             .size = sizeof(u32)};
-        char_tri_layout = Check(device.createPipelineLayoutUnique({
-            .setLayoutCount = 1,
-            .pSetLayouts = &*char_tri_desc_layout,
-            .pushConstantRangeCount = 1,
-            .pPushConstantRanges = &tri_push,
-        }));
-        const auto module = CompileSPV(CHARACTER_TRIANGLES_COMP, device);
-        char_tri_pipeline = Check(device.createComputePipelineUnique(
-            {}, vk::ComputePipelineCreateInfo{
-                    .stage = {.stage = vk::ShaderStageFlagBits::eCompute,
-                              .module = module,
-                              .pName = "main"},
-                    .layout = *char_tri_layout,
-                }));
-        device.destroyShaderModule(module);
+    if (!MakeCharacterParts()) {
+        return;
     }
     const u32 slot = char_slot;
     char_slot = (char_slot + 1) % FrameSlots;
