@@ -38,6 +38,8 @@ RayOcclusion::~RayOcclusion() {
     Free(index_buffer);
     Free(color_buffer);
     Free(position_buffer);
+    Free(tri_patch_buffer);
+    Free(patch_buffer);
     frame_tlas.reset();
     char_blas.reset();
     for (u32 i = 0; i < FrameSlots; ++i) {
@@ -104,6 +106,8 @@ void RayOcclusion::Drop() {
     Free(index_buffer);
     Free(color_buffer);
     Free(position_buffer);
+    Free(tri_patch_buffer);
+    Free(patch_buffer);
     built_map = 0;
 }
 
@@ -153,25 +157,34 @@ bool RayOcclusion::Build(const BbMapArt::AreaMesh& mesh) {
     const vk::DeviceSize position_bytes = mesh.positions.size() * sizeof(float);
     const vk::DeviceSize index_bytes = mesh.indices.size() * sizeof(u32);
     const vk::DeviceSize color_bytes = std::max<std::size_t>(mesh.colors.size(), 1) * sizeof(u32);
+    // The patches (none: every triangle reads 0, its corners' colours).
+    const vk::DeviceSize tri_patch_bytes = std::size_t(triangles) * sizeof(u32);
+    const vk::DeviceSize patch_bytes = std::max<std::size_t>(mesh.patches.size(), 1) * sizeof(u32);
+    const bool patched = mesh.tri_patch.size() == triangles;
     position_buffer = MakeBuffer(position_bytes,
                                  input | Usage::eStorageBuffer | Usage::eTransferDst, false);
     index_buffer =
         MakeBuffer(index_bytes, input | Usage::eStorageBuffer | Usage::eTransferDst, false);
     color_buffer = MakeBuffer(color_bytes, Usage::eStorageBuffer | Usage::eTransferDst, false);
+    tri_patch_buffer = MakeBuffer(tri_patch_bytes, Usage::eStorageBuffer | Usage::eTransferDst, false);
+    patch_buffer = MakeBuffer(patch_bytes, Usage::eStorageBuffer | Usage::eTransferDst, false);
     Buffer& positions = position_buffer;
     Buffer& indices = index_buffer;
     Buffer instances = MakeBuffer(sizeof(vk::AccelerationStructureInstanceKHR), input, true);
-    Buffer upload = MakeBuffer(position_bytes + index_bytes + color_bytes, Usage::eTransferSrc, true);
+    const vk::DeviceSize patch_at = position_bytes + index_bytes + color_bytes;
+    Buffer upload = MakeBuffer(patch_at + tri_patch_bytes + patch_bytes, Usage::eTransferSrc, true);
     auto free_inputs = [this, instances, upload]() mutable {
         Free(instances);
         Free(upload);
     };
-    if (!positions.buffer || !indices.buffer || !color_buffer.buffer || !instances.mapped ||
-        !upload.mapped || mesh.colors.size() != vertices) {
+    if (!positions.buffer || !indices.buffer || !color_buffer.buffer || !tri_patch_buffer.buffer ||
+        !patch_buffer.buffer || !instances.mapped || !upload.mapped || mesh.colors.size() != vertices) {
         free_inputs();
         Free(position_buffer);
         Free(index_buffer);
         Free(color_buffer);
+        Free(tri_patch_buffer);
+        Free(patch_buffer);
         return false;
     }
     auto* staged = static_cast<u8*>(upload.mapped);
@@ -179,6 +192,13 @@ bool RayOcclusion::Build(const BbMapArt::AreaMesh& mesh) {
     std::memcpy(staged + position_bytes, mesh.indices.data(), index_bytes);
     std::memcpy(staged + position_bytes + index_bytes, mesh.colors.data(),
                 mesh.colors.size() * sizeof(u32));
+    if (patched) {
+        std::memcpy(staged + patch_at, mesh.tri_patch.data(), tri_patch_bytes);
+        std::memcpy(staged + patch_at + tri_patch_bytes, mesh.patches.data(),
+                    mesh.patches.size() * sizeof(u32));
+    } else {
+        std::memset(staged + patch_at, 0, tri_patch_bytes);
+    }
 
     // Bottom level: the map's triangles, opaque (the first hit ends a ray).
     const vk::AccelerationStructureGeometryKHR geometry{
@@ -283,6 +303,9 @@ bool RayOcclusion::Build(const BbMapArt::AreaMesh& mesh) {
                       vk::BufferCopy{position_bytes, 0, index_bytes});
     cmdbuf.copyBuffer(upload.buffer, color_buffer.buffer,
                       vk::BufferCopy{position_bytes + index_bytes, 0, color_bytes});
+    cmdbuf.copyBuffer(upload.buffer, tri_patch_buffer.buffer, vk::BufferCopy{patch_at, 0, tri_patch_bytes});
+    cmdbuf.copyBuffer(upload.buffer, patch_buffer.buffer,
+                      vk::BufferCopy{patch_at + tri_patch_bytes, 0, patch_bytes});
     const vk::MemoryBarrier2 uploaded{
         .srcStageMask = vk::PipelineStageFlagBits2::eAllTransfer,
         .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
@@ -314,8 +337,9 @@ bool RayOcclusion::Build(const BbMapArt::AreaMesh& mesh) {
         Free(scratch);
     });
     built_map = map;
-    std::printf("Ray occlusion: map %08x, %u triangles, %.1f MB, recorded in %.1f ms\n", map,
-                triangles, double(blas_sizes.accelerationStructureSize) / 1e6,
+    std::printf("Ray occlusion: map %08x, %u triangles, %.1f MB, %zu patch colours, recorded in "
+                "%.1f ms\n", map, triangles, double(blas_sizes.accelerationStructureSize) / 1e6,
+                mesh.patches.size(),
                 std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
                     .count());
     std::fflush(stdout);

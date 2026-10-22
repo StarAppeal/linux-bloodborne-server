@@ -352,7 +352,7 @@ void ScreenLighting::OnLightingDone() {
     }
     const auto device = instance.GetDevice();
     if (!lamp_pipeline) {
-        const std::array<vk::DescriptorSetLayoutBinding, 13> bindings{{
+        const std::array<vk::DescriptorSetLayoutBinding, 15> bindings{{
             {0, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute},
             {1, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute},
             {2, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute},
@@ -366,6 +366,8 @@ void ScreenLighting::OnLightingDone() {
             {10, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute},
             {11, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute},
             {12, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute},
+            {13, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
+            {14, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
         }};
         lamp_desc_layout = Check(device.createDescriptorSetLayoutUnique({
             .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
@@ -569,6 +571,8 @@ void ScreenLighting::OnLightingDone() {
     const vk::DescriptorBufferInfo map_positions = rays->Positions();
     const vk::DescriptorBufferInfo map_indices = rays->Indices();
     const vk::DescriptorBufferInfo map_colors = rays->Colors();
+    const vk::DescriptorBufferInfo map_tri_patches = rays->TriPatches();
+    const vk::DescriptorBufferInfo map_patches = rays->Patches();
     const vk::Buffer lamp_buffer = buf.buffer;
     fog_lamps = lamp_buffer;
     fog_lamp_count = u32(lamps.size());
@@ -612,7 +616,7 @@ void ScreenLighting::OnLightingDone() {
                                                   .imageLayout = vk::ImageLayout::eGeneral};
             const vk::DescriptorImageInfo last_scene_info{.imageView = last_scene_v,
                                                           .imageLayout = vk::ImageLayout::eGeneral};
-            const std::array<vk::WriteDescriptorSet, 13> writes = {{
+            const std::array<vk::WriteDescriptorSet, 15> writes = {{
                 {.dstBinding = 0, .descriptorCount = 1,
                  .descriptorType = vk::DescriptorType::eSampledImage, .pImageInfo = &depth_info},
                 {.dstBinding = 1, .descriptorCount = 1,
@@ -639,6 +643,10 @@ void ScreenLighting::OnLightingDone() {
                  .descriptorType = vk::DescriptorType::eSampledImage, .pImageInfo = &f0_info},
                 {.dstBinding = 12, .descriptorCount = 1,
                  .descriptorType = vk::DescriptorType::eStorageImage, .pImageInfo = &last_scene_info},
+                {.dstBinding = 13, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &map_tri_patches},
+                {.dstBinding = 14, .descriptorCount = 1,
+                 .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &map_patches},
             }};
             const vk::MemoryBarrier2 before{
                 .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,

@@ -1701,7 +1701,15 @@ std::uint32_t MeshBuilder::Corner(const float* at, std::uint32_t color) {
     return it->second;
 }
 
-void MeshBuilder::Add(const float* triangle, const std::uint32_t corner_colors[3]) {
+int PatchSide(float longest, float patch_cell) {
+    if (!(patch_cell > 0.0f) || !(longest > 2.0f * patch_cell)) {
+        return 0;
+    }
+    return int(std::min(8.0f, std::ceil(longest / patch_cell))); // 16 filled 2^27 colours (537 MB)
+}
+
+void MeshBuilder::Add(const float* triangle, const std::uint32_t corner_colors[3],
+                      std::span<const std::uint32_t> patch) {
     const std::uint32_t a = Corner(triangle, corner_colors[0]), b = Corner(triangle + 3, corner_colors[1]),
                         c = Corner(triangle + 6, corner_colors[2]);
     if (a == b || b == c || a == c) {
@@ -1715,6 +1723,13 @@ void MeshBuilder::Add(const float* triangle, const std::uint32_t corner_colors[3
         return; // the same three corners again (its back, a copy)
     }
     tris.insert(tris.end(), {a, b, c});
+    const auto n = std::uint32_t(std::lround(std::sqrt(double(patch.size()))));
+    if (n >= 2 && n <= 16 && n * n == patch.size() && patches.size() + patch.size() < (1u << 27)) {
+        tri_patch.push_back(std::uint32_t(patches.size()) << 5 | n);
+        patches.insert(patches.end(), patch.begin(), patch.end());
+    } else {
+        tri_patch.push_back(0);
+    }
 }
 
 void MeshBuilder::Merge(const MeshBuilder& other) {
@@ -1731,7 +1746,11 @@ void MeshBuilder::Merge(const MeshBuilder& other) {
             }
             colors[k] = 0xFF000000u | std::uint32_t(s[3] / n) << 16 | std::uint32_t(s[4] / n) << 8 | std::uint32_t(s[5] / n);
         }
-        Add(at, colors);
+        const std::uint32_t meta = t / 3 < other.tri_patch.size() ? other.tri_patch[t / 3] : 0u;
+        const std::uint32_t side = meta & 31u;
+        Add(at, colors,
+            side ? std::span<const std::uint32_t>(other.patches.data() + (meta >> 5), side * side)
+                 : std::span<const std::uint32_t>{});
     }
 }
 
@@ -1748,6 +1767,10 @@ AreaMesh MeshBuilder::Finish() const {
                               std::uint32_t(s[3] / n));
     }
     mesh.indices = tris;
+    if (std::any_of(tri_patch.begin(), tri_patch.end(), [](std::uint32_t m) { return m != 0; })) {
+        mesh.tri_patch = tri_patch;
+        mesh.patches = patches;
+    }
     return mesh;
 }
 
@@ -1765,9 +1788,16 @@ std::vector<std::uint8_t> SaveMesh(const AreaMesh& mesh) {
     raw.insert(raw.end(), c, c + mesh.colors.size() * 4);
     const auto* i = reinterpret_cast<const std::uint8_t*>(mesh.indices.data());
     raw.insert(raw.end(), i, i + mesh.indices.size() * 4);
+    // BBMESH2: the patches after (their counts first).
+    put32(std::uint32_t(mesh.tri_patch.size()));
+    put32(std::uint32_t(mesh.patches.size()));
+    const auto* tp = reinterpret_cast<const std::uint8_t*>(mesh.tri_patch.data());
+    raw.insert(raw.end(), tp, tp + mesh.tri_patch.size() * 4);
+    const auto* pc = reinterpret_cast<const std::uint8_t*>(mesh.patches.data());
+    raw.insert(raw.end(), pc, pc + mesh.patches.size() * 4);
     mz_ulong size = mz_compressBound(mz_ulong(raw.size()));
     std::vector<std::uint8_t> file(16 + size);
-    std::memcpy(file.data(), "BBMESH1\0", 8);
+    std::memcpy(file.data(), "BBMESH2\0", 8);
     const auto raw_size = std::uint32_t(raw.size());
     std::memcpy(file.data() + 8, &raw_size, 4);
     if (mz_compress2(file.data() + 16, &size, raw.data(), mz_ulong(raw.size()), 6) != MZ_OK) {
@@ -1780,7 +1810,8 @@ std::vector<std::uint8_t> SaveMesh(const AreaMesh& mesh) {
 }
 
 std::optional<AreaMesh> LoadMesh(std::span<const std::uint8_t> file) {
-    if (file.size() < 16 || std::memcmp(file.data(), "BBMESH1\0", 8) != 0) {
+    const bool v2 = file.size() >= 16 && std::memcmp(file.data(), "BBMESH2\0", 8) == 0;
+    if (file.size() < 16 || (!v2 && std::memcmp(file.data(), "BBMESH1\0", 8) != 0)) {
         return std::nullopt;
     }
     std::uint32_t raw_size = 0, stored = 0;
@@ -1797,7 +1828,17 @@ std::optional<AreaMesh> LoadMesh(std::span<const std::uint8_t> file) {
     std::uint32_t vertices = 0, indices = 0;
     std::memcpy(&vertices, raw.data(), 4);
     std::memcpy(&indices, raw.data() + 4, 4);
-    if (8 + std::uint64_t(vertices) * 16 + std::uint64_t(indices) * 4 != raw_size) {
+    const std::uint64_t base = 8 + std::uint64_t(vertices) * 16 + std::uint64_t(indices) * 4;
+    std::uint32_t tri_patches = 0, patch_texels = 0;
+    if (v2) {
+        if (base + 8 > raw_size) {
+            return std::nullopt;
+        }
+        std::memcpy(&tri_patches, raw.data() + base, 4);
+        std::memcpy(&patch_texels, raw.data() + base + 4, 4);
+    }
+    if ((v2 ? base + 8 + (std::uint64_t(tri_patches) + patch_texels) * 4 : base) != raw_size ||
+        (tri_patches != 0 && tri_patches != indices / 3)) {
         return std::nullopt;
     }
     AreaMesh mesh;
@@ -1812,13 +1853,23 @@ std::optional<AreaMesh> LoadMesh(std::span<const std::uint8_t> file) {
             return std::nullopt;
         }
     }
+    mesh.tri_patch.resize(tri_patches);
+    mesh.patches.resize(patch_texels);
+    std::memcpy(mesh.tri_patch.data(), raw.data() + base + 8, std::size_t(tri_patches) * 4);
+    std::memcpy(mesh.patches.data(), raw.data() + base + 8 + std::size_t(tri_patches) * 4,
+                std::size_t(patch_texels) * 4);
+    for (const std::uint32_t m : mesh.tri_patch) {
+        if (m != 0 && (std::uint64_t(m >> 5) + std::uint64_t(m & 31u) * (m & 31u) > patch_texels)) {
+            return std::nullopt;
+        }
+    }
     return mesh;
 }
 
 std::optional<AreaMesh> MeshOf(std::uint32_t packed_map, const ReadFile& read, int threads, const ReadRange& read_range,
-                               float cell) {
+                               float cell, float patch_cell) {
     threads = std::clamp(threads, 1, 16);
-    std::vector<MeshBuilder> parts(static_cast<std::size_t>(threads), MeshBuilder(cell));
+    std::vector<MeshBuilder> parts(static_cast<std::size_t>(threads), MeshBuilder(cell, patch_cell));
     const std::array<std::uint32_t, 1> one{packed_map};
     // A canvas too small to matter: the models go to the meshes instead.
     if (!ChartAreas(one, read, 0.01f, 64, threads, read_range, true, 0, &parts)) {
@@ -2250,6 +2301,7 @@ std::optional<Chart> ChartAreas(std::span<const std::uint32_t> packed_maps, cons
     }
     const auto draw = [&](int part) {
         std::vector<float> model, world, model_uvs, world_uvs;
+        std::vector<std::uint32_t> patch; // a triangle's colour patch (MeshBuilder::Add)
         std::vector<std::uint32_t> model_colors, world_colors;
         const MaterialColor color_of = [&](std::string_view texture) {
             if (textured) {
@@ -2284,12 +2336,40 @@ std::optional<Chart> ChartAreas(std::span<const std::uint32_t> packed_maps, cons
                         std::uint32_t corner[3];
                         const std::uint32_t tint = t / 9 < world_colors.size() ? world_colors[t / 9] : 0u;
                         const auto surface = IsTextured(tint) ? textures.SurfaceAt(tint & 0xFFFFFFu) : nullptr;
+                        const float* uvs = t / 9 * 12 + 12 <= world_uvs.size() ? world_uvs.data() + t / 9 * 12 : nullptr;
                         for (int k = 0; k < 3; ++k) {
-                            const float* uv = t / 9 * 12 + 12 <= world_uvs.size() ? world_uvs.data() + t / 9 * 12 + k * 4
-                                                                                  : nullptr;
-                            corner[k] = surface && uv ? SurfaceColor(*surface, uv) : (tint != 0 ? tint : 0xFF808080u);
+                            corner[k] = surface && uvs ? SurfaceColor(*surface, uvs + k * 4)
+                                                       : (tint != 0 ? tint : 0xFF808080u);
                         }
-                        mesh.Add(world.data() + t, corner);
+                        // Kaniel 2026-10-22 (ray tracing): a larger triangle's colours as a patch.
+                        patch.clear();
+                        if (surface && uvs && mesh.PatchCell() > 0.0f) {
+                            const float* p = world.data() + t;
+                            const auto edge = [&](int a, int b) {
+                                const float dx = p[a * 3] - p[b * 3], dy = p[a * 3 + 1] - p[b * 3 + 1],
+                                            dz = p[a * 3 + 2] - p[b * 3 + 2];
+                                return std::sqrt(dx * dx + dy * dy + dz * dz);
+                            };
+                            const int n = PatchSide(std::max({edge(0, 1), edge(1, 2), edge(2, 0)}), mesh.PatchCell());
+                            for (int v = 0; v < n; ++v) {
+                                for (int u = 0; u < n; ++u) {
+                                    float bu = (float(u) + 0.5f) / float(n), bv = (float(v) + 0.5f) / float(n);
+                                    if (bu + bv > 1.0f) {
+                                        bu = 1.0f - bu;
+                                        bv = 1.0f - bv;
+                                    }
+                                    float uv[4];
+                                    for (int c = 0; c < 4; ++c) {
+                                        uv[c] = (1.0f - bu - bv) * uvs[c] + bu * uvs[4 + c] + bv * uvs[8 + c];
+                                    }
+                                    const std::uint32_t argb = SurfaceColor(*surface, uv);
+                                    // 0xAABBGGRR as the corners' colours end up (Finish).
+                                    patch.push_back(0xFF000000u | (argb & 0xFFu) << 16 | (argb & 0xFF00u) |
+                                                    (argb >> 16 & 0xFFu));
+                                }
+                            }
+                        }
+                        mesh.Add(world.data() + t, corner, patch);
                     }
                     continue;
                 }

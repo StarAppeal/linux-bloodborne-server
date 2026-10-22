@@ -107,6 +107,9 @@ constexpr std::uint32_t RayMeshKey = 6; // the ray tracing's finer mesh (GetRayM
 /// shadows reflections and so on should work"): at 0.12 m fences, railings and bars folded away;
 /// now 0.03 m (kept as .rtmesh3, a new file beside the old grid's).
 constexpr float RayMeshCell = 0.03f;
+/// Kaniel 2026-10-22: a larger triangle's texture as a patch of colours 0.25 m apart, up to 8 x 8
+/// (.rtmesh5; 0.1 m and 16 x 16 overflowed 2^27 colours).
+constexpr float RayPatchCell = 0.25f;
 std::map<std::uint32_t, std::shared_ptr<const BbMapArt::AreaMesh>> ready_ray_meshes;
 std::set<std::uint32_t> failed, asked;
 std::deque<std::uint32_t> queue;
@@ -138,7 +141,7 @@ std::shared_ptr<const BbMapArt::Chart> Make(std::uint32_t key) {
 }
 
 std::shared_ptr<const BbMapArt::AreaMesh> MakeMesh(std::uint32_t packed_map, float cell = 0.5f,
-                                                  const char* suffix = ".bbmesh") {
+                                                  const char* suffix = ".bbmesh", float patch_cell = 0.0f) {
     const auto cache = MapFolder() / (BbMapArt::MapNameOf(packed_map) + suffix);
     if (auto kept = BbMapArt::LoadMesh(ReadFile(cache))) {
         std::printf("Map: read %s's mesh\n", BbMapArt::MapNameOf(packed_map).c_str());
@@ -146,7 +149,7 @@ std::shared_ptr<const BbMapArt::AreaMesh> MakeMesh(std::uint32_t packed_map, flo
     }
     const auto start = std::chrono::steady_clock::now();
     const int threads = int(std::clamp(std::thread::hardware_concurrency() / 2, 1u, 4u));
-    auto made = BbMapArt::MeshOf(packed_map, ReadGameFile, threads, ReadGameRange, cell);
+    auto made = BbMapArt::MeshOf(packed_map, ReadGameFile, threads, ReadGameRange, cell, patch_cell);
     if (!made) {
         return nullptr;
     }
@@ -173,7 +176,7 @@ void Work() {
             queue.pop_front();
         }
         if ((next & 7u) == RayMeshKey) {
-            auto mesh = MakeMesh(next & ~7u, RayMeshCell, ".rtmesh3");
+            auto mesh = MakeMesh(next & ~7u, RayMeshCell, ".rtmesh5", RayPatchCell);
             std::scoped_lock lock{mutex};
             if (mesh) {
                 ready_ray_meshes[next & ~7u] = std::move(mesh);

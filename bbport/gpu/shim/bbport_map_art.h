@@ -301,16 +301,27 @@ struct AreaMesh {
     std::vector<float> positions;
     std::vector<std::uint32_t> colors;
     std::vector<std::uint32_t> indices;
+    /// Kaniel 2026-10-22 (ray tracing, "all reflections should work"): with a patch cell, each
+    /// triangle's colour patch: 0 none (its corners' colours), else `offset << 5 | n`, its n x n
+    /// colours (0xAABBGGRR, n up to 8) at `patches[offset]`, row v, column u, sampled at barycentrics
+    /// ((u + 0.5) / n, (v + 0.5) / n) folded into the triangle (u + v past 1: 1 - u, 1 - v).
+    std::vector<std::uint32_t> tri_patch;
+    std::vector<std::uint32_t> patches;
     bool operator==(const AreaMesh&) const = default;
 };
-/// Kept in the user folder ("BBMESH1", zlib-compressed) and read back.
+/// The patch side for a triangle whose longest edge is `longest` metres (0: none).
+int PatchSide(float longest, float patch_cell);
+/// Kept in the user folder ("BBMESH2" with the patches, zlib-compressed; "BBMESH1" read too).
 std::vector<std::uint8_t> SaveMesh(const AreaMesh& mesh);
 std::optional<AreaMesh> LoadMesh(std::span<const std::uint8_t> file);
 /// Corners merged into `cell`-metre grid cells (MeshOf's thinning), for tests.
 class MeshBuilder {
 public:
-    explicit MeshBuilder(float cell) : cell{cell} {}
-    void Add(const float* triangle, const std::uint32_t corner_colors[3]);
+    explicit MeshBuilder(float cell, float patch_cell = 0.0f) : cell{cell}, patch_cell{patch_cell} {}
+    /// `patch`: the triangle's n x n colours (AreaMesh::tri_patch), or none.
+    void Add(const float* triangle, const std::uint32_t corner_colors[3],
+             std::span<const std::uint32_t> patch = {});
+    float PatchCell() const { return patch_cell; }
     void Merge(const MeshBuilder& other);
     AreaMesh Finish() const;
     std::size_t Triangles() const { return tris.size() / 3; }
@@ -318,6 +329,8 @@ public:
 private:
     std::uint32_t Corner(const float* at, std::uint32_t color);
     float cell;
+    float patch_cell;
+    std::vector<std::uint32_t> tri_patch, patches;
     std::unordered_map<std::uint64_t, std::uint32_t> corner_of;
     std::vector<double> sums;    // x, y, z, r, g, b each
     std::vector<std::uint32_t> counts;
@@ -325,7 +338,8 @@ private:
     std::unordered_set<std::uint64_t> seen; // the triangles already in (by their corners)
 };
 std::optional<AreaMesh> MeshOf(std::uint32_t packed_map, const ReadFile& read, int threads = 1,
-                               const ReadRange& read_range = {}, float cell = 0.4f);
+                               const ReadRange& read_range = {}, float cell = 0.4f,
+                               float patch_cell = 0.0f);
 
 /// `textured`: the pictures in the game's own textures (else one colour a material); `view`
 /// 1 to 4: the oblique picture (ViewOf) instead of the one from above.

@@ -77,6 +77,13 @@ public:
     [[nodiscard]] vk::DescriptorBufferInfo Colors() const noexcept {
         return {color_buffer.buffer, 0, VK_WHOLE_SIZE};
     }
+    /// Kaniel 2026-10-22: each triangle's colour patch (AreaMesh::tri_patch) and the patches.
+    [[nodiscard]] vk::DescriptorBufferInfo TriPatches() const noexcept {
+        return {tri_patch_buffer.buffer, 0, VK_WHOLE_SIZE};
+    }
+    [[nodiscard]] vk::DescriptorBufferInfo Patches() const noexcept {
+        return {patch_buffer.buffer, 0, VK_WHOLE_SIZE};
+    }
     /// Its corners' positions (x, y, z floats, world): a hit's surface normal.
     [[nodiscard]] vk::DescriptorBufferInfo Positions() const noexcept {
         return {position_buffer.buffer, 0, VK_WHOLE_SIZE};
@@ -101,6 +108,7 @@ private:
     u32 built_map = 0; ///< the map the structures hold
     bool failed_map = false;
     Buffer blas_buffer, tlas_buffer, index_buffer, color_buffer, position_buffer;
+    Buffer tri_patch_buffer, patch_buffer;
     vk::UniqueAccelerationStructureKHR blas, tlas;
     // Step 3 (characters), made once at their largest and reused every frame.
     static constexpr u32 MaxCharacterCorners = 1u << 20;

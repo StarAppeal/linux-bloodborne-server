@@ -238,6 +238,32 @@ const std::uint8_t* PixelAt(const Chart& chart, float x, float z) {
 } // namespace
 
 int main() {
+    // Kaniel 2026-10-22 (ray tracing, "all reflections should work"): a larger triangle keeps a
+    // patch of its colours through the merge, the finish and the file; a small one keeps none.
+    {
+        assert(PatchSide(0.05f, 0.1f) == 0 && PatchSide(0.25f, 0.1f) == 3 && PatchSide(9.0f, 0.1f) == 8);
+        assert(PatchSide(9.0f, 0.0f) == 0);
+        MeshBuilder a(0.01f, 0.1f), b(0.01f, 0.1f);
+        const float big[9] = {0, 0, 0, 1, 0, 0, 0, 0, 1}, small[9] = {5, 0, 0, 5.02f, 0, 0, 5, 0, 0.02f};
+        const std::uint32_t colors[3] = {0xFF102030u, 0xFF102030u, 0xFF102030u};
+        const std::vector<std::uint32_t> patch = {1, 2, 3, 4};
+        a.Add(big, colors, patch);
+        b.Add(small, colors);
+        a.Merge(b);
+        const AreaMesh mesh = a.Finish();
+        assert(mesh.indices.size() == 6 && mesh.tri_patch.size() == 2);
+        assert(mesh.tri_patch[0] == (0u << 5 | 2u) && mesh.tri_patch[1] == 0);
+        assert(mesh.patches == patch);
+        const auto kept = LoadMesh(SaveMesh(mesh));
+        assert(kept && *kept == mesh);
+        // Without patches nothing is kept for them.
+        MeshBuilder plain(0.01f);
+        plain.Add(big, colors);
+        const AreaMesh none = plain.Finish();
+        assert(none.tri_patch.empty() && none.patches.empty());
+        assert(LoadMesh(SaveMesh(none)) == none);
+    }
+
     // The MSB: map pieces (an "m" part of an "m" model), characters ("c" parts) and points are
     // spots; anything else (an object's "o" part) is neither.
     {

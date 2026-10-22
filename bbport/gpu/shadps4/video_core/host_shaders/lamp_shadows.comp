@@ -30,6 +30,10 @@ layout(binding = 10) uniform texture2D gloss_tex;
 layout(binding = 11) uniform texture2D f0_tex;
 // The last frame's lit opaque scene (a reflection's hit on screen takes its colour from it).
 layout(binding = 12, rgba16f) uniform readonly image2D last_scene;
+// Kaniel 2026-10-22 ("all reflections should work"): each map triangle's colour patch (0 none, else
+// offset << 5 | n) and the patches' colours (0xAABBGGRR, n x n, AreaMesh::tri_patch).
+layout(binding = 13, std430) readonly buffer MapTriPatches { uint map_tri_patch[]; };
+layout(binding = 14, std430) readonly buffer MapPatches { uint map_patches[]; };
 
 layout(push_constant) uniform Constants {
     vec4 proj;     // x scale, y scale, z scale, z offset
@@ -204,8 +208,17 @@ bool TraceSurface(vec3 from, vec3 dir, float reach, float body_gap, out vec3 hit
     if (dot(hn, dir) > 0.0) {
         hn = -hn; // facing the ray
     }
-    // The surface's colour as albedo (the mesh colour: its texture in the baked light).
-    albedo = min(MeshRadiance(map_colors[i0]) / MeshRadianceScale * 1.5, vec3(0.9));
+    // The surface's colour as albedo (its texture in the baked light): from the triangle's patch
+    // where it has one, else its corners'.
+    const uint patch_meta = map_tri_patch[tri / 3u];
+    uint colour = map_colors[i0];
+    if (patch_meta != 0u) {
+        const uint n = patch_meta & 31u;
+        // A point inside lies in a texel whose centre is inside too (or on the diagonal).
+        const uint pu = min(uint(b.x * float(n)), n - 1u), pv = min(uint(b.y * float(n)), n - 1u);
+        colour = map_patches[(patch_meta >> 5) + pv * n + pu];
+    }
+    albedo = min(MeshRadiance(colour) / MeshRadianceScale * 1.5, vec3(0.9));
     return true;
 }
 
