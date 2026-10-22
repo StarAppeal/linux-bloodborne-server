@@ -946,19 +946,18 @@ SUITES = {
                                "wait-members 2 60", "wait-member-vital up 60",
                                "expect-session 2", "expect-others-near 1 30"]},
                     forbid=holds(PARTY2)),
-            chapter("server-restart", "phase 11: shadNet stops and starts again while both play "
-                                      "(the host's PC hiccups): the session holds, both games "
-                                      "sign in again by themselves through the link and see "
-                                      "each other",
-                    {role: ["sync restart-go", "wait 20", "wait-members 2 120",
-                            "wait-member-vital up 60", "expect-session 2",
-                            "expect-others-near 1 30"] for role in PARTY2},
+            chapter("server-restart", "shadNet stops and starts again while both play (the "
+                                      "host's PC hiccups): the team ends with the server, so "
+                                      "both may drop to playing alone (Kaniel 2026-10-22: \"that's "
+                                      "ok\"); no crash, and both games join again once started "
+                                      "anew, so the chapters after it play in a team",
+                    {role: ["sync restart-go", "wait 30", "sync sr-dropped", RESTART, START,
+                            "godmode", "wait-session 2 420", "wait 10", "expect-session 2",
+                            "sync sr-back"] for role in PARTY2},
                     server_restarts=["restart-go"],
-                    expect={role: [r"Rpc bridge: shadNet ended the connection",
-                                   r"the game stays signed in while it comes back",
-                                   r"Co-op server world: shadNet started over"]
+                    expect={role: [r"Rpc bridge: shadNet ended the connection"]
                             for role in PARTY2},
-                    forbid=holds(PARTY2)),
+                    allow=CRASH_CLEANUP),
             chapter("cutscene", "Father Gascoigne dies in the host's world with the guest there: "
                                 "his death's time-of-day cutscene reloads the host's world (a "
                                 "trip), and both are back together after it. Whether this kill "

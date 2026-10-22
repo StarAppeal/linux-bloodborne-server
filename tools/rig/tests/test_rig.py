@@ -313,12 +313,20 @@ class EdgeTest(unittest.TestCase):
                          "only the first restart puts other saves in")
 
     def test_shadnet_restarts_mid_session_in_the_edges_suite(self):
-        # Phase 11: shadNet stops and starts again while two games play on (a host's PC hiccup):
-        # the session holds, and the games sign in again by themselves.
+        # shadNet stops and starts again while two games play on (a host's PC hiccup): the team
+        # ends with the server (Kaniel 2026-10-22: "players should drop out on server restart,
+        # that's ok"), so the session may drop; both games start again and join once more, so the
+        # chapters after it play in a team.
         edges = suites.SUITE_SCENARIOS["edges"]
         self.assertEqual(edges["server_restarts"], ["restart-go"])
-        chapter = next(c for c in edges["chapters"] if c["name"] == "server-restart")
-        self.assertIn("host", chapter["forbid"])
+        chapter = next(c for c in suites.SUITES["edges"]["chapters"]
+                       if c["name"] == "server-restart")
+        self.assertNotIn("forbid", chapter, "the session may drop with the server")
+        for role in ("host", "guest"):
+            with self.subTest(role=role):
+                steps = chapter["steps"][role]
+                self.assertIn(suites.RESTART, steps, "joins again from the title")
+                self.assertIn("expect-session 2", steps[steps.index(suites.RESTART):])
 
     def test_an_outage_starts_at_a_sync_of_its_chapter(self):
         for name, scenario in suites.SUITE_SCENARIOS.items():
