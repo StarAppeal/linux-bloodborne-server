@@ -109,6 +109,11 @@ if (-not $SkipPortBuild) { Invoke-Clang64 "bash build.sh" }
 foreach ($exe in "bb-probe.exe", "bb-gpu-capabilities.exe", "bb-play.exe") {
     if (-not (Test-Path (Join-Path $bbport "out\$exe"))) { throw "No bbport\out\${exe}: build the port first (drop -SkipPortBuild)" }
 }
+# The port must name the release's commit: games log it and tell each other theirs (v1.1.3's first
+# build named itself 0000000: no jj on the build shell's PATH, no .git in the release checkout).
+$revisionArgs = @("--root", $root, "--commit", $commit) + $(if ($dirty) { @("--allow-other") } else { @() })
+py -3.12 -I (Join-Path $PSScriptRoot "release\release_src.py") revision-check @revisionArgs
+if ($LASTEXITCODE -ne 0) { throw "the port's build revision is wrong (see BUILD_REVISION above)" }
 if (-not (Test-Path (Join-Path $bbport "fsr4_shaders"))) {
     # From the download cache the checkouts share: a fresh checkout copies the 189 files instead of
     # downloading them again (about a minute and a half for v1.1.2).

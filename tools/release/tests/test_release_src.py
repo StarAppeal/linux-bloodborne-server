@@ -7,8 +7,10 @@ Run: py -3.12 -m unittest discover -s tools\\release\\tests
 """
 import contextlib
 import io
+import os
 import pathlib
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -101,6 +103,120 @@ class DecisionTest(unittest.TestCase):
                              run_jj=self.jj(changed=[]))
         self.assertEqual(code, 0)
         self.assertTrue(out.getvalue().startswith('EMULATOR_TESTS=skip '))
+
+
+@unittest.skipUnless(shutil.which('jj'), 'needs jj')
+class RealJjTest(unittest.TestCase):
+    """run_jj with a real checkout: jj names changed files relative to the current folder, so
+    from anywhere else they came out as ..\\bb\\release-src\\emulator\\... and never matched
+    (v1.1.3, 2026-10-22: EMULATOR_TESTS=skip after #335 changed emulator/)."""
+
+    def setUp(self):
+        self.tmp = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.root = self.tmp / 'checkout'
+        self.root.mkdir()
+        subprocess.run(['jj', 'git', 'init', str(self.root)], check=True, capture_output=True)
+        tool.run_jj(self.root, 'config', 'set', '--repo', 'user.name', 'rig')
+        tool.run_jj(self.root, 'config', 'set', '--repo', 'user.email', 'rig@example.com')
+        (self.root / 'bbport').mkdir()
+        (self.root / 'bbport' / 'run.py').write_text('x\n')
+        tool.run_jj(self.root, 'commit', '-m', 'tested')
+        self.stamp = self.tmp / 'tested-commit.txt'
+        tool.mark(self.root, self.stamp)
+        (self.root / 'emulator').mkdir()
+        (self.root / 'emulator' / 'a.cpp').write_text('y\n')
+
+    def test_a_changed_emulator_is_seen_from_another_folder(self):
+        elsewhere = self.tmp / 'elsewhere'
+        elsewhere.mkdir()
+        here = pathlib.Path.cwd()
+        os.chdir(elsewhere)
+        self.addCleanup(os.chdir, here)
+        needed, why = tool.decide(self.root, self.stamp)
+        self.assertTrue(needed, why)
+        self.assertIn('emulator/a.cpp', why)
+
+
+class BuiltRevisionTest(unittest.TestCase):
+    """revision-check: the port must name the release's commit (v1.1.3's first build named itself
+    0000000: jj was not on the build shell's PATH and the release checkout has no .git)."""
+
+    COMMIT = 'f59970dbeefa8f61f017ddea1ececc91c3e1ed6c'
+
+    def setUp(self):
+        self.tmp = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.header = self.tmp / 'bbport' / 'out' / 'gpu' / 'include' / 'bbcoop_revision.h'
+
+    def built(self, revision):
+        self.header.parent.mkdir(parents=True, exist_ok=True)
+        self.header.write_text(f'#pragma once\n#define BB_SCM_REV "{revision}"\n')
+
+    def test_the_release_commit_is_fine(self):
+        self.built(self.COMMIT)
+        self.assertIsNone(tool.built_revision_problem(self.tmp, self.COMMIT))
+
+    def test_no_revision_is_refused(self):
+        self.built('0000000')
+        problem = tool.built_revision_problem(self.tmp, self.COMMIT)
+        self.assertIn('0000000', problem)
+        self.assertIn('jj', problem)
+
+    def test_another_commit_or_dirty_is_refused_unless_allowed(self):
+        self.built('c0ffee' + '0' * 34)
+        self.assertIsNotNone(tool.built_revision_problem(self.tmp, self.COMMIT))
+        self.built(self.COMMIT + '-dirty')
+        self.assertIsNotNone(tool.built_revision_problem(self.tmp, self.COMMIT))
+        self.assertIsNone(tool.built_revision_problem(self.tmp, self.COMMIT, allow_other=True))
+
+    def test_a_port_never_built_is_refused(self):
+        self.assertIn('no', tool.built_revision_problem(self.tmp, self.COMMIT))
+
+    def test_cli_exits_non_zero_on_a_problem(self):
+        self.built('0000000')
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = tool.main(['revision-check', '--root', str(self.tmp), '--commit', self.COMMIT])
+        self.assertEqual(code, 1)
+        self.assertTrue(out.getvalue().startswith('BUILD_REVISION=wrong '))
+        self.built(self.COMMIT)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(tool.main(['revision-check', '--root', str(self.tmp), '--commit', self.COMMIT]), 0)
+
+    def test_make_release_checks_the_built_revision(self):
+        script = (ROOT / 'tools' / 'make-release.ps1').read_text(encoding='utf-8-sig')
+        self.assertIn('revision-check', script)
+
+
+@unittest.skipUnless(shutil.which('jj') and shutil.which('cmake'), 'needs jj and cmake')
+class RevisionCmakeTest(unittest.TestCase):
+    """bbcoop/revision.cmake finds jj off the PATH (the MSYS2 build shell starts from its own PATH)."""
+
+    def test_a_jj_workspace_is_named_without_jj_on_the_path(self):
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, True)
+        repo = tmp / 'repo'
+        subprocess.run(['jj', 'git', 'init', str(repo)], check=True, capture_output=True)
+        tool.run_jj(repo, 'config', 'set', '--repo', 'user.name', 'rig')
+        tool.run_jj(repo, 'config', 'set', '--repo', 'user.email', 'rig@example.com')
+        (repo / 'a.txt').write_text('x\n')
+        tool.run_jj(repo, 'commit', '-m', 'built')
+        commit = tool.run_jj(repo, 'log', '-r', '@-', '--no-graph', '-T', 'commit_id').strip()
+        # A second workspace has no .git, as C:\bb\release-src.
+        workspace = tmp / 'workspace'
+        tool.run_jj(repo, 'workspace', 'add', '--name', 'release', '-r', commit, str(workspace))
+        header = tmp / 'bbcoop_revision.h'
+        jj_dir = pathlib.Path(shutil.which('jj')).parent
+        path = os.pathsep.join(entry for entry in os.environ['PATH'].split(os.pathsep)
+                               if entry and pathlib.Path(entry) != jj_dir)
+        env = dict(os.environ, PATH=path)
+        if shutil.which('jj', path=path):
+            self.skipTest('jj is in more than one PATH folder')
+        subprocess.run([shutil.which('cmake'), f'-DOUT={header}', f'-DSOURCE={workspace}', '-P',
+                        str(ROOT / 'bbport' / 'gpu' / 'bbcoop' / 'revision.cmake')],
+                       check=True, capture_output=True, env=env)
+        self.assertIn(f'"{commit}"', header.read_text())
 
 
 class ReleaseSrcScriptTest(unittest.TestCase):

@@ -15,9 +15,12 @@ Usage: release_src.py emulator-check --root <checkout> --stamp <file>
        release_src.py emulator-mark --root <checkout> --stamp <file>
            after the tests passed: stores the checkout's commit
        release_src.py clear-stale-caches --root <checkout> <build folder>...
+       release_src.py revision-check --root <checkout> --commit <sha> [--allow-other]
+           after the port build: exits 1 unless the port names the release's commit
 """
 import argparse
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -31,7 +34,8 @@ class JjError(Exception):
 
 
 def run_jj(root, *args):
-    result = subprocess.run(["jj", "-R", str(root), *args], capture_output=True, text=True)
+    # From the checkout itself: jj names files relative to the current folder (..\release-src\...).
+    result = subprocess.run(["jj", "-R", str(root), *args], capture_output=True, text=True, cwd=root)
     if result.returncode != 0:
         raise JjError(result.stderr.strip() or f"jj {' '.join(args)} failed")
     return result.stdout
@@ -113,14 +117,44 @@ def clear_stale_caches(root, folders):
     return cleared
 
 
+REVISION_HEADER = pathlib.Path("bbport", "out", "gpu", "include", "bbcoop_revision.h")
+REVISION = re.compile(r'#define BB_SCM_REV "([^"]*)"')
+
+
+def built_revision_problem(root, commit, allow_other=False):
+    """None when the port built in root names commit as its revision (bbcoop/revision.cmake), else
+    why not. Games log it and tell each other theirs, and crash reports carry it."""
+    header = pathlib.Path(root) / REVISION_HEADER
+    try:
+        found = REVISION.search(header.read_text(encoding="utf-8", errors="replace"))
+    except FileNotFoundError:
+        return f"no {REVISION_HEADER}: the port was not built here"
+    revision = found.group(1) if found else ""
+    if revision.strip("0") == "":
+        return (f"the port names no revision ({revision or 'none'}): the build found neither jj nor "
+                "git for the checkout (a jj workspace without .git needs jj)")
+    if revision != commit and not allow_other:
+        return f"the port names {revision}, not the release's commit {commit}"
+    return None
+
+
 def main(argv=None, run_jj=run_jj):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=("emulator-check", "emulator-mark", "clear-stale-caches"))
+    parser.add_argument("command", choices=("emulator-check", "emulator-mark", "clear-stale-caches",
+                                            "revision-check"))
     parser.add_argument("--root", required=True)
     parser.add_argument("--stamp")
+    parser.add_argument("--commit")
+    parser.add_argument("--allow-other", action="store_true")
     parser.add_argument("folders", nargs="*")
     # Intermixed: the folders come after --root (Python 3.12's parse_args refuses that).
     args = parser.parse_intermixed_args(argv)
+    if args.command == "revision-check":
+        if not args.commit:
+            parser.error("--commit is needed")
+        problem = built_revision_problem(args.root, args.commit, args.allow_other)
+        print(f"BUILD_REVISION=wrong ({problem})" if problem else f"BUILD_REVISION=ok ({args.commit})")
+        return 1 if problem else 0
     if args.command == "clear-stale-caches":
         for folder in clear_stale_caches(args.root, args.folders):
             print(f"  cleared the CMake cache of {folder} (made from another checkout)")
