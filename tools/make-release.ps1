@@ -304,6 +304,10 @@ Seamless co-op for Bloodborne on Bloodborne PC (the native Windows port).
 
 **No game files are included.** You need your own Bloodborne 1.09 (a dumped game folder with the 1.09 update, or the PS4 .pkg files, which the included launcher installs).
 
+**Already installed?** Just open Yharnam Together and press **Update** next to PLAY (or **Check for updates** there if it isn't shown yet). It installs the new version and opens again; saves, settings and mods are kept.
+
+**New players:**
+
 1. Download ``$setupName`` and run it (it installs for your Windows user; keep "Create a desktop shortcut" ticked).
 2. Open **Yharnam Together**. It finds your game; fill in the Co-op card: your game folder, the host's IP and the enemies (**How to connect** explains Radmin VPN).
 3. The host presses **Start server**, then everyone presses **PLAY**. Windows asks once to let co-op through its firewall. Guests must reach the host's TCP ports 31315 and 20443 and UDP port 31314.
