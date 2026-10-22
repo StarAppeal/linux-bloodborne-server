@@ -577,14 +577,6 @@ RecreatePlan PlanRecreate(std::span<const std::optional<std::string>> found,
     return plan;
 }
 
-void BoardMembersSeen::Take(std::span<const MemberMap> board, std::string_view self) {
-    for (const MemberMap& entry : board) {
-        if (entry.member != self && std::ranges::find(names, entry.member) == names.end()) {
-            names.push_back(entry.member);
-        }
-    }
-}
-
 bool HostIsHere(std::optional<u32> host_map, std::span<const MemberMap> board,
                 std::string_view self, u32 map) {
     return host_map && *host_map == map && map != 0 &&

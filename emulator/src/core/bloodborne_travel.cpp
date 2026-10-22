@@ -1167,7 +1167,6 @@ bool recreate_players_pending{};
 // Pending for RecreateAfterJoin, not a trip: members with no task are left to the game's join.
 bool recreate_pending_after_join{};
 std::set<std::string> recreated_since_trip;
-BoardMembersSeen board_members_seen;
 
 void LogEsdAnswers(bool party_guest);
 
@@ -1790,8 +1789,10 @@ void TickPlayersOnThisMap() {
         recreate_players_pending = false;
         recreate_pending_after_join = false;
         recreated_since_trip.clear();
-        board_members_seen.Clear();
         saved_join_tasks.clear();
+        return;
+    }
+    if (!recreate_players_pending) {
         return;
     }
     std::vector<MemberMap> board;
@@ -1804,19 +1805,17 @@ void TickPlayersOnThisMap() {
         board = map_board;
         self = map_board_member;
     }
-    board_members_seen.Take(board, self);
-    if (!recreate_players_pending) {
-        return;
-    }
     // Not while the player is still being placed: a guest's own warp has no position for a moment
     // and gets moved to its lamp (guest_trip_fixup_at); re-created then, the host never appeared.
     if (guest_trip_fixup_at || !LocalPlayerPosition()) {
         return;
     }
     std::vector<std::string> online_ids;
-    for (const std::string& member : board_members_seen.Names()) {
-        if (std::string online_id = OnlineIdOfBoardMember(member); !online_id.empty()) {
-            online_ids.push_back(std::move(online_id));
+    for (const MemberMap& entry : board) {
+        if (entry.member != self) {
+            if (std::string online_id = OnlineIdOfBoardMember(entry.member); !online_id.empty()) {
+                online_ids.push_back(std::move(online_id));
+            }
         }
     }
     const std::vector<u64> members = OtherSessionMembers();

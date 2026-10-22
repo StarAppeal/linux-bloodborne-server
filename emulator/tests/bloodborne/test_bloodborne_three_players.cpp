@@ -364,17 +364,6 @@ TEST(BloodborneThreePlayers, AMemberOffTheBoardKeepsTheReCreateWaiting) {
     EXPECT_TRUE(plan.done);
 }
 
-// The names to look for in session members: every member seen on the board in this session,
-// so one that drops off it for a moment is still found as itself.
-TEST(BloodborneThreePlayers, BoardNamesSeenStayCandidates) {
-    BoardMembersSeen seen;
-    seen.Take(std::vector<MemberMap>{{"me", 1}, {"host", 1}, {"lisara", 2}}, "me");
-    seen.Take(std::vector<MemberMap>{{"me", 1}, {"host", 1}}, "me");
-    EXPECT_EQ(seen.Names(), (std::vector<std::string>{"host", "lisara"}));
-    seen.Clear();
-    EXPECT_TRUE(seen.Names().empty());
-}
-
 // More of the same rules at their edges.
 TEST(BloodborneThreePlayers, ReCreationWaitsForMembersNotOnTheBoard) {
     const std::vector<MemberMap> board{{"me", 0x18010000}, {"guestA", 0x18010000}};

@@ -712,22 +712,6 @@ struct RecreatePlan {
 RecreatePlan PlanRecreate(std::span<const std::optional<std::string>> members,
                           std::span<const MemberMap> board, std::string_view self, u32 map,
                           const std::set<std::string>& handled);
-// The other members seen on the map board in this session (board names, in order): the names to
-// look for in session members (SessionMemberBoardName), so one that drops off the board for a
-// moment (its link quiet) is found as itself, not as the only name left (playtest 2026-10-21).
-class BoardMembersSeen {
-public:
-    void Take(std::span<const MemberMap> board, std::string_view self);
-    void Clear() {
-        names.clear();
-    }
-    const std::vector<std::string>& Names() const {
-        return names;
-    }
-
-private:
-    std::vector<std::string> names;
-};
 // Whether the host (its map from its map state post) is on `map` and still on the map board.
 bool HostIsHere(std::optional<u32> host_map, std::span<const MemberMap> board,
                 std::string_view self, u32 map);
