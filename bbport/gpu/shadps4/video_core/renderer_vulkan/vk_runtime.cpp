@@ -522,9 +522,16 @@ void Runtime::CopyMip(VideoCore::Image* src, VideoCore::Image* dst, u32 mip, u32
     const auto mip_block_p = std::max<u32>(dst->info.mips_layout[mip].pitch >> dst_dim, 1u);
 
     const auto src_dim = src->info.props.is_block ? 2 : 0;
-    ASSERT(mip_block_w == (src->info.size.width >> src_dim));
-    ASSERT(mip_block_h == (src->info.size.height >> src_dim));
-    ASSERT(mip_block_p == (src->info.pitch >> src_dim));
+    // bbport (Kaniel 2026-10-22, ray tracing at 1080p): after "Image overlap resolve failed" a
+    // mismatched image reached here and the asserts stopped the game; that mip is left as it is.
+    if (mip_block_w != (src->info.size.width >> src_dim) ||
+        mip_block_h != (src->info.size.height >> src_dim) ||
+        mip_block_p != (src->info.pitch >> src_dim)) {
+        LOG_WARNING(Render_Vulkan, "CopyMip: mip {} of {}x{} does not fit {}x{} (pitch {}), skipped",
+                    mip, dst->info.size.width, dst->info.size.height, src->info.size.width,
+                    src->info.size.height, src->info.pitch);
+        return;
+    }
 
     const auto [src_layers, dst_layers] =
         SanitizeCopyLayers(src->info, dst->info, src->info.size.depth);
