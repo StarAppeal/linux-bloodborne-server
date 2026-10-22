@@ -49,6 +49,8 @@ layout(push_constant) uniform Constants {
 
 // Sun shadow rays reach this far (a street's buildings; 200 m cost the most outdoors).
 const float SunReach = 80.0;
+// The sun/moon's light in light0 a unit of N.L and of its colour (the street's fit, rtgi-sunfit.py).
+const float SunInLight0 = 0.028;
 
 vec3 LightingViewPos(vec2 pixel);
 vec3 LightingRadiance(vec2 pixel);
@@ -445,6 +447,19 @@ void main() {
             // What this lamp gave the pixel, in the game's light (its colour times its weight).
             blocked += lamps[best_i[k] * 4 + 1].rgb * LampWeight(p, n, at.xyz, at.w, 1.0) * strength *
                        shadow;
+        }
+    }
+    // Path-tracing step 2: the sun/moon's own shadow on every pixel.
+    if (sun_dir.w > 0.0) {
+        const vec3 to_sun = normalize(ToWorld(sun_dir.xyz, 0.0));
+        const float ndl = dot(wn, to_sun);
+        if (ndl > 0.0) {
+            const float shadow = Shadow(wp, wn, to_sun, SunReach, true,
+                                        wn.y > 0.7 ? 0.05 : CharacterGap);
+            if (shadow > 0.0) {
+                const vec3 sun_light = sun_colour.rgb * SunInLight0 * ndl * shadow;
+                blocked += min(sun_light, imageLoad(diffuse_img, pixel).rgb * 0.8);
+            }
         }
     }
     // Part 2: what a glossy surface reflects, into the specular light.
