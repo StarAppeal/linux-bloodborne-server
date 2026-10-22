@@ -8,8 +8,10 @@
 #      their times, so ninja rebuilds only what changed. The first run makes the checkout (a jj
 #      workspace of <BB_ROOT>\bloodborne-server) instead. A checkout with changes of its own stops it.
 #   2. links the submodules (emulator\externals, bbport's third_party, server\externals) to the
-#      folders -LinksFrom uses, like the release threads' links scripts did
-#   3. says whether the emulator tests must run (tools\release\release_src.py emulator-check) and
+#      folders -LinksFrom uses, like the release threads' links scripts did; fsr-vulkan, which
+#      build.sh patches, is a clone of its own at the commit main pins instead (a shared one held
+#      another version of the patches and the port did not build)
+#   3. clears the CMake caches of the kept build folders that another checkout made, then says whether the emulator tests must run (tools\release\release_src.py emulator-check) and
 #      prints the build folders to use, which stay between releases
 #
 # Usage: release-src.ps1 [-Rev main@origin] [-Root <dir>] [-LinksFrom <checkout>]
@@ -50,10 +52,13 @@ $commit = jj -R $Root log -r "@-" --no-graph -T "commit_id"
 Write-Host "$Root at $commit ($Rev)"
 
 # --- 2. the submodules -------------------------------------------------------------------------
+# build.sh patches fsr-vulkan's working tree (gpu\patches\fsr-vulkan), so it is not shared.
+$own = "bbport\gpu\third_party\fsr-vulkan"
 $links = cmd /c "dir /AL /S /B $LinksFrom\emulator\externals $LinksFrom\bbport $LinksFrom\server 2>nul" |
     Where-Object { $_ -notmatch '\\out\\' }
 foreach ($link in $links) {
     $relative = $link.Substring($LinksFrom.Length + 1)
+    if ($relative -eq $own) { continue }
     $target = (Get-Item $link).Target
     if ($target -is [array]) { $target = $target[0] }
     $here = Join-Path $Root $relative
@@ -67,7 +72,33 @@ foreach ($link in $links) {
     Write-Host "  linked $relative -> $target"
 }
 
+$pin = ((git -C $repo ls-tree $commit ($own -replace '\\', '/')) -split '\s+')[2]
+if (-not $pin) { throw "no submodule commit for $own in $commit" }
+$clone = Join-Path $Root $own
+$upstream = "https://github.com/FireBurn/FSR-Vulkan.git"
+if ((Get-Item $clone -Force -ErrorAction SilentlyContinue).LinkType) { cmd /c rmdir "$clone" }  # an older run's link
+$fresh = $false
+if (-not (Test-Path (Join-Path $clone ".git"))) {
+    if (Test-Path $clone) { [IO.Directory]::Delete($clone) }  # the empty submodule folder
+    # From the shared copy when there is one (no download), else from GitHub.
+    $from = Get-Item (Join-Path $LinksFrom $own) -Force -ErrorAction SilentlyContinue
+    $source = if ($from -and $from.LinkType) { @($from.Target)[0] } elseif ($from) { $from.FullName } else { $upstream }
+    git clone -q --no-checkout $source $clone
+    if ($LASTEXITCODE -ne 0) { git clone -q --no-checkout $upstream $clone }
+    if ($LASTEXITCODE -ne 0) { throw "fsr-vulkan: cannot clone into $clone" }
+    $fresh = $true
+}
+if ($fresh -or (git -C $clone rev-parse HEAD 2>$null) -ne $pin) {
+    git -C $clone cat-file -e "$pin^{commit}" 2>$null
+    if ($LASTEXITCODE -ne 0) { git -C $clone fetch -q $upstream $pin }
+    git -C $clone checkout -q -f $pin
+    if ($LASTEXITCODE -ne 0) { throw "fsr-vulkan: cannot check out $pin in $clone" }
+    Write-Host "  $own at $pin (its own clone; build.sh applies the patches)"
+}
+
 # --- 3. what to run ---------------------------------------------------------------------------
+$kept = "release-server", "release-clientsample", "release-emu\tests", "release-emu\build" | ForEach-Object { Join-Path $out $_ }
+py -3.12 -I $decide clear-stale-caches --root $Root @kept
 py -3.12 -I $decide emulator-check --root $Root --stamp $stamp
 if ($LASTEXITCODE -ne 0) { throw "release_src.py emulator-check failed" }
 Write-Host ""

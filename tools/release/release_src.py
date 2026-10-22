@@ -7,13 +7,18 @@ tests build incrementally, and the emulator tests run only when the emulator cha
 last commit they passed on (Kaniel 2026-10-22). The release ships no emulator. That commit is kept
 in a stamp file (<BB_ROOT>\\out\\release-emu\\tested-commit.txt).
 
+It also clears CMake caches in the kept build folders that another checkout configured (CMake
+refuses to build there from the release checkout).
+
 Usage: release_src.py emulator-check --root <checkout> --stamp <file>
            prints EMULATOR_TESTS=needed|skip and why
        release_src.py emulator-mark --root <checkout> --stamp <file>
            after the tests passed: stores the checkout's commit
+       release_src.py clear-stale-caches --root <checkout> <build folder>...
 """
 import argparse
 import pathlib
+import shutil
 import subprocess
 import sys
 
@@ -82,12 +87,45 @@ def mark(root, stamp, jj=run_jj):
     return commit
 
 
+def _norm(path):
+    return str(path).replace("\\", "/").rstrip("/").lower()
+
+
+def clear_stale_caches(root, folders):
+    """Removes CMakeCache.txt and CMakeFiles from each build folder whose cache names a source
+    outside root; the build output stays. Returns the folders it cleared."""
+    root = _norm(root)
+    cleared = []
+    for folder in map(pathlib.Path, folders):
+        cache = folder / "CMakeCache.txt"
+        if not cache.is_file():
+            continue
+        source = None
+        for line in cache.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith("CMAKE_HOME_DIRECTORY:"):
+                source = _norm(line.split("=", 1)[1])
+                break
+        if source is not None and (source == root or source.startswith(root + "/")):
+            continue
+        cache.unlink()
+        shutil.rmtree(folder / "CMakeFiles", ignore_errors=True)
+        cleared.append(folder)
+    return cleared
+
+
 def main(argv=None, run_jj=run_jj):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=("emulator-check", "emulator-mark"))
+    parser.add_argument("command", choices=("emulator-check", "emulator-mark", "clear-stale-caches"))
     parser.add_argument("--root", required=True)
-    parser.add_argument("--stamp", required=True)
+    parser.add_argument("--stamp")
+    parser.add_argument("folders", nargs="*")
     args = parser.parse_args(argv)
+    if args.command == "clear-stale-caches":
+        for folder in clear_stale_caches(args.root, args.folders):
+            print(f"  cleared the CMake cache of {folder} (made from another checkout)")
+        return 0
+    if not args.stamp:
+        parser.error("--stamp is needed")
     if args.command == "emulator-check":
         needed, why = decide(args.root, args.stamp, run_jj)
         print(f"EMULATOR_TESTS={'needed' if needed else 'skip'} ({why})")

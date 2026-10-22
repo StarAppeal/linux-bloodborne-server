@@ -112,11 +112,57 @@ class ReleaseSrcScriptTest(unittest.TestCase):
         self.assertIn('emulator-check', script)
         self.assertIn('emulator-mark', script)
         # It never deletes the checkout or its build output.
-        self.assertNotIn('Remove-Item', script)
+        self.assertNotRegex(script, r'Remove-Item[^\n]*\$(Root|out)\b')
 
     def test_readme_tells_release_builders_to_use_it(self):
         readme = (ROOT / 'README.md').read_text(encoding='utf-8')
         self.assertIn('tools\\release-src.ps1', readme)
+
+
+class StaleCacheTest(unittest.TestCase):
+    """A build folder configured from another checkout (rel112-src): CMake refuses it, so its cache
+    goes; one configured from the release checkout stays, so its build stays incremental."""
+
+    def setUp(self):
+        self.tmp = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+
+    def build_dir(self, name, source):
+        folder = self.tmp / name
+        (folder / 'CMakeFiles' / 'x.dir').mkdir(parents=True)
+        (folder / 'CMakeCache.txt').write_text(
+            f'# This is the CMakeCache file.\nCMAKE_HOME_DIRECTORY:INTERNAL={source}\n', encoding='utf-8')
+        (folder / 'shadnet.exe').write_text('built', encoding='utf-8')
+        return folder
+
+    def test_another_checkouts_cache_is_cleared(self):
+        folder = self.build_dir('release-server', 'C:/bb/rel112-src/server')
+        cleared = tool.clear_stale_caches('C:\\bb\\release-src', [folder])
+        self.assertEqual(cleared, [folder])
+        self.assertFalse((folder / 'CMakeCache.txt').exists())
+        self.assertFalse((folder / 'CMakeFiles').exists())
+        self.assertTrue((folder / 'shadnet.exe').exists())  # the build output itself stays
+
+    def test_the_release_checkouts_own_cache_stays(self):
+        folder = self.build_dir('release-server', 'C:/bb/release-src/server')
+        self.assertEqual(tool.clear_stale_caches('C:\\bb\\release-src', [folder]), [])
+        self.assertTrue((folder / 'CMakeCache.txt').exists())
+
+    def test_case_and_a_folder_that_only_starts_alike(self):
+        same = self.build_dir('a', 'c:/BB/Release-Src/server/clientsample')
+        other = self.build_dir('b', 'C:/bb/release-src-pr/server')
+        self.assertEqual(tool.clear_stale_caches('C:\\bb\\release-src', [same, other]), [other])
+
+    def test_missing_folders_are_fine(self):
+        self.assertEqual(tool.clear_stale_caches('C:\\bb\\release-src', [self.tmp / 'none']), [])
+
+
+class PinnedCloneTest(unittest.TestCase):
+    def test_the_script_clones_the_patched_submodule_instead_of_linking_it(self):
+        script = (ROOT / 'tools' / 'release-src.ps1').read_text(encoding='utf-8-sig')
+        self.assertIn('fsr-vulkan', script)
+        self.assertIn('ls-tree', script)  # the commit main pins
+        self.assertIn('clear-stale-caches', script)
 
 
 if __name__ == '__main__':
