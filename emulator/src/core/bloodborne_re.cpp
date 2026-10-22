@@ -800,13 +800,17 @@ void ReconcileMemberPresence() {
             continue;
         }
         const s64 since = unmatched_since.try_emplace(character, now_ms).first->second;
-        if (now_ms - since >= PresenceGraceMs && !hidden.contains(character) &&
+        if (PresenceHides(now_ms, first_seen.at(character), since) && !hidden.contains(character) &&
             !IsCharacterDisabled(character)) {
             set_disabled(character, true);
             ForgetGroundOfHidden(character);
             hidden.insert(character);
-            LOG_INFO(Debug, "Bloodborne presence: no member on map {:#x} by player {:#x}: hidden",
-                     map, ReadValue<u32>(character, 0x08));
+            const auto& at = others[i].at;
+            LOG_INFO(Debug,
+                     "Bloodborne presence: no member on map {:#x} by player {:#x} at ({:.0f}, "
+                     "{:.0f}, {:.0f}): hidden",
+                     map, ReadValue<u32>(character, 0x08), at ? (*at)[0] : 0.0f,
+                     at ? (*at)[1] : 0.0f, at ? (*at)[2] : 0.0f);
         }
     }
 }

@@ -2346,6 +2346,9 @@ std::string FormatTrail(const std::vector<LampPosition>& points);
 // walking pace; nothing once it is at the end.
 constexpr float GlideMetersPerSecond = 4.0f;
 std::optional<LampPosition> GlidePoint(const std::vector<LampPosition>& path, double elapsed);
+// pickup: whether the player is no longer at the map item it was put on (fell through ground
+// not loaded yet, or pushed out of the item button's reach), so it is put back on it.
+bool PickupPlayerOffTheItem(const LampPosition& player, const LampPosition& item);
 // keep-going on: where a script goes on after its step at `failed` failed: the next "chapter"
 // command after it, nothing if none is left.
 std::optional<size_t> NextAutoplayChapter(const std::vector<AutoplayCommand>& script,
@@ -3341,6 +3344,13 @@ std::string EncodeVitalsUpdate(const MemberVitals& self, std::span<const ReviveH
 constexpr float PresenceMetres = 25.0f;
 // A character that stops matching stays shown this long first (a board a beat behind a sprint).
 constexpr s64 PresenceGraceMs = 3'000;
+// A character the game has just made (a join, a trip's re-create) stands where it was made until
+// its member's positions come: that long before it may be hidden at all (a hidden one's update
+// does not run, so it would never reach its member; rig 2026-10-22).
+constexpr s64 PresenceNewCharacterMs = 15'000;
+// Whether a character by no member (since `unmatched_since_ms`), first seen at `first_seen_ms`,
+// is hidden now.
+bool PresenceHides(s64 now_ms, s64 first_seen_ms, s64 unmatched_since_ms);
 std::vector<bool> ShownOtherPlayers(std::span<const std::optional<LampPosition>> characters,
                                     std::span<const MemberVitals> board, std::string_view self,
                                     u32 map);

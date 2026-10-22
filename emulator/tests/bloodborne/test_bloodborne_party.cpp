@@ -119,6 +119,21 @@ TEST(MemberPresence, OneMemberKeepsOnlyOneCharacterShown) {
               (std::vector<bool>{true, false}));
 }
 
+// Rig 2026-10-22 (walls-woods-stairs): a guest joined as the host left for the Ward; both games
+// made the other's character, hid it 3 s later (no board member by it yet) and, hidden, its update
+// never ran to bring it to where the member stood: 55 s on the game dropped the session. A
+// character the game has just made gets PresenceNewCharacterMs to reach its member first.
+TEST(MemberPresence, ANewCharacterGetsTimeToReachItsMember) {
+    constexpr s64 Made = 10'000;
+    EXPECT_FALSE(PresenceHides(Made + 3'500, Made, Made + 100)) << "just made: not yet";
+    EXPECT_FALSE(PresenceHides(Made + PresenceNewCharacterMs - 1, Made, Made + 100));
+    EXPECT_TRUE(PresenceHides(Made + PresenceNewCharacterMs, Made, Made + 100))
+        << "still by no member once it had its time";
+    constexpr s64 Old = 0;
+    EXPECT_FALSE(PresenceHides(50'000 + PresenceGraceMs - 1, Old, 50'000)) << "a sprint's grace";
+    EXPECT_TRUE(PresenceHides(50'000 + PresenceGraceMs, Old, 50'000)) << "a member gone";
+}
+
 // Kaniel's playtest 2026-10-16: krolebord joined in place and never saw Lisara (her task stayed at
 // step 1): a remote player's task before its character is made waits for its data.
 TEST(MemberPresence, AJoinStillBeforeItsCharacterAsksForTheData) {

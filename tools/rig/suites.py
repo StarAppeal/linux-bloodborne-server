@@ -73,6 +73,9 @@ DOG_MAX_HP = 364
 # not one for real hits: in the rig's saves the game keeps it hidden (+0x28, no backread) at 35 m,
 # so no swing lands (rig 2026-10-13), and after hp-apart its HP is the host's shared damage.
 FRESH_ENEMY = "0x1001402e"
+# It stands 1 m from FRESH_ENEMY (both at -212,201): a weapon swing at one can kill both (rig
+# 2026-10-22, dog: 179 -> 0 in the same hit), and the host then rightly finds both dead.
+FRESH_ENEMY_BESIDE = "0x1001402f"
 ENEMY_MAX_HP = 484
 GUESTS = ("guest", "guest2")
 
@@ -202,9 +205,9 @@ def wipe(roles, name: str = "wipe", guests_point: int | None = None,
     return chapter(
         name, "a party wipe resets the map for everyone, the same in every game", steps,
         expect={"host": [r"party death: died for real on map 0x18010000 \(reset=true\)",
-                         r"travelling there \(reset=true\)", BLOODSTAIN_DROPPED, WIPE_RAN],
+                         r"travelling there \(reset=true, void fall=false\)", BLOODSTAIN_DROPPED, WIPE_RAN],
                 **{guest: [r"party death: wipe \d+ ends down \d+; dies \(reset=true",
-                           r"travelling there \(reset=true\)", BLOODSTAIN_DROPPED, WIPE_RAN,
+                           r"travelling there \(reset=true, void fall=false\)", BLOODSTAIN_DROPPED, WIPE_RAN,
                            *([rf"respawn at the host's point {CENTRAL_YHARNAM_LAMP} "
                               rf"\(own {guests_point}\)"] if guests_point else [])]
                    for guest in roles[1:]}},
@@ -476,8 +479,10 @@ SUITES = {
                     {"host": ["sync ah-go", f"teleport {IOSEFKA_WAIT}", "sync ah-apart",
                               "sync ah-done", f"teleport {AT_THE_LAMP}", "wait 3"],
                      "guest": ["sync ah-go", "sync ah-apart", "godmode off",
-                               f"teleport {GUEST_ALONE_SPOT}", "wait 25",
-                               "expect-hp self < 594", "godmode", "sync ah-done",
+                               # Away at the first hit: 25 s there sometimes downed the guest
+                               # with nobody to revive it (rig 2026-10-22).
+                               f"teleport {GUEST_ALONE_SPOT}", "wait-hp self < 594 25",
+                               "godmode", "sync ah-done",
                                f"teleport {AT_THE_LAMP}", "wait 3"]},
                     forbid=holds(PARTY2)),
             chapter("near-kill", "both strike one enemy to death at once: it dies once in each "
@@ -624,7 +629,7 @@ SUITES = {
                                       r"attack cycle)"],
                             "host": [r"(?:hid 1 enemies a member killed on map 0x18010000|"
                                      r"0x18010000, [1-9]\d* near died)"]},
-                    forbid={"guest": only_kill(FRESH_ENEMY)}),
+                    forbid={"guest": only_kill(FRESH_ENEMY, FRESH_ENEMY_BESIDE)}),
             chapter("kills-held", "kills stay dead while one member stays on the map: the guest "
                                   "goes to the Dream and back, the host stays (Kaniel 2026-10-11: "
                                   "half the location reset after a trip)",
@@ -827,7 +832,7 @@ SUITES = {
                                "wait-vital dead 30", "wait-vital up 120", "godmode",
                                "sync alone-woken", "wait-members 2 300"]},
                     expect={"guest": [r"party death: died for real on map 0x18010000 "
-                                      r"\(reset=true\)", r"travelling there \(reset=true\)"]},
+                                      r"\(reset=true\)", r"travelling there \(reset=true, void fall=false\)"]},
                     # Right after stain-after-rejoin's restart (as smoke's wipe after rejoin).
                     known_bug="after a guest's restart and rejoin its lethal fall is neither a "
                               "down nor a death alone (rig 2026-10-15, twice)",

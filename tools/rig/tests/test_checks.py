@@ -6,6 +6,7 @@ textures, known bugs, chapter times, join times, each direction's HP lag and the
 Run: py -3.12 -m unittest discover -s tools\\rig\\tests
 """
 import pathlib
+import re
 import sys
 import time
 import unittest
@@ -267,6 +268,27 @@ class CrashAndMemoryTest(unittest.TestCase):
                                                       free=lambda: next(seen)), 23.0)
         self.assertEqual(run_scenario.wait_for_memory(22.5, wait=0, sleep=lambda _: None,
                                                       free=lambda: 18.4), 18.4)
+
+
+class OnlyKillTest(unittest.TestCase):
+    """trips' dog (rig 2026-10-22): one swing killed the target and the enemy beside it."""
+    BOARD = ("Bloodborne party: kill board gets {} kills, {} back (visit 0x1801000000000009):{}"
+             "\r\nnext line")
+
+    def forbidden(self, text, *handles):
+        import scenarios
+        return any(re.search(p, text) for p in scenarios.only_kill(*handles))
+
+    def test_the_enemy_beside_may_die_with_the_target(self):
+        both = self.BOARD.format(2, 0, " 0x1001402e (dead 0x0 hp 0) 0x1001402f (dead 0x0 hp 0)")
+        self.assertTrue(self.forbidden(both, "0x1001402e"))
+        self.assertFalse(self.forbidden(both, "0x1001402e", "0x1001402f"))
+
+    def test_any_other_kill_or_a_kill_put_back_still_fails(self):
+        other = self.BOARD.format(2, 0, " 0x1001402e (dead 0x0 hp 0) 0x10014000 (dead 0x0 hp 0)")
+        back = self.BOARD.format(0, 1, " back 0x1001402e")
+        for text in (other, back):
+            self.assertTrue(self.forbidden(text, "0x1001402e", "0x1001402f"))
 
 
 if __name__ == "__main__":

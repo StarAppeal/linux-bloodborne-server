@@ -88,6 +88,7 @@ struct AutoplayRun {
     std::optional<u32> attack_placed; // the attack cycle the player was last put in place for
     s32 noted_max_hp = 0;             // note-max-hp: the player's max HP then
     u32 pickup_handle = 0;            // pickup: the map item it went for
+    LampPosition pickup_at{};         // pickup: where the player was put on it
     s32 hit_from_hp = 0;              // hit: the target's HP when it began
     std::string script_path;          // sync: the go files are beside it (AutoplaySyncPath)
     std::string chapter;              // the chapter the script is in (a rig suite's section)
@@ -785,7 +786,8 @@ bool AutoplayPickup(const AutoplayStep& step) {
         }
         const MapItemSpot& spot = items.front().second;
         autoplay_run.pickup_handle = spot.handle;
-        TeleportLocalPlayer({spot.at[0], spot.at[1] + 0.2f, spot.at[2]});
+        autoplay_run.pickup_at = {spot.at[0], spot.at[1] + 0.2f, spot.at[2]};
+        TeleportLocalPlayer(autoplay_run.pickup_at);
         LOG_INFO(Debug, "Bloodborne autoplay: picking up map item {:#x} {:.1f} m away", spot.handle,
                  items.front().first);
     }
@@ -796,6 +798,16 @@ bool AutoplayPickup(const AutoplayStep& step) {
         LOG_INFO(Debug, "Bloodborne autoplay: map item {:#x} picked up after {:.1f} s",
                  autoplay_run.pickup_handle, step.elapsed);
         return true;
+    }
+    // The far item's ground may not be loaded yet, or a body by it pushes the player away: a
+    // player off the item goes back on it.
+    if (step.begun && position && PickupPlayerOffTheItem(*position, autoplay_run.pickup_at)) {
+        TeleportLocalPlayer(autoplay_run.pickup_at);
+        LOG_INFO(Debug,
+                 "Bloodborne autoplay: back on map item {:#x} from ({:.1f}, {:.1f}, {:.1f}) after "
+                 "{:.1f} s",
+                 autoplay_run.pickup_handle, (*position)[0], (*position)[1], (*position)[2],
+                 step.elapsed);
     }
     autoplay_buttons.store(
         step.elapsed > 1.0 && std::fmod(step.elapsed, 1.5) < 0.3 ? AutoplayButton("cross") : 0);
@@ -1129,6 +1141,25 @@ bool AutoplayLog(const AutoplayStep& step) {
     }
     LOG_INFO(Debug, "Bloodborne autoplay log: {}", text);
     return true;
+}
+
+// wait-hp <handle|self> <op> <value> [<timeout>]: expect-hp that waits until it holds (rig
+// 2026-10-22, apart-hurt: 25 s beside an enemy sometimes downed the guest, alone, for the rest of
+// the suite; it leaves at the first hit that lands).
+bool AutoplayWaitHp(const AutoplayStep& step) {
+    const auto target = ParseAutoplayTarget(step.Arg(0));
+    const auto found = target ? FindAutoplayCharacter(*target) : std::nullopt;
+    const s32 hp = found ? ReadValue<s32>(found->data, 0xF8) : 0;
+    const auto holds = found ? CompareAutoplay(hp, step.Arg(1), static_cast<s64>(step.Number(2, 0)))
+                             : std::nullopt;
+    if (holds && *holds) {
+        return true;
+    }
+    if (step.elapsed > step.Number(3, 30)) {
+        step.failure = found ? fmt::format("hp is {} after {:.0f} s", hp, step.elapsed)
+                             : std::string{"no such character"};
+    }
+    return false;
 }
 
 bool AutoplayExpectHp(const AutoplayStep& step) {
@@ -1939,6 +1970,7 @@ constexpr auto AutoplayVerbs = std::to_array<std::pair<std::string_view, Autopla
     {"log", AutoplayLog},
     {"cutscene-options", AutoplayCutsceneOptions},
     {"expect-hp", AutoplayExpectHp},
+    {"wait-hp", AutoplayWaitHp},
     {"dump", AutoplayDump},
     {"raise-stat", AutoplayRaiseStat},
     {"add-effect", AutoplayAddEffect},

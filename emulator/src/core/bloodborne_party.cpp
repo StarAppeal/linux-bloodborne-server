@@ -4660,6 +4660,14 @@ std::optional<LampPosition> GlidePoint(const std::vector<LampPosition>& path, do
     return std::nullopt;
 }
 
+bool PickupPlayerOffTheItem(const LampPosition& player, const LampPosition& item) {
+    // The item button's reach is short: its prompt went 1.4 m aside from the spot (rig 2026-10-22).
+    // Up and down only a fall counts (the feet stand a little under the spot).
+    const bool aside = std::hypot(player[0] - item[0], player[2] - item[2]) > 0.75f;
+    const bool fell = item[1] - player[1] > 2.0f;
+    return aside || fell;
+}
+
 std::optional<size_t> NextAutoplayChapter(const std::vector<AutoplayCommand>& script,
                                           size_t failed) {
     for (size_t at = failed + 1; at < script.size(); ++at) {
@@ -6161,6 +6169,11 @@ PartyPanel BuildPartyPanel(std::span<const MemberVitals> board, std::string_view
         });
     }
     return panel;
+}
+
+bool PresenceHides(s64 now_ms, s64 first_seen_ms, s64 unmatched_since_ms) {
+    return now_ms - unmatched_since_ms >= PresenceGraceMs &&
+           now_ms - first_seen_ms >= PresenceNewCharacterMs;
 }
 
 std::vector<bool> ShownOtherPlayers(std::span<const std::optional<LampPosition>> characters,

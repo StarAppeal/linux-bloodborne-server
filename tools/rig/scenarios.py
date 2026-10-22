@@ -17,7 +17,8 @@ hit <target> [<timeout>] (light attacks until one lands),
 press <button> [<ms>], cutscene-options <s> (Options once the next cutscene has played that
 long: the script stands still under one), stick <x> <y> [<ms>], pickup [<meters>] [<timeout>] (onto the
 nearest usable map item, then X until it is gone), snapshot, log <text>,
-expect-hp <handle|self> <op> <value>, expect-session <n>, expect-map <map>,
+expect-hp <handle|self> <op> <value>, wait-hp <handle|self> <op> <value> [<timeout>] (until it
+holds), expect-session <n>, expect-map <map>,
 set-flag <flag> <0|1>, expect-flag <flag> <0|1>, wait-flag <flag> <0|1> [<timeout>],
 wait-solo [<timeout>] (until the session is gone), note-max-hp (the player's, for
 expect-max-hp <target> <op> <value|noted>), expect-effect <SpEffect> <0|1>,
@@ -235,9 +236,14 @@ CLOSE_MENU = ["press circle 200", "wait 2", "press circle 200", "wait 3"]
 REVIVE_HITS = ["revive-downed 150"]  # real hits: an unarmed rig hunter needs about 24 landed punches
 
 
-def only_kill(handle: str) -> list[str]:
-    """No kill posted but this one: a false kill hides a living enemy from the others."""
-    return [rf"kill board gets (?!1 kills, 0 back \(visit [^)]*\): {handle} )"]
+def only_kill(handle: str, *beside: str) -> list[str]:
+    """No kill posted but this one: a false kill hides a living enemy from the others. `beside`:
+    enemies standing so close that the same swing may kill them too (a real kill, posted with it)."""
+    if not beside:
+        return [rf"kill board gets (?!1 kills, 0 back \(visit [^)]*\): {handle} )"]
+    ours = "|".join((handle, *beside))
+    return [rf"(?m)kill board gets (?!\d+ kills, 0 back \(visit [^)]*\):"
+            rf"(?: (?:{ours}) \(dead [^)]*\))+\s*$)"]
 
 
 def attack(target: str) -> list[str]:
@@ -2653,9 +2659,9 @@ SCENARIOS = {
         },
         "expect": {
             "host": [r"party death: died for real on map 0x18010000 \(reset=true\)",
-                     r"travelling there \(reset=true\)", BLOODSTAIN_DROPPED],
+                     r"travelling there \(reset=true, void fall=false\)", BLOODSTAIN_DROPPED],
             "guest": [r"party death: wipe \d+ ends down \d+; dies \(reset=true",
-                      r"travelling there \(reset=true\)", BLOODSTAIN_DROPPED],
+                      r"travelling there \(reset=true, void fall=false\)", BLOODSTAIN_DROPPED],
         },
         "forbid": {"host": SESSION_HOLDS + [BLOODSTAIN_STOLEN],
                    "guest": SESSION_HOLDS + [BLOODSTAIN_STOLEN]},
@@ -2676,7 +2682,7 @@ SCENARIOS = {
         },
         "expect": {
             "guest": [r"party death: died for real on map 0x18010000 \(reset=true\)",
-                      r"travelling there \(reset=true\)"],
+                      r"travelling there \(reset=true, void fall=false\)"],
         },
         "forbid": {"host": SESSION_HOLDS, "guest": SESSION_HOLDS + [r"party death: down \d+"]},
         "timeout": 900,
@@ -2755,12 +2761,12 @@ SCENARIOS = {
         },
         "expect": {
             "host": [r"party death: died for real on map 0x18010000 \(reset=true\)",
-                     r"travelling there \(reset=true\)", BLOODSTAIN_DROPPED],
+                     r"travelling there \(reset=true, void fall=false\)", BLOODSTAIN_DROPPED],
             "guest": [r"party death: wipe \d+ ends down \d+; dies \(reset=true",
-                      r"travelling there \(reset=true\)", BLOODSTAIN_DROPPED],
+                      r"travelling there \(reset=true, void fall=false\)", BLOODSTAIN_DROPPED],
             "guest2": [r"party death: down \d+ on map 0x18010000",
                        r"party death: wipe \d+ ends down \d+; dies \(reset=true",
-                       r"travelling there \(reset=true\)", BLOODSTAIN_DROPPED],
+                       r"travelling there \(reset=true, void fall=false\)", BLOODSTAIN_DROPPED],
         },
         "forbid": {"host": SESSION_HOLDS + [BLOODSTAIN_STOLEN],
                    "guest": SESSION_HOLDS + [BLOODSTAIN_STOLEN],

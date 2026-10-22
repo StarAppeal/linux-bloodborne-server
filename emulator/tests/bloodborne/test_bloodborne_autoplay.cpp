@@ -229,3 +229,17 @@ TEST(BloodborneAutoplay, AGlideMovesAlongItsPathAtWalkingPace) {
     EXPECT_EQ(GlidePoint(path, 2.0), std::nullopt) << "there: the step is done";
     EXPECT_EQ(GlidePoint({{1, 2, 3}}, 0.0), std::nullopt) << "nowhere to go";
 }
+
+// pickup: the teleport onto a far map item can land before that block's ground has loaded, and
+// the player falls through the world beside the item (rig 2026-10-22, crashes' leave: from y -83
+// to -872 in 20 s, no prompt). Or a body lying by it pushes the player out of the item button's
+// reach (together's pickup: 1.45 m from the spot, the prompt gone for 18 s). The player is put
+// back on the item until it stands there.
+TEST(BloodborneAutoplay, APickupPutsAFallenPlayerBackOnTheItem) {
+    const LampPosition item{-242.7f, -82.8f, 178.3f};
+    EXPECT_FALSE(PickupPlayerOffTheItem({-242.7f, -83.3f, 178.3f}, item)) << "standing on it";
+    EXPECT_FALSE(PickupPlayerOffTheItem({-243.0f, -82.9f, 177.9f}, item)) << "a little aside";
+    EXPECT_TRUE(PickupPlayerOffTheItem({-242.7f, -134.6f, 178.3f}, item)) << "fell through";
+    const LampPosition by_the_lamp{-210.7f, -54.1f, 184.0f};
+    EXPECT_TRUE(PickupPlayerOffTheItem({-211.7f, -54.4f, 185.0f}, by_the_lamp)) << "pushed away";
+}
