@@ -248,6 +248,29 @@ vec3 SurfaceLight(vec3 hit, vec3 hn, bool shadows) {
     return light;
 }
 
+// The last frame's lit colour at world point `hit` when it is on screen and not hidden there (the
+// game's own light on it, with the bounces before; the reflections' and the bounce's hits).
+bool SeenOnScreen(vec3 hit, out vec3 seen) {
+    seen = vec3(0.0);
+    const vec3 d = hit - vec3(world[0].w, world[1].w, world[2].w);
+    const vec3 v = d.x * world[0].xyz + d.y * world[1].xyz + d.z * world[2].xyz;
+    if (v.z <= 0.1) {
+        return false;
+    }
+    const vec2 uv = vec2(proj.x * v.x, proj.y * v.y) / v.z * 0.5 + 0.5;
+    if (any(lessThan(uv, vec2(0.0))) || any(greaterThanEqual(uv, vec2(1.0)))) {
+        return false;
+    }
+    const vec2 at = uv * size;
+    const float drawn = LightingViewPos(at).z;
+    // Within the characters' ray model's error (~15% of their distance).
+    if (drawn <= 0.0 || abs(drawn - v.z) >= 0.15 * v.z + 0.2) {
+        return false;
+    }
+    seen = imageLoad(last_scene, ivec2(at)).rgb;
+    return all(greaterThanEqual(seen, vec3(0.0))) && all(lessThan(seen, vec3(1000.0)));
+}
+
 /// Kaniel 2026-10-21 ("do all steps", step 2): the lamps' light a pixel gets from the surfaces
 /// around it. Cosine-weighted rays against the map's models; at a hit, SurfaceLight coloured by the
 /// surface; a ray out to the open sky brings its light (SkyLight); the mean over the rays is the
@@ -261,6 +284,13 @@ vec3 LampBounce(vec3 wp, vec3 wn, float n1, float n2) {
         vec3 hit, hn, albedo;
         if (!TraceSurface(wp + wn * ShadowBias, dir, BounceReach, CharacterGap, hit, hn, albedo)) {
             sum += SkyLight(wp, wn, dir, BounceReach * 0.9);
+            continue;
+        }
+        // On screen: its lit colour last frame, which held the bounces before (light bouncing
+        // many times; Kaniel 2026-10-22, "path tracing"), not amplified by the slider again.
+        vec3 seen;
+        if (SeenOnScreen(hit, seen)) {
+            sum += seen / max(bounce_strength, 1.0);
             continue;
         }
         sum += albedo * SurfaceLight(hit, hn, true);
@@ -289,24 +319,57 @@ vec3 Reflection(vec3 wp, vec3 wn, vec3 view_dir, float gloss, float n1, float n2
     if (!TraceSurface(wp + wn * ShadowBias, dir, ReflectionReach, 0.1, hit, hn, albedo)) {
         return SkyLight(wp, wn, dir, ReflectionReach * 0.9) * 0.5;
     }
-    // On screen and not hidden there: the game's own lit colour of it (the last frame's).
-    const vec3 d = hit - vec3(world[0].w, world[1].w, world[2].w);
-    const vec3 v = d.x * world[0].xyz + d.y * world[1].xyz + d.z * world[2].xyz;
-    if (v.z > 0.1) {
-        const vec2 uv = vec2(proj.x * v.x, proj.y * v.y) / v.z * 0.5 + 0.5;
-        if (all(greaterThanEqual(uv, vec2(0.0))) && all(lessThan(uv, vec2(1.0)))) {
-            const vec2 at = uv * size;
-            const float drawn = LightingViewPos(at).z;
-            // Within the characters' ray model's error (~15% of their distance).
-            if (drawn > 0.0 && abs(drawn - v.z) < 0.15 * v.z + 0.2) {
-                const vec3 seen = imageLoad(last_scene, ivec2(at)).rgb;
-                if (all(greaterThanEqual(seen, vec3(0.0))) && all(lessThan(seen, vec3(1000.0)))) {
-                    return seen;
-                }
-            }
-        }
+    vec3 seen;
+    if (SeenOnScreen(hit, seen)) {
+        return seen;
     }
     return albedo * SurfaceLight(hit, hn, false);
+}
+
+// Path-tracing step 1 (Kaniel 2026-10-22, "all shadows... should work"): one lamp besides the four
+// strongest (`best`), picked at random by its light at the pixel (`u` 0..1); the light it gives
+// there, blocked, over the chance of picking it (averaged over pixels and frames by the resolve).
+vec3 OtherLampBlocked(vec3 p, vec3 n, vec3 wp, vec3 wn, int best[4], float u) {
+    float total = 0.0;
+    for (int i = 0; i < count; ++i) {
+        if (i == best[0] || i == best[1] || i == best[2] || i == best[3]) {
+            continue;
+        }
+        const vec4 at = lamps[i * 4];
+        const vec4 colour = lamps[i * 4 + 1];
+        if (colour.r == colour.g && colour.g == colour.b) {
+            continue; // the game's fill lights, never shadowed
+        }
+        total += LampWeight(p, n, at.xyz, at.w, max(max(colour.r, colour.g), colour.b));
+    }
+    if (total <= 1e-6) {
+        return vec3(0.0);
+    }
+    float target = u * total;
+    for (int i = 0; i < count; ++i) {
+        if (i == best[0] || i == best[1] || i == best[2] || i == best[3]) {
+            continue;
+        }
+        const vec4 at = lamps[i * 4];
+        const vec4 colour = lamps[i * 4 + 1];
+        if (colour.r == colour.g && colour.g == colour.b) {
+            continue;
+        }
+        const float w = LampWeight(p, n, at.xyz, at.w, max(max(colour.r, colour.g), colour.b));
+        target -= w;
+        if (target > 0.0 || w <= 0.0) {
+            continue;
+        }
+        const vec3 to_lamp = ToWorld(at.xyz, 1.0) - wp;
+        const float dist = length(to_lamp);
+        if (dist <= 2.0 * ShadowBias) {
+            return vec3(0.0);
+        }
+        const float shadow = Shadow(wp, wn, to_lamp / dist, dist, true,
+                                    wn.y > 0.7 ? 0.05 : CharacterGap);
+        return colour.rgb * LampWeight(p, n, at.xyz, at.w, 1.0) * strength * shadow * (total / w);
+    }
+    return vec3(0.0);
 }
 
 void main() {
@@ -356,7 +419,10 @@ void main() {
     const float n2 = fract(GradientNoise(vec2(pixel) + vec2(47.0, 17.0)) + noise * 1.618034);
     const int turn = (bounce_rays >> 8) & 3;
     if ((pixel.x & 1) + 2 * (pixel.y & 1) == turn) {
-        imageStore(bounce_img, pixel, vec4(LampBounce(wp, wn, n1, n2) * bounce_strength, p.z));
+        // The other lamps' shadows ride along as negative light (the resolve clamps light0 at 0).
+        const vec3 others = OtherLampBlocked(p, n, wp, wn, best_i, fract(n1 * 7.31 + n2));
+        imageStore(bounce_img, pixel,
+                   vec4(LampBounce(wp, wn, n1, n2) * bounce_strength - others, p.z));
     } else {
         imageStore(bounce_img, pixel, vec4(0.0, 0.0, 0.0, -p.z));
     }

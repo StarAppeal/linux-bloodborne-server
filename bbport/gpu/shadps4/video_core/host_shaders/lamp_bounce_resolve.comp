@@ -68,5 +68,6 @@ void main() {
     }
     imageStore(next_img, pixel, vec4(result, z));
     const vec3 light = imageLoad(diffuse_img, pixel).rgb;
-    imageStore(diffuse_img, pixel, vec4(light + result, 1.0));
+    // The bounce can be negative (the other lamps' shadows, lamp_shadows.comp).
+    imageStore(diffuse_img, pixel, vec4(max(light + result, vec3(0.0)), 1.0));
 }
