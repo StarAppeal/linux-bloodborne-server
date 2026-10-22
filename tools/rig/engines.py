@@ -252,7 +252,7 @@ def refresh_events(mods: pathlib.Path, game_events: pathlib.Path,
     return True
 
 
-ENGINES ={engine.name: engine for engine in (Emulator(), Port())}
+ENGINES = {engine.name: engine for engine in (Emulator(), Port())}
 
 
 def link(path: pathlib.Path, target: pathlib.Path):
