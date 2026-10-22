@@ -103,8 +103,10 @@ std::map<std::uint32_t, std::shared_ptr<const BbMapArt::AreaMesh>> ready_meshes;
 constexpr std::uint32_t MeshKey = 7; // `map | MeshKey` in the queue: the mesh, not a picture
 constexpr std::uint32_t RayMeshKey = 6; // the ray tracing's finer mesh (GetRayMesh)
 /// Kaniel 2026-10-21 (ray-traced lamp shadows): the 3D map's 0.5 m grid made the floor shadow
-/// itself; the rays get the models on a 0.12 m grid.
-constexpr float RayMeshCell = 0.12f;
+/// itself; the rays get the models on a 0.12 m grid. Kaniel 2026-10-22 ("fully ray trace... all
+/// shadows reflections and so on should work"): at 0.12 m fences, railings and bars folded away;
+/// now 0.03 m (kept as .rtmesh3, a new file beside the old grid's).
+constexpr float RayMeshCell = 0.03f;
 std::map<std::uint32_t, std::shared_ptr<const BbMapArt::AreaMesh>> ready_ray_meshes;
 std::set<std::uint32_t> failed, asked;
 std::deque<std::uint32_t> queue;
@@ -171,7 +173,7 @@ void Work() {
             queue.pop_front();
         }
         if ((next & 7u) == RayMeshKey) {
-            auto mesh = MakeMesh(next & ~7u, RayMeshCell, ".rtmesh");
+            auto mesh = MakeMesh(next & ~7u, RayMeshCell, ".rtmesh3");
             std::scoped_lock lock{mutex};
             if (mesh) {
                 ready_ray_meshes[next & ~7u] = std::move(mesh);

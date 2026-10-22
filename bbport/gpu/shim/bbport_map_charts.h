@@ -22,8 +22,8 @@ bool Failed(std::uint32_t packed_map);
 /// Kaniel 2026-10-19 (the live 3D map): the area's thinned models (BbMapArt::MeshOf, kept in
 /// user/map/ as <area>.bbmesh), as Get: nothing while they are made (asking starts it).
 std::shared_ptr<const BbMapArt::AreaMesh> GetMesh(std::uint32_t packed_map);
-/// Kaniel 2026-10-21 (ray tracing): the same models on a finer grid for the rays (0.12 m, kept as
-/// <area>.rtmesh), as GetMesh.
+/// Kaniel 2026-10-21 (ray tracing): the same models on a finer grid for the rays (0.03 m, kept as
+/// <area>.rtmesh3), as GetMesh.
 std::shared_ptr<const BbMapArt::AreaMesh> GetRayMesh(std::uint32_t packed_map);
 
 /// A lamp's name (menu.msgbnd FMG 30) and an area's (item.msgbnd FMG 19) by their text ids, ""
