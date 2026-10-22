@@ -24,7 +24,8 @@ param(
 )
 $ErrorActionPreference = "Stop"
 if (-not $env:BB_ROOT) { $env:BB_ROOT = "C:\bb" }
-if (-not $Root) { $Root = Join-Path $env:BB_ROOT "release-src" }
+$default = Join-Path $env:BB_ROOT "release-src"
+if (-not $Root) { $Root = $default }
 if (-not $LinksFrom) { $LinksFrom = Join-Path $env:BB_ROOT "rel039-src" }
 $repo = Join-Path $env:BB_ROOT "bloodborne-server"
 $out = Join-Path $env:BB_ROOT "out"
@@ -40,7 +41,7 @@ if ($MarkEmulatorTested) {
 jj -R $repo git fetch
 if ($LASTEXITCODE -ne 0) { throw "jj git fetch failed in $repo" }
 if (-not (Test-Path (Join-Path $Root ".jj"))) {
-    jj -R $repo workspace add --name release-src -r $Rev $Root
+    jj -R $repo workspace add --name (Split-Path $Root -Leaf) -r $Rev $Root
     if ($LASTEXITCODE -ne 0) { throw "jj workspace add $Root failed" }
 } else {
     $own = jj -R $Root diff --summary -r "@"
@@ -97,8 +98,12 @@ if ($fresh -or (git -C $clone rev-parse HEAD 2>$null) -ne $pin) {
 }
 
 # --- 3. what to run ---------------------------------------------------------------------------
-$kept = "release-server", "release-clientsample", "release-emu\tests", "release-emu\build" | ForEach-Object { Join-Path $out $_ }
-py -3.12 -I $decide clear-stale-caches --root $Root @kept
+# The kept build folders belong to the release checkout: another -Root (a test) leaves them alone.
+if ($Root -eq $default) {
+    $kept = "release-server", "release-clientsample", "release-emu\tests", "release-emu\build" | ForEach-Object { Join-Path $out $_ }
+    py -3.12 -I $decide clear-stale-caches --root $Root @kept
+    if ($LASTEXITCODE -ne 0) { throw "release_src.py clear-stale-caches failed" }
+}
 py -3.12 -I $decide emulator-check --root $Root --stamp $stamp
 if ($LASTEXITCODE -ne 0) { throw "release_src.py emulator-check failed" }
 Write-Host ""

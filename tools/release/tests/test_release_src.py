@@ -153,6 +153,15 @@ class StaleCacheTest(unittest.TestCase):
         other = self.build_dir('b', 'C:/bb/release-src-pr/server')
         self.assertEqual(tool.clear_stale_caches('C:\\bb\\release-src', [same, other]), [other])
 
+    def test_cli_takes_the_folders_after_root_as_the_script_passes_them(self):
+        folder = self.build_dir('release-server', 'C:/bb/rel112-src/server')
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = tool.main(['clear-stale-caches', '--root', 'C:\\bb\\release-src', str(folder), str(self.tmp / 'none')])
+        self.assertEqual(code, 0)
+        self.assertFalse((folder / 'CMakeCache.txt').exists())
+        self.assertIn('release-server', out.getvalue())
+
     def test_missing_folders_are_fine(self):
         self.assertEqual(tool.clear_stale_caches('C:\\bb\\release-src', [self.tmp / 'none']), [])
 
@@ -163,6 +172,14 @@ class PinnedCloneTest(unittest.TestCase):
         self.assertIn('fsr-vulkan', script)
         self.assertIn('ls-tree', script)  # the commit main pins
         self.assertIn('clear-stale-caches', script)
+
+    def test_another_root_gets_its_own_workspace_and_leaves_the_kept_caches(self):
+        script = (ROOT / 'tools' / 'release-src.ps1').read_text(encoding='utf-8-sig')
+        self.assertIn('--name (Split-Path $Root -Leaf)', script)
+        self.assertNotIn('--name release-src', script)
+        # Clearing runs only for the default checkout: the kept build folders belong to it.
+        clear = script.index('clear-stale-caches')
+        self.assertIn('$Root -eq $default', script[script.rindex('if', 0, clear):clear])
 
 
 if __name__ == '__main__':

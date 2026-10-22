@@ -119,7 +119,8 @@ def main(argv=None, run_jj=run_jj):
     parser.add_argument("--root", required=True)
     parser.add_argument("--stamp")
     parser.add_argument("folders", nargs="*")
-    args = parser.parse_args(argv)
+    # Intermixed: the folders come after --root (Python 3.12's parse_args refuses that).
+    args = parser.parse_intermixed_args(argv)
     if args.command == "clear-stale-caches":
         for folder in clear_stale_caches(args.root, args.folders):
             print(f"  cleared the CMake cache of {folder} (made from another checkout)")
