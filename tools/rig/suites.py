@@ -86,8 +86,11 @@ HP_LAG_BUG = {"known_bug": "phase 10: HP bars lag behind the hit (0.17-1.2 s mea
 # fix's to write: the test is its contract.
 # Where a player stands at the first lamp (its census), to come back to without a trip.
 AT_THE_LAMP = "-199.7 -50.7 179.0"
-# Phase 7's goal for a join: from the guest's load's end to its session, at most this long.
-JOIN_AFTER_LOAD_S = 10
+# A join from the guest's load's end to its session, at most this long. Phase 7's goal was 10 s;
+# since a join reloads the team's world into the guest's game (#212, ~7 s) and the team's load
+# screen waits until the others stand still for 5 s, a join takes 19-24 s (rig 2026-10-22, on
+# v1.1.2 too): the asking and the server's yes take under 1 s.
+JOIN_AFTER_LOAD_S = 30
 # The team's load screen (or its bar) shown and never gone after (Lisara 2026-10-14: after
 # Continue the team bars stayed on top).
 LOAD_VIEW_STAYS = r"load view is up \(\d+ rows\)(?![\s\S]*load view is gone)"
@@ -1221,12 +1224,15 @@ SUITES = {
                     forbid={"guest": [r"new character in save slot"]},
                     files_absent={"guest": ["bloodborne_party_*.bak-*"]},
                     allow=CRASH_CLEANUP),
+            # The team's load screen is in the world since the join's reload (#212): title-keys
+            # did nothing there (rig 2026-10-22: no "menu keys toggle"). Pressed in the world from
+            # the guest's arrival on, eight times over the join's reload and the screen's settle
+            # (~18 s, rig 2026-10-22), so the menu ends closed.
             chapter("insert-while-loading", "the guest's game starts again and Insert is pressed "
                                             "on and off while the team's load screen is up: "
                                             "no crash, it joins (0.2.3: two games crashed)",
-                    {"guest": [RESTART, "team-ready", "title-keys toggle", "title-wait 3",
-                               "title-keys toggle", "title-wait 3", "title-keys toggle",
-                               "title-wait 3", "title-keys toggle", START, "keys back",
+                    {"guest": [RESTART, "team-ready", START,
+                               *["keys toggle", "wait 2"] * 8, "keys back",
                                "godmode", "wait-session 2 420", "wait 5", "expect-session 2",
                                "sync iwl-back"],
                      "host": ["sync iwl-back", "expect-session 2"]},

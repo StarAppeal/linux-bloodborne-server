@@ -328,6 +328,23 @@ class EdgeTest(unittest.TestCase):
                 self.assertIn(suites.RESTART, steps, "joins again from the title")
                 self.assertIn("expect-session 2", steps[steps.index(suites.RESTART):])
 
+    def test_insert_is_pressed_in_the_world_while_the_team_load_screen_is_up(self):
+        # The team's load screen is in the world since the join's reload: title-keys did nothing
+        # there (rig 2026-10-22), so the presses come after the guest's arrival, an even number.
+        chapter = next(c for c in suites.SUITES["joins"]["chapters"]
+                       if c["name"] == "insert-while-loading")
+        steps = chapter["steps"]["guest"]
+        self.assertNotIn("title-keys toggle", steps)
+        presses = [at for at, step in enumerate(steps) if step == "keys toggle"]
+        self.assertGreaterEqual(len(presses), 4)
+        self.assertEqual(len(presses) % 2, 0, "the menu ends closed")
+        self.assertLess(steps.index(scenarios.START), presses[0])
+        self.assertLess(presses[-1], steps.index("expect-session 2"))
+
+    def test_a_joins_budget_covers_the_team_worlds_reload(self):
+        # A join reloads the team's world and its load screen settles 5 s: 19-24 s measured.
+        self.assertGreaterEqual(suites.JOIN_AFTER_LOAD_S, 25)
+
     def test_an_outage_starts_at_a_sync_of_its_chapter(self):
         for name, scenario in suites.SUITE_SCENARIOS.items():
             for sync in [*scenario["outages"], *scenario["server_restarts"]]:
