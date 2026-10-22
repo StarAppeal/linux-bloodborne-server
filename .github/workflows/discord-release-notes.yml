@@ -1,0 +1,48 @@
+# Posts release notes to the project's Discord #release-notes channel.
+# Needs the repository secret DISCORD_WEBHOOK (the channel's webhook URL).
+name: Discord release notes
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Post only this release (e.g. v1.1.4). Leave empty to post ALL releases, oldest first."
+        required: false
+        default: ""
+      include_prereleases:
+        description: "When posting all: include pre-releases (the v0.3.x-local builds)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: discord-release-notes
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: tools/release
+      - name: Post to Discord
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          GITHUB_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          INCLUDE_PRE: ${{ inputs.include_prereleases }}
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            python3 tools/release/discord_notes.py release "$GITHUB_EVENT_PATH"
+          elif [ -n "$TAG" ]; then
+            python3 tools/release/discord_notes.py tag "$TAG"
+          elif [ "$INCLUDE_PRE" = "true" ]; then
+            python3 tools/release/discord_notes.py backfill
+          else
+            python3 tools/release/discord_notes.py backfill --no-pre
+          fi
