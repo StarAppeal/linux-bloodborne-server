@@ -82,9 +82,13 @@ class EngineTest(unittest.TestCase):
                          "the emulator draws no party HUD: its scripts skip their shots")
 
     def test_the_port_is_made_ready_to_play_on_the_rig(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with tempfile.TemporaryDirectory() as folder,                 unittest.mock.patch.object(engines, "refresh_events") as refresh,                 unittest.mock.patch.dict(os.environ):
+            os.environ.pop("BB_RIG_MODS", None)
             port = engines.Port(pathlib.Path(folder))
+            GameViewTest.write(port.game_dir / "dvdroot_ps4" / "event" / "common.emevd.dcx", "")
             port.prepare("host")
+            # The shared event files follow this checkout's patcher.
+            refresh.assert_called_with(port.mods, port.game_dir / "dvdroot_ps4" / "event")
             overrides = port.user_dir("host") / "host_overrides.custom.json"
             self.assertEqual(json.loads(overrides.read_text(encoding="utf-8")),
                              {"https://ss4.scej-network.jp:20443": "http://127.0.0.1:20453"},
@@ -337,6 +341,64 @@ class PortSetupTest(unittest.TestCase):
             self.assertEqual(run_scenario.setup_port(emulator, port), [])
             self.assertEqual((port.saves("host") / "1" / save).read_text(encoding="utf-8"),
                              "played on the port")
+
+
+class EventFilesTest(unittest.TestCase):
+    """The rig's shared event files follow this checkout's patcher (2026-10-22: a full run on
+    main played an Oct 20 m21_00 patch without 12105040 and failed dream-shop-messengers)."""
+
+    # A stand-in patcher: writes one event file and the manifest naming its own hash, as
+    # party_boss_events.py does.
+    TOOL = (
+        "import hashlib, json, pathlib, sys\n"
+        "target = pathlib.Path(sys.argv[1])\n"
+        "target.mkdir(parents=True, exist_ok=True)\n"
+        "(target / 'm21_00_00_00.emevd.dcx').write_text('new', encoding='utf-8')\n"
+        "made = {'tool_sha256': hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest()}\n"
+        "(target / 'manifest.json').write_text(json.dumps(made), encoding='utf-8')\n"
+    )
+
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        root = pathlib.Path(self.folder.name)
+        self.tool = root / "party_boss_events.py"
+        self.tool.write_text(self.TOOL, encoding="utf-8")
+        self.game_events = root / "game" / "event"
+        self.game_events.mkdir(parents=True)
+        self.mods = root / "CUSA03173-mods"
+        self.events = self.mods / "dvdroot_ps4" / "event"
+        self.events.mkdir(parents=True)
+        # The old file is a hard link to another folder's copy (a kit's event-patch).
+        self.other = root / "kit-event-patch.dcx"
+        self.other.write_text("old", encoding="utf-8")
+        os.link(self.other, self.events / "m21_00_00_00.emevd.dcx")
+        (self.events / "manifest.json").write_text(json.dumps({"tool_sha256": "c6ad97"}),
+                                                   encoding="utf-8")
+
+    def tearDown(self):
+        self.folder.cleanup()
+
+    def test_files_from_an_older_patcher_are_made_again(self):
+        self.assertTrue(engines.refresh_events(self.mods, self.game_events, self.tool))
+        self.assertEqual((self.events / "m21_00_00_00.emevd.dcx").read_text(encoding="utf-8"),
+                         "new")
+        # The other folder's copy keeps its own bytes: the link was replaced, not written through.
+        self.assertEqual(self.other.read_text(encoding="utf-8"), "old")
+        self.assertFalse(list(self.mods.parent.glob("*.tmp*")), "no work folder left behind")
+
+    def test_files_from_this_patcher_stay(self):
+        engines.refresh_events(self.mods, self.game_events, self.tool)
+        (self.events / "m21_00_00_00.emevd.dcx").write_text("kept", encoding="utf-8")
+        self.assertFalse(engines.refresh_events(self.mods, self.game_events, self.tool))
+        self.assertEqual((self.events / "m21_00_00_00.emevd.dcx").read_text(encoding="utf-8"),
+                         "kept")
+
+    def test_a_patcher_that_fails_leaves_the_files(self):
+        self.tool.write_text("import sys\nsys.exit(1)\n", encoding="utf-8")
+        with self.assertRaises(RuntimeError):
+            engines.refresh_events(self.mods, self.game_events, self.tool)
+        self.assertEqual((self.events / "m21_00_00_00.emevd.dcx").read_text(encoding="utf-8"),
+                         "old")
 
 
 class GamesTest(unittest.TestCase):

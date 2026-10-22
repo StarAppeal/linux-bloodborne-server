@@ -7,10 +7,12 @@ Each keeps its own rig folders, saves and baseline (the emulator's in rig/<role>
 rig/port/<role>), plays on the same servers with the same accounts, and logs in shadPS4's format
 to user/log/shad_log.txt, which the rig's checks read (tools/re/check_party_log.py).
 """
+import hashlib
 import json
 import os
 import pathlib
 import shutil
+import subprocess
 import sys
 
 BB_ROOT = pathlib.Path(os.environ.get("BB_ROOT", r"C:\bb"))
@@ -206,9 +208,51 @@ class Port(Emulator):
         overrides = {GAME_SERVER: f"http://127.0.0.1:{backend_port}"}
         (self.user_dir(role) / "host_overrides.custom.json").write_text(
             json.dumps(overrides, indent=2) + "\n", encoding="utf-8", newline="\n")
+        # The shared folder follows this checkout's patcher; BB_RIG_MODS (a branch's own) is left
+        # as it was made (and a rig with no game yet has nothing to make them from).
+        game_events = self.game_dir / "dvdroot_ps4" / "event"
+        if "BB_RIG_MODS" not in os.environ and (game_events / "common.emevd.dcx").is_file():
+            refresh_events(self.mods, game_events)
 
 
-ENGINES = {engine.name: engine for engine in (Emulator(), Port())}
+# The co-op event patcher (the launcher's copy makes a player's files the same way).
+EVENT_TOOL = pathlib.Path(__file__).resolve().parents[1] / "re" / "party_boss_events.py"
+
+
+def refresh_events(mods: pathlib.Path, game_events: pathlib.Path,
+                   tool: pathlib.Path = EVENT_TOOL) -> bool:
+    """Makes `mods`' event files again from `game_events` when another patcher made them (its
+    manifest names the patcher's hash, as the launcher's events_current checks). Nothing else did
+    for the rig: on 2026-10-22 a full run on main played an Oct 20 m21_00 patch without 12105040
+    and failed dream-shop-messengers. Lanes may do this at once: each makes its own work folder
+    and the files are the same. Each file is replaced, not written through, since the shared
+    files can be hard links to a kit's. True when the files were made."""
+    events = mods / "dvdroot_ps4" / "event"
+    digest = hashlib.sha256(tool.read_bytes()).hexdigest()
+    try:
+        made = json.loads((events / "manifest.json").read_text(encoding="utf-8"))
+        if made.get("tool_sha256") == digest:
+            return False
+    except (OSError, ValueError):
+        pass
+    work = mods.parent / f"{mods.name}-events.tmp{os.getpid()}"
+    shutil.rmtree(work, ignore_errors=True)
+    try:
+        result = subprocess.run([sys.executable, str(tool), str(work), str(game_events)],
+                                capture_output=True, text=True)
+        if result.returncode != 0 or not (work / "manifest.json").is_file():
+            raise RuntimeError(f"the event patcher {tool} failed: {result.stdout}{result.stderr}")
+        events.mkdir(parents=True, exist_ok=True)
+        # The manifest last: until it is in, the next start makes them again.
+        for file in sorted(work.iterdir(), key=lambda path: path.name == "manifest.json"):
+            os.replace(file, events / file.name)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    print(f"rig: event files in {events} made again by {tool.name} ({digest[:12]})")
+    return True
+
+
+ENGINES ={engine.name: engine for engine in (Emulator(), Port())}
 
 
 def link(path: pathlib.Path, target: pathlib.Path):
