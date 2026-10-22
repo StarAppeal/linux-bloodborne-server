@@ -1567,6 +1567,85 @@ SCENARIOS = {
         "forbid": {"host": SESSION_HOLDS, "guest": SESSION_HOLDS},
         "timeout": 300,
     },
+    # A player's report on v1.1.2: a guest's own stain may not show on its compass. The guest's
+    # deaths other than "bloodstain"'s give-up by the lamp, each ending where its stain lies.
+    # Alone on its map (the host gone to the Ward): the fall is a real death, no down, and the
+    # guest wakes at the host's lamp (PartyDeathPoint).
+    "bloodstain-alone": {
+        "about": "a guest alone on its map dies by a fall (no down), wakes at the host's lamp in "
+                 "the Ward and walks back; its own stain is on its compass there",
+        "settings": PARTY_DEATH,
+        "roles": {
+            "host": [START, "godmode", "wait-session 2 300", "wait 5",
+                     f"travel {CATHEDRAL_WARD_LAMP}", "wait-member-vital dead 180", "wait 30",
+                     "wait 30", "wait 30"],
+            "guest": [START, "wait-session 2 300", "trade-give echoes 500", "wait 30",
+                      *LETHAL_FALL, "wait-vital dead 30", "wait-vital up 60", "wait 8",
+                      f"expect-map {CATHEDRAL_WARD}", "expect-stains 0 1 20",
+                      f"glide {WARD_TO_YHARNAM}", "wait 8", f"expect-map {CENTRAL_YHARNAM}",
+                      "expect-stains 1 1 30", "shot guest-stain-alone", "wait 3"],
+        },
+        "expect": {"guest": [r"autoplay stains: \[compass own"]},
+        "forbid": {"host": SESSION_HOLDS, "guest": SESSION_HOLDS},
+        "timeout": 300,
+    },
+    # Its last lamp the Ward's (the trip there): it walks to Central Yharnam, gives up on the open
+    # ground west of the first lamp (a fall at the gate dropped it through the world, rig
+    # 2026-10-22) and wakes where PartyDeathPoint puts it (the host's lamp, the stain's map).
+    "bloodstain-far-lamp": {
+        "about": "a guest whose last lamp is the Ward's walks to Central Yharnam and gives up "
+                 "there; its own stain is on its compass and map",
+        "settings": PARTY_DEATH,
+        "roles": {
+            "host": [START, "godmode", "wait-session 2 300", "wait-member-vital dead 240",
+                     "wait 30", "wait 30", "wait 30"],
+            "guest": [START, "godmode", "wait-session 2 300", "trade-give echoes 500",
+                      f"travel {CATHEDRAL_WARD_LAMP}", "wait 5", f"glide {WARD_TO_YHARNAM}",
+                      "wait 8", f"expect-map {CENTRAL_YHARNAM}", f"teleport {GUEST_ALONE_SPOT}",
+                      "wait 3", "godmode off", *GIVE_UP, "wait-vital up 60", "wait 8",
+                      "log woke after the give-up", "expect-stains 1 1 30",
+                      "shot guest-stain-far-lamp", "wait 3"],
+        },
+        "expect": {"guest": [r"autoplay stains: \[compass own"]},
+        "forbid": {"host": SESSION_HOLDS, "guest": SESSION_HOLDS},
+        "timeout": 300,
+    },
+    # A lamp trip away and back after the give-up.
+    "bloodstain-trip": {
+        "about": "a guest gives up by the lamp, travels to the Dream and back; its own stain is "
+                 "still on its compass and map",
+        "settings": PARTY_DEATH,
+        "roles": {
+            "host": [START, "godmode", "wait-session 2 300", "wait-member-vital dead 180",
+                     "wait 30", "wait 30", "wait 30"],
+            "guest": [START, "wait-session 2 300", "trade-give echoes 500", "wait 15", *GIVE_UP,
+                      "wait-vital up 60", "wait 6", "expect-stains 1 1 30",
+                      f"travel {HUNTERS_DREAM}", "wait 10", "expect-stains 0 1 20",
+                      f"travel {CENTRAL_YHARNAM_LAMP}", "wait-members 2 120", "wait 10",
+                      "expect-stains 1 1 30", "shot guest-stain-trip", "wait 3"],
+        },
+        "expect": {"guest": [r"autoplay stains: \[compass own[\s\S]*autoplay stains: \[map own"
+                             r"[\s\S]*autoplay stains: \[compass own"]},
+        "forbid": {"host": SESSION_HOLDS, "guest": SESSION_HOLDS},
+        "timeout": 300,
+    },
+    # The guest's game quits after the give-up and joins again (the join reload).
+    "bloodstain-rejoin": {
+        "about": "a guest gives up by the lamp, its game quits and joins the host again; its own "
+                 "stain is still on its compass and map",
+        "settings": PARTY_DEATH,
+        "roles": {
+            "host": [START, "godmode", "wait-session 2 300", "wait-member-vital dead 180",
+                     "wait-solo 120", "wait-session 2 420", "wait 30", "wait 20"],
+            "guest": [[START, "wait-session 2 300", "trade-give echoes 500", "wait 15", *GIVE_UP,
+                       "wait-vital up 60", "wait 6", "expect-stains 1 1 30", "wait 5", "done"],
+                      [START, "wait-session 2 420", "wait 15", "expect-stains 1 1 30",
+                       "shot guest-stain-rejoin", "wait 3"]],
+        },
+        "expect": {"guest": [r"autoplay stains: \[compass own"]},
+        "forbid": {"host": SESSION_HOLDS, "guest": SESSION_HOLDS},
+        "timeout": 300,
+    },
     "team-load-art": {
         "about": "the team loading screen's art (Kaniel 2026-10-17: the co-op art's night city, cards, "
                  "medallions and sigils): each game shoots its loading screen as it comes up",
