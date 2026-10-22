@@ -197,6 +197,7 @@ git submodule update --init --recursive
 | `tools/build-emu.ps1` | builds the emulator (`out\emulator\build`) and its unit tests (`out\emulator\tests`) |
 | `tools/build-server.ps1` | builds shadnet and its tests (`out\server`) |
 | `tools/ci-check.ps1 -Component emulator\|server\|bbport\|backend\|tools [-All]` | local CI: clang-format 19, trailing whitespace, REUSE, build, tests |
+| `tools/release-src.ps1` | prepares the reused release checkout `C:\bb\release-src` (see below) |
 | `tools/make-release.ps1 -Version x.y.z` | builds the release setup `.exe` (see below) |
 | `tools/make-port-kit.ps1` | the developers' test kit for a Bloodborne.PC.Online install |
 | `tools/rig/run_scenario.py` | the automated multi-game test rig (two or three games on one PC) |
@@ -209,6 +210,18 @@ lint, type check, tests and the production build); `tools/ci-check.ps1 -Componen
 the same. Deploying it is described in [website/README.md](website/README.md).
 
 ## Make a release
+
+Releases build in one reused checkout, `C:\bb\release-src`, so everything builds incrementally:
+
+```powershell
+tools\release-src.ps1                     # moves C:\bb\release-src to main@origin (makes it the first time)
+                                          # and says whether the emulator tests must run
+```
+
+It prints the build folders to use: they stay between releases, so the port, the server and the
+account tool rebuild only what changed, and the emulator tests (the release ships no emulator) run
+only when `emulator/` changed since they last passed (`tools\release-src.ps1 -MarkEmulatorTested`
+after they pass). Never delete the checkout or its build folders after a release.
 
 ```powershell
 tools\make-release.ps1 -Version 0.4.0 -DlssDir C:\bb\dlss-abi2                   # build the setup .exe
