@@ -115,10 +115,12 @@ void RayOcclusion::Update() {
     if (!instance.IsRayQueryEnabled()) {
         return;
     }
-    // The player's map, about twice a second (bbcoop_map_view reads the game's state).
+    // The player's map, about twice a second (bbcoop_map_view reads the game's state); known
+    // already while it loads, so its structure is made behind the loading screen (Kaniel 2026-10-22:
+    // made after it, the GPU's build of 21.7M triangles froze the game ~2 s).
     if (frames++ % 30 == 0) {
         bbcoop_map view{};
-        if (bbcoop_map_view(&view, 0) && view.in_world && view.map != 0 && view.map != map) {
+        if (bbcoop_map_view(&view, 0) && view.map != 0 && view.map != map) {
             map = view.map;
             failed_map = false;
             std::printf("Ray occlusion: on map %08x\n", map);
