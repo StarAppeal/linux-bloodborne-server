@@ -206,6 +206,17 @@ looks at the phantom's list every 250 ms and, once another list is there and it 
 gives back what it gained (`PhantomKeyItemsToGiveBack`, `GiveBackPhantomKeyItems`; never a bell).
 Rig: together/boss-badge-kept.
 
+Runes in a party (player report 2026-10-22): the League's "Impurity" rune (GemeffectParam 2127001)
+only puts the marker 6142 on its wearer. Common event 9035 (from event 0 with 6142, 180040) adds
+180040 (max HP x1.02) while the wearer is a white phantom (4:3 10000 type 1) and takes it off when
+not, so a party guest lost it at its first trip and the host never had it. `KeepImpurityBonus`
+puts it on every second for anyone in a party session wearing the rune, the host too (Kaniel
+2026-10-22; `ImpurityBonusChange`, `ImpurityBonusForHost`). The other oath runes (Radiance
+2107001/2, Corruption 2108001/2, Hunter 2110001/2, Beast's Embrace 2128001-5, Milkweed 2129001-3)
+carry their effects in the gem rows and need no type. Cursed chalice dungeons (m29 12907420) pick
+4736 instead of 4735 for a League phantom (the same type-1 check) to cancel the 2%; corruption
+trophies (9360, 9480, m29 12900260) take type 0 or 1. Rig: impurity-rune.
+
 Open: the death-flag events (Valtr's helm, Simon's bowblade) wait on 1003:101 checks not decoded
 yet; Queenly Flesh's trigger comes from an event that ends for a client; the Doll's exchange keeps
 the ornament on a guest. Shops, repair, upgrade and storage already run in each player's own game.

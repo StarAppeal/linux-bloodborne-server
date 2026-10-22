@@ -490,6 +490,35 @@ TEST(BloodbornePartyTrip, PutsTheSearchEffectBackAfterTheTrip) {
     EXPECT_FALSE(ShouldRestoreSearchAfterTrip(false, false)) << "no party session";
 }
 
+// Player report 2026-10-22: the League's "Impurity" rune (more HP while cooperating) did nothing
+// in co-op. Its effect 6142 gets the bonus 180040 from common event 9035 only while the wearer is
+// a white phantom, which a party guest is only until its first trip and a host never is. Anyone in
+// a party session wearing the rune has the bonus; off again once not (only the one put on here).
+TEST(BloodbornePartyRunes, APartyMemberWearingImpurityHasItsHpBonus) {
+    EXPECT_EQ(ImpurityRuneEffect, 6142);
+    EXPECT_EQ(ImpurityHpEffect, 180040);
+    const std::vector<s32> wearing{6300, 40, 6142, 9006};
+    const std::vector<s32> with_bonus{6300, 6142, 180040};
+    const std::vector<s32> bonus_only{6300, 180040};
+    const std::vector<s32> none{6300, 40};
+    EXPECT_EQ(ImpurityBonusChange(true, wearing, false), EffectChange::Add) << "after a trip";
+    EXPECT_EQ(ImpurityBonusChange(true, wearing, true), EffectChange::Add) << "a load took it off";
+    EXPECT_EQ(ImpurityBonusChange(true, with_bonus, false), EffectChange::None) << "the game's";
+    EXPECT_EQ(ImpurityBonusChange(true, with_bonus, true), EffectChange::None);
+    EXPECT_EQ(ImpurityBonusChange(true, none, false), EffectChange::None) << "no rune";
+    EXPECT_EQ(ImpurityBonusChange(true, bonus_only, true), EffectChange::Remove) << "rune off";
+    EXPECT_EQ(ImpurityBonusChange(false, with_bonus, true), EffectChange::Remove) << "party left";
+    EXPECT_EQ(ImpurityBonusChange(false, with_bonus, false), EffectChange::None)
+        << "the game's own (a phantom outside our party)";
+    EXPECT_EQ(ImpurityBonusChange(false, wearing, false), EffectChange::None)
+        << "no guest in a session: the host, or alone";
+
+    EXPECT_TRUE(GetsImpurityBonus(true, true)) << "a guest in its session";
+    EXPECT_FALSE(GetsImpurityBonus(false, true)) << "a guest not joined yet";
+    EXPECT_FALSE(GetsImpurityBonus(false, false)) << "alone";
+    EXPECT_TRUE(GetsImpurityBonus(true, false)) << "the host, cooperated with (Kaniel)";
+}
+
 // Experiment (Kaniel, 2026-10-06): SHADPS4_BLOODBORNE_GUEST_AS_HOST=1 makes a party guest a live
 // player (character type 0) instead of a white phantom while it is in the session.
 TEST(BloodborneGuestAsHost, OnlyWhenSwitchedOnAndAWhitePhantomInAPartySession) {

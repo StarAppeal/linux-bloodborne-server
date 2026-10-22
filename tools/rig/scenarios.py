@@ -173,6 +173,11 @@ TEAM_WORLD_FLAG = 12410999
 # The Blood Gem Workshop Tool's chest (its item lot's flag; neither rig character has opened it).
 WORKSHOP_TOOL_CHEST = 52411005
 LEVEL_SYNC = 9200  # the SpEffect that scales a guest down to the host's level
+# The "Impurity" rune (the League oath, GemeffectParam 2127001) puts 6142 on the player; common
+# event 9035 adds 180040 (max HP x1.02) to a white phantom wearing it, KeepImpurityBonus to
+# anyone in a party session (the host too).
+IMPURITY_RUNE = 6142
+IMPURITY_HP = 180040
 # How a game joins: the port's team opens and joins the host's session itself (phase 6, no bell
 # and no signs); shadPS4 rings the bells.
 HOST_JOINS = (r"(?:auto-rejoin started search effect=9000|"
@@ -274,6 +279,30 @@ SCENARIOS = {
             "host": [HOST_JOINS],
             "guest": [GUEST_JOINS],
         },
+        "forbid": {"host": SESSION_HOLDS, "guest": SESSION_HOLDS},
+        "timeout": 300,
+    },
+    "impurity-rune": {
+        "about": "player report 2026-10-22: the League's \"Impurity\" rune (more HP while "
+                 "cooperating) did nothing in co-op: the host and a guest wearing it get its HP "
+                 "bonus, the guest also after a trip (no longer a phantom then)",
+        "roles": {
+            "host": [START, "wait-session 2 300", "wait 10", "note-max-hp",
+                     f"add-effect {IMPURITY_RUNE}", "sync rune-on", "wait 5", "peek self 78",
+                     f"expect-effect {IMPURITY_HP} 1", "expect-max-hp self > noted",
+                     "sync guest-tripped", f"expect-effect {IMPURITY_HP} 1", "snapshot",
+                     "expect-session 2"],
+            "guest": [START, "wait-session 2 300", "wait 10", "note-max-hp",
+                      f"add-effect {IMPURITY_RUNE}", "sync rune-on", "wait 5", "peek self 78",
+                      f"expect-effect {IMPURITY_HP} 1", "expect-max-hp self > noted",
+                      f"travel {HUNTERS_DREAM}", "wait 5", f"travel {CENTRAL_YHARNAM_LAMP}",
+                      "wait 5", f"add-effect {IMPURITY_RUNE}", "wait 5", "peek self 78",
+                      f"expect-effect {IMPURITY_HP} 1", "sync guest-tripped", "snapshot",
+                      "expect-session 2"],
+        },
+        "syncs": {"rune-on": {"chapter": "impurity-rune", "roles": ["host", "guest"]},
+                  "guest-tripped": {"chapter": "impurity-rune", "roles": ["host", "guest"]}},
+        "expect": {"host": [HOST_JOINS], "guest": [GUEST_JOINS]},
         "forbid": {"host": SESSION_HOLDS, "guest": SESSION_HOLDS},
         "timeout": 300,
     },

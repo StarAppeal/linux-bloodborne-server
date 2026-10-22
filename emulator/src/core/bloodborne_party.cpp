@@ -2721,6 +2721,19 @@ std::vector<s32> EffectsToRestoreAfterTrip(std::span<const s32> before,
     return missing;
 }
 
+bool GetsImpurityBonus(bool in_party_session, bool party_guest) {
+    return in_party_session && (party_guest || ImpurityBonusForHost);
+}
+
+EffectChange ImpurityBonusChange(bool gets_bonus, std::span<const s32> effects, bool added) {
+    const bool wears = std::ranges::find(effects, ImpurityRuneEffect) != effects.end();
+    const bool has = std::ranges::find(effects, ImpurityHpEffect) != effects.end();
+    if (gets_bonus && wears) {
+        return has ? EffectChange::None : EffectChange::Add;
+    }
+    return has && added ? EffectChange::Remove : EffectChange::None;
+}
+
 bool ShouldRestoreSearchAfterTrip(bool in_party_session, bool search_effect_active) {
     return in_party_session && !search_effect_active;
 }

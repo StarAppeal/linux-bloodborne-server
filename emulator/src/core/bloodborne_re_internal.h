@@ -277,6 +277,8 @@ u64 GetGlobalState();
 u64 GetMatchingState();
 u64 GetLocalPlayer();
 bool HasPlayerEffect(u64 player, s32 effect_id);
+// Takes `effect_id` off the player (the game's thread). False when it is not on.
+bool EndPlayerEffect(u64 player, s32 effect_id);
 u32 GetCurrentPackedMap();
 Place CurrentPlace();
 u32 PlayingMap();

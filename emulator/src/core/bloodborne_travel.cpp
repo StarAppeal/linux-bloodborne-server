@@ -1626,6 +1626,43 @@ void KeepHeadstoneFlagsOwn() {
     }
 }
 
+// See ImpurityBonusChange: every second, the Impurity rune's HP bonus put on (through the
+// player's own add-effect virtual, as event 9035's 2004:8) or taken off.
+void KeepImpurityBonus(bool in_session) {
+    static s64 checked_ms = 0;
+    static bool added = false;
+    const s64 now_ms = SteadyMilliseconds();
+    const u64 player = GetLocalPlayer();
+    if (!party_controller || now_ms - checked_ms < 1'000 || player < 0x10000) {
+        return;
+    }
+    checked_ms = now_ms;
+    const std::vector<s32> effects = LocalEffects();
+    if (std::ranges::find(effects, ImpurityHpEffect) == effects.end()) {
+        added = false; // gone with a load, or never there
+    }
+    const bool gets_bonus = GetsImpurityBonus(in_session, IsPartyGuestRole());
+    switch (ImpurityBonusChange(gets_bonus, effects, added)) {
+    case EffectChange::Add:
+        if (!HasVirtual(player, CharacterAddSpEffectSlot, AddSpEffectOffset, "Impurity bonus")) {
+            return;
+        }
+        reinterpret_cast<AddSpEffectFn>(image_base + AddSpEffectOffset)(
+            player, ImpurityHpEffect, player, 0, 1, 0, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0);
+        added = true;
+        LOG_INFO(Debug, "Bloodborne party: Impurity rune worn in the party; HP bonus {} on",
+                 ImpurityHpEffect);
+        break;
+    case EffectChange::Remove:
+        added = !EndPlayerEffect(player, ImpurityHpEffect);
+        LOG_INFO(Debug, "Bloodborne party: Impurity HP bonus {} off (ended={})", ImpurityHpEffect,
+                 !added);
+        break;
+    case EffectChange::None:
+        break;
+    }
+}
+
 void KeepHeldItemFlagsOwn() {
     static s64 checked_ms = 0;
     const s64 now_ms = SteadyMilliseconds();
@@ -1748,6 +1785,7 @@ void TickPlayersOnThisMap() {
     ResendOwnDataOnChange(in_session);
     LogMemberDataChanges(in_session);
     GiveEncounterInsight(in_session);
+    KeepImpurityBonus(in_session);
     // Whether this character has been to the Hunter's Dream: its own world has the first visit's
     // flag, or it is there (the first visit's event runs for a guest too).
     static int dream_slot = -2;

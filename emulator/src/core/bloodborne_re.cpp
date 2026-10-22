@@ -186,6 +186,10 @@ constexpr u64 RemoveEffectNodeOffset = 0x017E1D90;
 constexpr std::array<u8, 8> RemoveEffectNodePrologue{0x55, 0x48, 0x89, 0xE5,
                                                      0x41, 0x57, 0x41, 0x56};
 
+} // namespace
+
+namespace Coop {
+
 // Takes `effect_id` off the player (the game's thread). False when it is not on.
 bool EndPlayerEffect(u64 player, s32 effect_id) {
     const u64 manager = player >= 0x10000 ? ReadValue<u64>(player, 0x1C8) : 0;
@@ -211,10 +215,6 @@ bool EndPlayerEffect(u64 player, s32 effect_id) {
     }
     return false;
 }
-
-} // namespace
-
-namespace Coop {
 
 bool HasPlayerEffect(u64 player, s32 effect_id) {
     const u64 manager = player >= 0x10000 ? ReadValue<u64>(player, 0x1C8) : 0;

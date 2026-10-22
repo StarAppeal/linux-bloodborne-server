@@ -680,6 +680,22 @@ bool ShouldRestoreSearchAfterTrip(bool in_party_session, bool search_effect_acti
 // The bell effects (9000/9003, 9005/9006) in `before` that are missing from `after`, in order.
 std::vector<s32> EffectsToRestoreAfterTrip(std::span<const s32> before, std::span<const s32> after);
 
+// The "Impurity" rune (the League oath, GemeffectParam 2127001) puts 6142 on its wearer. Common
+// event 9035 (started by event 0 with 6142, 180040) adds 180040, max HP x1.02, while the wearer is
+// a white phantom (4:3 10000 type 1) and takes it off once it is not. A party guest is one only
+// until its first trip (then a live player, type 0), so the bonus went with its first trip (player
+// report 2026-10-22), and a host (the one cooperated with) never had it. In a party everyone in
+// the session cooperates (Kaniel 2026-10-22): the bonus follows the rune for the host too.
+constexpr s32 ImpurityRuneEffect = 6142;
+constexpr s32 ImpurityHpEffect = 180040;
+constexpr bool ImpurityBonusForHost = true;
+// Whether this player gets the bonus while it wears the rune.
+bool GetsImpurityBonus(bool in_party_session, bool party_guest);
+enum class EffectChange { None, Add, Remove };
+// What a player's Impurity bonus needs: on while it `gets_bonus` (GetsImpurityBonus) and wears
+// the rune; off once not, if `added` (this code put it on; the game's own stays the game's).
+EffectChange ImpurityBonusChange(bool gets_bonus, std::span<const s32> effects, bool added);
+
 // The party's map board on shadNet (a message on the server link, once POST /bloodborne/party/map):
 // each member posts
 // "<member> <map>" (the packed map in hex) and reads back one such line per member.
