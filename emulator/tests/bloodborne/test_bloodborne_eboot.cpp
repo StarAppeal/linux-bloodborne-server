@@ -192,6 +192,20 @@ TEST_F(BloodborneEboot, TheNamedGameFunctionsStartThere) {
     }
 }
 
+// The rig's quit-title (Kaniel 2026-10-25): the System menu's Exit Game item (text 110004, its
+// action 0x01C0C9F0 at 0x01BB4349) asks "Quit?" with a callable whose Yes is 0x01C0D050
+// (QuitGameConfirmedOffset): lea rax, [rip + x] first, the title's request ([0x05562878] +0x250
+// = 1) last.
+TEST_F(BloodborneEboot, TheQuitIsTheExitGameItemsYes) {
+    EXPECT_EQ(Bytes(0x01BB431F, 5), (std::vector<u8>{0xBA, 0xB4, 0xAD, 0x01, 0x00})) << "110004";
+    s32 action = 0;
+    std::memcpy(&action, Bytes(0x01BB4349 + 3, 4).data(), 4);
+    EXPECT_EQ(0x01BB4350 + action, 0x01C0C9F0u);
+    EXPECT_EQ(Bytes(0x01C0D050, 3), (std::vector<u8>{0x48, 0x8D, 0x05}));
+    EXPECT_EQ(Bytes(0x01C0D0C4, 11),
+              (std::vector<u8>{0xC7, 0x80, 0x50, 0x02, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0xC3}));
+}
+
 // Talk command 66 (an NPC's gesture, rig talk-gesture and the gesture flags' fix read the list the
 // same way): the dispatcher's case 66 (table 0x020442E0) goes to 0x02041691; its body takes the
 // local PlayerGameData ([GameDataMan] +8) +0x5B8, looks at its 30 slots from +0x10 and sets the

@@ -1047,6 +1047,51 @@ TEST(TeamPlay, AStartWhileAloneTakesTheTeamsParty) {
     EXPECT_EQ(TeamPlayStepOf(&ready, "world:w-t1", &start, "me"), TeamPlayStep::None);
 }
 
+// Kaniel 2026-10-25: the host left the team (back at the title, or its game gone) and the lobby
+// made this guest the leader: a save playing in that team as a guest takes the host's role (its
+// game hosts the team's session from here on); one hosting already, or not the leader, does not.
+TEST(TeamPlay, ALeaderPlayingAsAGuestTakesTheHostsRole) {
+    const bbcoop::LobbyState led = WithMember(InTeam("me"), "me", true);
+    EXPECT_EQ(TeamPlayStepOf(&led, "world:w-t1", nullptr, "me", false), TeamPlayStep::Lead);
+    EXPECT_EQ(TeamPlayStepOf(&led, "world:w-t1", nullptr, "me", true), TeamPlayStep::None);
+    EXPECT_EQ(TeamPlayStepOf(&led, "world:w-t1", nullptr, "me"), TeamPlayStep::None);
+    const bbcoop::LobbyState guest = WithMember(InTeam("other"), "me", true);
+    EXPECT_EQ(TeamPlayStepOf(&guest, "world:w-t1", nullptr, "me", false), TeamPlayStep::None);
+    // Out of that team: it leaves, leader of another or not.
+    const bbcoop::LobbyState other = WithMember(InTeam("me", "t2"), "me", true);
+    EXPECT_EQ(TeamPlayStepOf(&other, "world:w-t1", nullptr, "me", false), TeamPlayStep::Leave);
+}
+
+// Two guests' games took over when their host left; the server kept the first's session and made
+// it the leader. The other, hosting a session of its own, is a guest of the leader's again once
+// it knows the leader's session (rig host-quits-title3 2026-10-25).
+TEST(TeamPlay, AHostThatIsNotTheLeaderFollowsTheLeadersSession) {
+    const bbcoop::LobbyState led_by_other = WithMember(InTeam("other"), "me", true);
+    EXPECT_EQ(TeamPlayStepOf(&led_by_other, "world:w-t1", nullptr, "me", true, "other"),
+              TeamPlayStep::Follow);
+    // Not before the leader's session is known (the lead may still be on its way here).
+    EXPECT_EQ(TeamPlayStepOf(&led_by_other, "world:w-t1", nullptr, "me", true, ""),
+              TeamPlayStep::None);
+    EXPECT_EQ(TeamPlayStepOf(&led_by_other, "world:w-t1", nullptr, "me", true, "third"),
+              TeamPlayStep::None);
+    // The leader itself, or a guest already: nothing.
+    const bbcoop::LobbyState led = WithMember(InTeam("me"), "me", true);
+    EXPECT_EQ(TeamPlayStepOf(&led, "world:w-t1", nullptr, "me", true, "me"), TeamPlayStep::None);
+    EXPECT_EQ(TeamPlayStepOf(&led_by_other, "world:w-t1", nullptr, "me", false, "other"),
+              TeamPlayStep::None);
+}
+
+// The team's host for a guest's team load (beside it): its leader now (the leader follows the
+// session's host on the server), the Start's while the lobby says nothing of that team.
+TEST(TeamPlay, TheTeamsHostIsItsLeaderNow) {
+    const bbcoop::TeamStart start = StartOf("old", 2);
+    const bbcoop::LobbyState led = WithMember(InTeam("new"), "me", true);
+    EXPECT_EQ(TeamHostOf(&led, start), "new");
+    EXPECT_EQ(TeamHostOf(nullptr, start), "old");
+    const bbcoop::LobbyState other = WithMember(InTeam("new", "t2"), "me", true);
+    EXPECT_EQ(TeamHostOf(&other, start), "old");
+}
+
 // The menu's "Join the hunt" in game: an invitation accepted first (when in no team), then this
 // save ready with its slot and character; the leader's starts the team too.
 TEST(TeamPlay, JoiningTheHuntFromTheMenuReadiesThisSave) {

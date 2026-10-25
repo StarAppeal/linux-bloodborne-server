@@ -208,6 +208,12 @@ KNEEL = r"party death: (pose [1-9]\d* asked|.*'s copy kneels)"
 # A member's game died: the others' games close the room it was in (and open a new one for its
 # return), which check_party_log reports as leaving the session outside a trip.
 CRASH_CLEANUP = [r"left the session outside a trip"]
+# Kaniel 2026-10-25: a member that leaves the team's session (back at the title, or its game gone)
+# is out of the team; the guest whose game hosts the session now leads it (it took the room, or it
+# stood alone and opened the session itself), and the leaver comes back as a guest.
+LEADS_NOW = (r"Co-op team play: this guest leads the team now: it hosts|Co-op team join: the "
+             r"session host moved to this game")
+PLAYS_AS_GUEST = r"Co-op team lobby: the save plays in team \w+ as its guest"
 # Party death (SHADPS4_BLOODBORNE_PARTY_DEATH): a lethal hit puts a member down while another
 # stands on its map. A lethal fall is the hit the rig can deal: 1 HP left, then 18 m up. Under
 # open sky (WIPE_SPOT; rig 2026-10-18: 12 m did nothing, 18 m about 60% of max HP, 20 m and more
@@ -1285,13 +1291,16 @@ SCENARIOS = {
                  "(the enemy loads dead, at 0 HP, with no death flags); back in a session, the "
                  "host's shown list says it is dead, so the guests' copies go too (krolebord saw "
                  "such enemies standing, Kaniel saw nothing there)",
+        # Kaniel 2026-10-25: the guest's game goes first (out of the team, invited back), so the
+        # host's is the last to go and the host still leads when both come back.
         "roles": {
             "host": [[START, "godmode", f"teleport {GUEST_ALONE_SPOT}", "wait 5",
-                      *attack(ENEMY), "wait 20", "done"],
+                      *attack(ENEMY), "wait 20", "sync dihs-gone", "wait 10", "done"],
                      [START, "godmode", "wait-session 2 420", "wait 30", "census 40", "done"]],
-            "guest": [START, "godmode", "wait-session 2 300", "wait-solo 300",
-                      "wait-session 2 420", "wait 40", "done"],
+            "guest": [[START, "godmode", "wait-session 2 300", "sync dihs-gone", "done"],
+                      [START, "godmode", "wait-session 2 420", "wait 40", "done"]],
         },
+        "syncs": {"dihs-gone": {"chapter": "dead-in-host-save", "roles": ["host", "guest"]}},
         # The shown list's bit 8: dead in the host's world (DeadInTheHostsWorld).
         "expect": {"host": [r"census: 0x1001400b hp 0/",
                             r"shown 0x1001400b on 0x18010000 bits (?:8|9|1[0-5])\b"]},
@@ -1365,7 +1374,8 @@ SCENARIOS = {
     },
     "host-crash": {
         "about": "the host's game crashes (the GPU's device lost does that in play); the guest "
-                 "stays where it is, and they join again once the host is back",
+                 "stays where it is and leads the team now (it hosts), and the old host's game "
+                 "comes back as its guest (Kaniel 2026-10-25)",
         "roles": {
             "host": [[START, "godmode", "wait-session 2 300", "wait 15", "done"],
                      [START, "godmode", "wait-session 2 420", "wait 10", "snapshot",
@@ -1374,6 +1384,7 @@ SCENARIOS = {
                       "snapshot", f"expect-map {CENTRAL_YHARNAM}", "wait-session 2 420", "wait 10",
                       "snapshot", "expect-session 2"],
         },
+        "expect": {"guest": [LEADS_NOW], "host": [PLAYS_AS_GUEST]},
         "allow": CRASH_CLEANUP,
         "timeout": 300,
     },
@@ -1424,17 +1435,19 @@ SCENARIOS = {
     },
     "host-crash-apart": {
         "about": "the host's game dies while the guest is apart from it (in the Ward); the guest "
-                 "stays there, rings from there, and they join again without meeting first",
+                 "stays there and leads the team now (it hosts there), and the old host's game "
+                 "comes back as its guest, beside it in the Ward (Kaniel 2026-10-25)",
         "roles": {
             "host": [[START, "godmode", "wait-session 2 300", "wait 60", "done"],
                      [START, "godmode", "wait-session 2 420", "wait 20", "snapshot",
-                      "expect-session 2", f"expect-map {CENTRAL_YHARNAM}"]],
+                      "expect-session 2", f"expect-map {CATHEDRAL_WARD}"]],
             "guest": [START, "godmode", "wait-session 2 300", "wait 10",
                       f"travel {CATHEDRAL_WARD_LAMP}", "wait 15", "snapshot",
                       f"expect-map {CATHEDRAL_WARD}", "wait-solo 180", "wait 10", "snapshot",
                       f"expect-map {CATHEDRAL_WARD}", "wait-session 2 420", "wait 20",
                       "snapshot", "expect-session 2", f"expect-map {CATHEDRAL_WARD}"],
         },
+        "expect": {"guest": [LEADS_NOW], "host": [PLAYS_AS_GUEST]},
         "allow": CRASH_CLEANUP,
         "timeout": 1080,
     },
@@ -1486,15 +1499,20 @@ SCENARIOS = {
         "about": "the opening cutscene plays under the team's loading screen and skips by itself "
                  "(Options pressed); the screen opens and both are in one session",
         "roles": {
+            # Kaniel 2026-10-25: the guest's game goes first (out of the team, invited back), so
+            # the host's is the last to go and it still leads.
             "host": [["team-create", "team-invite rig_guest", "team-wait 2", "team-start", START,
-                      "wait-session 2 300", f"set-flag {OPENING_EVENT} 0", "wait 15", "done"],
+                      "wait-session 2 300", f"set-flag {OPENING_EVENT} 0", "wait 15",
+                      "sync cs-gone", "wait 10", "done"],
                      # The guest back at the title and ready first: both load together.
                      ["title-wait 60", "team-start", START, "wait-session 2 300", "wait 30",
                       "expect-session 2"]],
             "guest": [["team-accept", "team-ready", START, "wait-session 2 300", "wait 30",
-                       "done"],
-                      ["team-ready", START, "wait-session 2 300", "wait 15", "expect-session 2"]],
+                       "sync cs-gone", "done"],
+                      ["team-accept", "team-ready", START, "wait-session 2 300", "wait 15",
+                       "expect-session 2"]],
         },
+        "syncs": {"cs-gone": {"chapter": "cutscene-skip", "roles": ["host", "guest"]}},
         "expect": {"host": [r"cutscene player's step is Update",
                             r"Options pressed to skip it[\s\S]*cutscene player's step is Epilog"
                             r"[\s\S]*this game is ready, 1 of 1[\s\S]*load view is gone"]},
@@ -1949,15 +1967,17 @@ SCENARIOS = {
         "about": "a guest that left the team's world in the Dream loads with the team again and "
                  "stands beside the host in Central Yharnam when the team's screen opens",
         "roles": {
+            # Kaniel 2026-10-25: the guest's game goes first (out of the team, invited back), so
+            # the host's is the last to go and it still leads.
             "host": [["team-create", "team-invite rig_guest", "team-wait 2", "team-start", START,
-                      "wait-session 2 300", "wait 45", "done"],
+                      "wait-session 2 300", "wait 45", "sync tlbh-gone", "wait 10", "done"],
                      # The team again (the server drops a team whose members all went offline,
                      # as both games do between the stages).
                      ["team-create", "team-invite rig_guest", "team-wait 2", "team-start", START,
                       "wait-session 2 300", "wait 20", "expect-session 2",
                       f"expect-map {CENTRAL_YHARNAM}"]],
             "guest": [["team-accept", "team-ready", START, "wait-session 2 300", "wait 5",
-                       f"travel {HUNTERS_DREAM}", "wait 30", "done"],
+                       f"travel {HUNTERS_DREAM}", "wait 30", "sync tlbh-gone", "done"],
                       ["team-accept", "team-ready", "wait-session 2 300", "wait 15",
                        "expect-session 2",
                        f"expect-map {CENTRAL_YHARNAM}", "expect-others-near 1 15"]],
@@ -1969,6 +1989,7 @@ SCENARIOS = {
         # Both stages' logs are read as one: a screen that opens and covers again counts in the
         # second (the stage that travels).
         "forbid": {"guest": [r"travelling[\s\S]*load view is gone[\s\S]*load view is up"]},
+        "syncs": {"tlbh-gone": {"chapter": "team-load-beside-host", "roles": ["host", "guest"]}},
         "allow": CRASH_CLEANUP,
         "timeout": 900,
     },
@@ -1980,14 +2001,17 @@ SCENARIOS = {
         "about": "the team's world: the host's save makes it, the guest's save takes it in the "
                  "next session, and the guest alone has its own world back",
         "roles": {
+            # Kaniel 2026-10-25: the guest's game goes first (out of the team, invited back), so
+            # the host's is the last to go and it still leads.
             "host": [["team-create", "team-invite rig_guest", "team-wait 2", "team-start", START,
-                      "wait-session 2 300", f"set-flag {TEAM_WORLD_FLAG} 1", "wait 15", "done"],
+                      "wait-session 2 300", f"set-flag {TEAM_WORLD_FLAG} 1", "wait 15",
+                      "sync tw-gone", "wait 10", "done"],
                      ["team-create", "team-invite rig_guest", "team-wait 2", "team-start", START,
                       "wait-session 2 300", f"expect-flag {TEAM_WORLD_FLAG} 1",
                       "wait 60",
                       "done"]],
             "guest": [["team-accept", "team-ready", START, "wait-session 2 300",
-                       f"expect-flag {TEAM_WORLD_FLAG} 0", "wait 45", "done"],
+                       f"expect-flag {TEAM_WORLD_FLAG} 0", "wait 45", "sync tw-gone", "done"],
                       ["team-accept", "team-ready", START, "wait-session 2 300",
                        f"expect-flag {TEAM_WORLD_FLAG} 1",
                        "done"],
@@ -2000,6 +2024,7 @@ SCENARIOS = {
                       r"Co-op team world: slot \d+'s own world kept aside",
                       r"Co-op team world: slot \d+ plays alone: its own world is back"],
         },
+        "syncs": {"tw-gone": {"chapter": "team-world", "roles": ["host", "guest"]}},
         "allow": CRASH_CLEANUP,
         "timeout": 900,
     },
@@ -2202,12 +2227,13 @@ SCENARIOS = {
     # wipe and opened its session again) while the guest stayed in its world on the team's map.
     "team-host-restart": {
         "about": "a team on Cathedral Ward: the host's game starts again; the guest stays on the "
-                 "Ward and joins the host's new session there, both seeing each other",
+                 "Ward and leads the team now (it hosts there), and the old host joins it there "
+                 "as its guest, both seeing each other (Kaniel 2026-10-25)",
         "roles": {
             "host": [["team-create", "team-invite rig_guest", "team-wait 2", "team-start", START,
                       "godmode", "wait-session 2 300", f"travel {CATHEDRAL_WARD_LAMP}",
                       "wait-members 2 120", "wait 15", "snapshot", "done"],
-                     ["title-wait 20", "team-start", "godmode", "wait-session 2 420",
+                     ["team-accept", "team-ready", "godmode", "wait-session 2 420",
                       "wait-members 2 120", "wait 20", "snapshot", f"expect-map {CATHEDRAL_WARD}",
                       "expect-others-shown 1", "expect-session 2"]],
             "guest": ["team-accept", "team-ready", START, "godmode", "wait-session 2 300",
@@ -2216,6 +2242,7 @@ SCENARIOS = {
                       "snapshot", f"expect-map {CATHEDRAL_WARD}", "expect-others-shown 1",
                       "expect-session 2"],
         },
+        "expect": {"guest": [LEADS_NOW], "host": [PLAYS_AS_GUEST]},
         "allow": CRASH_CLEANUP,
         "timeout": 900,
     },
@@ -2223,15 +2250,15 @@ SCENARIOS = {
     # the host's lamp) and opened its session again; the guest came back in the Dream.
     "team-wipe-host-restart": {
         "about": "a team on Cathedral Ward wipes and wakes at the lamp; the host's game then "
-                 "starts again: the guest stays on the Ward and joins the host's new session "
-                 "there, both seeing each other",
+                 "starts again: the guest stays on the Ward and leads the team now, and the old "
+                 "host joins it there as its guest, both seeing each other",
         "settings": PARTY_DEATH,
         "roles": {
             "host": [["team-create", "team-invite rig_guest", "team-wait 2", "team-start", START,
                       "wait-session 2 300", f"travel {CATHEDRAL_WARD_LAMP}", "wait-members 2 120",
                       "wait-member-vital down 120", "wait 3", *LETHAL_FALL, "wait-vital dead 30",
                       "wait-vital up 120", "wait-members 2 240", "wait 25", "snapshot", "done"],
-                     ["title-wait 20", "team-start", "godmode", "wait-session 2 420",
+                     ["team-accept", "team-ready", "godmode", "wait-session 2 420",
                       "wait-members 2 120", "wait 20", "snapshot", f"expect-map {CATHEDRAL_WARD}",
                       "expect-others-shown 1", "expect-session 2"]],
             "guest": ["team-accept", "team-ready", START, "wait-session 2 300",
@@ -2242,6 +2269,63 @@ SCENARIOS = {
                       f"expect-map {CATHEDRAL_WARD}", "expect-others-shown 1",
                       "expect-session 2"],
         },
+        "expect": {"guest": [LEADS_NOW], "host": [PLAYS_AS_GUEST]},
+        "allow": CRASH_CLEANUP,
+        "timeout": 900,
+    },
+    # Kaniel 2026-10-25: anyone who leaves is out of the team at once, the host too. The host quits
+    # to the title (the System menu's Exit Game) while the guest plays: the guest leads the team
+    # now and hosts its session where it stands (its own enemies, the team's world from its
+    # save); the old host takes the invite back and joins as a guest, in the same game.
+    "host-quits-title": {
+        "about": "the host quits to the title; the guest leads the team now and hosts where it "
+                 "stands (it runs the enemies, its world is the team's), and the old host comes "
+                 "back as its guest from the title",
+        "roles": {
+            "host": ["team-create", "team-invite rig_guest", "team-wait 2", "team-start", START,
+                     "godmode", "wait-session 2 300", "wait 10", "sync hqt-in", "quit-title",
+                     "team-accept", "team-ready", "godmode", "wait-session 2 420",
+                     "wait-members 2 120", "wait 20", "snapshot", "expect-session 2",
+                     f"expect-map {CENTRAL_YHARNAM}", f"expect-flag {TEAM_WORLD_FLAG} 1",
+                     f"expect-hp {ENEMY} < 484", "sync hqt-back"],
+            "guest": ["team-accept", "team-ready", START, "godmode", "wait-session 2 300",
+                      "sync hqt-in", "wait-solo 120", "wait 15", "snapshot",
+                      f"expect-map {CENTRAL_YHARNAM}", f"set-flag {TEAM_WORLD_FLAG} 1",
+                      f"hit {ENEMY} 30", "wait 5", f"expect-hp {ENEMY} < 484",
+                      "wait-session 2 420", "wait-members 2 120", "sync hqt-back",
+                      "expect-session 2", f"expect-flag {TEAM_WORLD_FLAG} 1"],
+        },
+        "syncs": {name: {"chapter": "host-quits-title", "roles": ["host", "guest"]}
+                  for name in ("hqt-in", "hqt-back")},
+        "expect": {"host": [r"Bloodborne autoplay: back at the title", PLAYS_AS_GUEST,
+                            r"Co-op team world: the team's world is in this save"],
+                   "guest": [LEADS_NOW, r"Co-op team world: this host's world to the server",
+                             OWNER_RUNS]},
+        "allow": CRASH_CLEANUP,
+        "timeout": 600,
+    },
+    # The same with three: the host quits to the title; the two guests stay together in their
+    # session, the one whose game took the room hosting it and leading the team; the old host
+    # comes back as the third.
+    "host-quits-title3": {
+        "about": "a team of three: the host quits to the title; the guests stay together, one "
+                 "of them hosting and leading, and the old host comes back as a guest: three "
+                 "again",
+        "roles": {
+            "host": ["team-create", "team-invite rig_guest", "team-invite rig_guest2",
+                     "team-wait 3", "team-start", START, "godmode", "wait-session 3 480",
+                     "wait 10", "sync hqt3-in", "quit-title", "team-accept", "team-ready",
+                     "godmode", "wait-session 3 480", "wait 20", "snapshot", "expect-session 3",
+                     "sync hqt3-back"],
+            **{guest: ["team-accept", "team-ready", START, "godmode", "wait-session 3 480",
+                       "sync hqt3-in", "wait 30", "snapshot", "expect-session 2",
+                       "wait-session 3 480", "wait 10", "sync hqt3-back", "expect-session 3"]
+               for guest in ("guest", "guest2")},
+        },
+        "syncs": {name: {"chapter": "host-quits-title3", "roles": ["host", "guest", "guest2"]}
+                  for name in ("hqt3-in", "hqt3-back")},
+        "expect": {"host": [r"Bloodborne autoplay: back at the title", PLAYS_AS_GUEST]},
+        "expect_any": [r"Co-op team join: the session host moved to this game"],
         "allow": CRASH_CLEANUP,
         "timeout": 900,
     },
@@ -3824,17 +3908,21 @@ SCENARIOS["team-world-other-block"] = {
         "host": [
             ["team-create", "team-invite rig_guest", "team-wait 2", "team-start", START,
              "wait-session 2 300", f"set-flag {WARD_BLOCK_FLAG} 1",
-             f"expect-flag {WARD_BLOCK_FLAG} 1", "wait 15", "done"],
+             f"expect-flag {WARD_BLOCK_FLAG} 1", "wait 15", "sync twob-gone", "wait 10", "done"],
             ["team-create", "team-invite rig_guest", "team-wait 2", "team-start", START,
              "wait-session 2 300", f"expect-flag {WARD_BLOCK_FLAG} 1", "wait 60", "done"],
         ],
         "guest": [
-            ["team-accept", "team-ready", START, "wait-session 2 300", "wait 45", "done"],
+            # Kaniel 2026-10-25: the guest's game goes first (out of the team, invited back),
+            # so the host's is the last to go and it still leads.
+            ["team-accept", "team-ready", START, "wait-session 2 300", "wait 45",
+             "sync twob-gone", "done"],
             ["team-accept", "team-ready", START, "wait-session 2 300", "wait 10",
              f"expect-flag {WARD_BLOCK_FLAG} 1", "wait 20", f"expect-flag {WARD_BLOCK_FLAG} 1",
              "done"],
         ],
     },
+    "syncs": {"twob-gone": {"chapter": "team-world-other-block", "roles": ["host", "guest"]}},
     "allow": ["left the session outside a trip"],
     "timeout": 900,
 }

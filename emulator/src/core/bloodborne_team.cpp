@@ -153,7 +153,8 @@ void TeamGate::Reset() {
 }
 
 TeamPlayStep TeamPlayStepOf(const bbcoop::LobbyState* lobby, std::string_view party,
-                            const bbcoop::TeamStart* start, const std::string& me) {
+                            const bbcoop::TeamStart* start, const std::string& me, bool hosts,
+                            std::string_view session_host) {
     if (lobby == nullptr) {
         return TeamPlayStep::None; // no word from the lobby yet
     }
@@ -161,7 +162,18 @@ TeamPlayStep TeamPlayStepOf(const bbcoop::LobbyState* lobby, std::string_view pa
     const std::string mine = lobby->has_team() ? lobby->team().party() : std::string{};
     const auto in_mine = [&](std::string_view key) { return !mine.empty() && key == mine; };
     if (!party.empty()) {
-        return in_mine(party) ? TeamPlayStep::None : TeamPlayStep::Leave;
+        if (!in_mine(party)) {
+            return TeamPlayStep::Leave;
+        }
+        const std::string& leader = lobby->team().leader();
+        if (me.empty() || leader.empty()) {
+            return TeamPlayStep::None;
+        }
+        if (!hosts && leader == me) {
+            return TeamPlayStep::Lead;
+        }
+        return hosts && leader != me && session_host == leader ? TeamPlayStep::Follow
+                                                               : TeamPlayStep::None;
     }
     if (start == nullptr || !in_mine(start->party())) {
         return TeamPlayStep::None;
@@ -170,6 +182,14 @@ TeamPlayStep TeamPlayStepOf(const bbcoop::LobbyState* lobby, std::string_view pa
     const bool ready = std::ranges::any_of(
         members, [&](const bbcoop::TeamMember& m) { return m.member() == me && m.ready(); });
     return ready ? TeamPlayStep::Adopt : TeamPlayStep::None;
+}
+
+std::string TeamHostOf(const bbcoop::LobbyState* lobby, const bbcoop::TeamStart& start) {
+    if (lobby != nullptr && lobby->has_team() && lobby->team().id() == start.team() &&
+        !lobby->team().leader().empty()) {
+        return lobby->team().leader();
+    }
+    return start.host();
 }
 
 std::vector<bbcoop::TeamRequest> TeamJoinHuntRequests(const bbcoop::LobbyState& lobby,

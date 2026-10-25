@@ -86,6 +86,8 @@ LONG = {
     "boss-whole-fight": "a lamp trip, then 70 s of fixed waits in the fight (#292)",
     "team-guest-restart": "two stages (two boots), the guest's game starts again",
     "team-host-restart": "two stages (two boots), the host's game starts again",
+    "host-quits-title": "Kaniel 2026-10-25: a team load, a quit to the title and a second load",
+    "host-quits-title3": "Kaniel 2026-10-25: three games, a quit to the title and a second load",
     "team-wipe-host-restart": "two stages (two boots), a wipe first, then the host's game starts again",
     "cutscene-skip": "two stages (two boots), the opening cutscene played in between",
     "dead-in-host-save": "two stages (two boots): the host's game starts again after its kill",

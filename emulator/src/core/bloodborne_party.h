@@ -2263,6 +2263,21 @@ const std::vector<CodePatch>& QuietSummonBannerPatches();
 // chimes): the network banner (0x01BFFE80, message id in edi) shows none of them.
 constexpr std::array<u8, 8> ShowNetworkBannerPrologue{0x55, 0x48, 0x89, 0xE5,
                                                       0x41, 0x57, 0x41, 0x56};
+// Kaniel 2026-10-25: nor the notice of a member that left (NetSync's member leave, 0x0178D1CD
+// and 0x01E50BCD call it with the leaving character in rsi): its text by that character's type
+// (table 0x0553D750 +0x4C, "Bell silenced. Returning to own world." 20000406 when the host left a
+// guest), shown through its own message window, which held the guest's pad until Cross (rig
+// host-quits-title: the new host landed no hit).
+constexpr u64 MemberLeftNoticeOffset = 0x0178B0E0;
+// And the session's end (0x0138A590, the leave that runs OnLeave_Limit for a phantom): "Session
+// lost." (category 204, 5001) in a message window, unless FrpgNetMan +0xA05 bit 0 is set; that
+// window held the guest's pad when its host quit to the title (rig host-quits-title 2026-10-25).
+// Hooked at the bit's test (`test byte [rax + 0xA05], 1`), rax pointed at a stand-in with it set
+// (rax is set again before its next use).
+constexpr u64 SessionLostTestOffset = 0x0138A602;
+constexpr std::array<u8, 7> SessionLostTest{0xF6, 0x80, 0x05, 0x0A, 0x00, 0x00, 0x01};
+constexpr std::array<u8, 8> MemberLeftNoticePrologue{0x55, 0x48, 0x89, 0xE5,
+                                                     0x41, 0x57, 0x41, 0x56};
 // Kaniel 2026-10-23: the item-received popup ("Oedon Tomb Key 1 / OK") and its pickup sound
 // (menu sound 300) come from one function: the give (GiveItems, 0x017D89F0) calls it for each
 // item it put in the inventory (0x017D9348) and each it sent to the storage (0x017D94C7) with

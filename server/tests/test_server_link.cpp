@@ -411,13 +411,18 @@ int Liveness() {
         quiet->endpoint == VirtualEndpointOf("Ada") &&
         quiet->online_id == "Ada" && quiet->gap_ms == 3500);
   CHECK(!result.log.isEmpty() && result.log[0].contains("Ada"));
+  // Kaniel 2026-10-25: the world hears of it too (a game gone a few seconds
+  // leaves its started team).
+  CHECK(result.quiet.size() == 1 && result.quiet[0] == Ada);
   hub.Receive(Kaniel, Encode(Kind::Ping, Ping{3, 4000}), 4000);
-  CHECK(SentTo(hub.Tick(4500), Kaniel).isEmpty());
+  result = hub.Tick(4500);
+  CHECK(SentTo(result, Kaniel).isEmpty() && result.quiet.isEmpty());
 
   // Heard again.
   result = hub.Receive(Ada, Encode(Kind::Ping, Ping{1, 6000}), 6000);
   const auto back = DecodeMember(SentTo(result, Kaniel).value(0));
   CHECK(back && back->state == MemberState::Back && back->gap_ms == 6000);
+  CHECK(result.back.size() == 1 && result.back[0] == Ada);
 
   // Kaniel's game is gone after a minute without a word; the build is free
   // again once nobody is linked.

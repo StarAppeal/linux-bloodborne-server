@@ -58,6 +58,18 @@ class ConsoleTest(unittest.TestCase):
             self.assertEqual(run_scenario.console_text(run_dir, "guest", 2), "first\n\nsecond\n")
 
 
+class ExpectAnyTest(unittest.TestCase):
+    # Kaniel 2026-10-25: which guest's game takes the session when the host leaves is the room's
+    # pick; a line one of the logs has is enough.
+    def test_a_line_one_of_the_logs_has(self):
+        spec = {"expect_any": [r"the session host moved to this game"]}
+        line = "Co-op team join: the session host moved to this game (the room is ours)\n"
+        self.assertEqual(run_scenario.judge(spec, {"guest": "", "guest2": line}), [])
+        self.assertEqual(run_scenario.judge(spec, {"guest": "", "guest2": ""}),
+                         ["all: expected in one log, not seen: "
+                          "the session host moved to this game"])
+
+
 class VerdictTest(unittest.TestCase):
     def test_a_known_bug_fails_as_known_without_failing_the_run(self):
         self.assertEqual(run_scenario.chapter_verdict({}, []), ("ok  ", True))

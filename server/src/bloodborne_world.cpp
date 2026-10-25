@@ -1134,6 +1134,19 @@ void Service::Take(Member& member, const bbcoop::Envelope& envelope, qint64 now_
             world.session->host() != member.name) {
             break;
         }
+        // Kaniel 2026-10-25: one host. Another member's game hosts the team's open session
+        // already (two guests took over when their host left): this one's is not the team's, and
+        // it is told that one to join (rig host-quits-title3: the lead went back and forth).
+        if (world.session && world.session->host() != member.name && SessionHostLinked(world)) {
+            result.log.append(QStringLiteral("party world %1: %2's session is not the team's: %3 "
+                                             "hosts it")
+                                  .arg(world.name, QString::fromStdString(member.name),
+                                       QString::fromStdString(world.session->host())));
+            bbcoop::Envelope current;
+            *current.mutable_team_session() = *world.session;
+            SendTo(member, current, now_ms);
+            break;
+        }
         bbcoop::Envelope relayed = envelope;
         relayed.mutable_team_session()->set_host(member.name);
         if (relayed.team_session().join().empty()) {
@@ -1151,6 +1164,11 @@ void Service::Take(Member& member, const bbcoop::Envelope& envelope, qint64 now_
         SendToOthers(world, member, relayed, now_ms);
         if (!world.session) {
             EndInvasion(world.name, bbcoop::InvasionEnd::HOST_LEFT, now_ms, result);
+        }
+        // Kaniel 2026-10-25: the member whose game hosts the team's session leads its team (a
+        // guest's game took the room when the host left).
+        if (world.session && world.team) {
+            LeadBySession(world, member.name, result); // the lobby goes out at the tick
         }
         break;
     }
@@ -1759,8 +1777,16 @@ Service::Result Service::Tick(qint64 now_ms) {
         EndInvasion(name, bbcoop::InvasionEnd::TIMEOUT, now_ms, result);
     }
     if (const TeamLobby::Outcome expired = lobby.Expire(now_ms); expired.changed) {
-        result.log.append(QStringLiteral("team lobby: members gone for %1 min left their teams")
+        QStringList gone;
+        for (const TeamLobby::Departure& out : expired.departed) {
+            gone.append(QString::fromStdString(out.member));
+        }
+        result.log.append(QStringLiteral("team lobby: %1 gone (its game quiet %2 ms while its "
+                                         "team plays, or offline %3 min): out of its team")
+                              .arg(gone.join(QStringLiteral(", ")))
+                              .arg(LeftGraceMs)
                               .arg(OfflineGraceMs / 60000));
+        TakeOutOfTeams(expired, now_ms, result);
         Settle(expired, now_ms, result);
     }
     if (lobby_changed && (!hosted.enabled || now_ms - lobby_sent_ms >= hosted.lobby_interval_ms)) {
@@ -1803,8 +1829,9 @@ std::string Service::CharacterOf(const std::string& member) const {
 
 bool Service::SessionHostLinked(const PartyWorld& world) const {
     return world.session && std::any_of(members.begin(), members.end(), [&](const auto& entry) {
+               // A quiet link's game is gone, as far as hosting goes (Kaniel 2026-10-25).
                return entry.second.party == world.name &&
-                      entry.second.name == world.session->host();
+                      entry.second.name == world.session->host() && !entry.second.quiet;
            });
 }
 
@@ -1860,6 +1887,22 @@ Service::Result Service::LinkLost(const ServerLink::Endpoint& link) {
 QString Service::VisitingOf(const ServerLink::Endpoint& link) const {
     const auto found = members.find(link.Key());
     return found != members.end() && found->second.hostile ? found->second.visiting : QString{};
+}
+
+void Service::Quiet(const ServerLink::Endpoint& link, bool quiet, qint64 now_ms) {
+    const auto found = members.find(link.Key());
+    if (found == members.end()) {
+        return;
+    }
+    found->second.quiet = quiet;
+    const std::string name = found->second.lobby;
+    if (name.empty()) {
+        return;
+    }
+    const bool heard = std::any_of(members.begin(), members.end(), [&](const auto& m) {
+        return m.second.lobby == name && !m.second.quiet;
+    });
+    lobby.Quiet(name, !heard, now_ms);
 }
 
 QString Service::PartyOf(const ServerLink::Endpoint& link) const {
@@ -2040,6 +2083,12 @@ void Service::OnLobbyHello(Member& member, const bbcoop::LobbyHello& hello, qint
     if (arrived_outcome.worlds_changed) {
         StoreWorldList(result);
     }
+    if (!arrived_outcome.departed.empty()) {
+        result.log.append(QStringLiteral("team lobby: %1 is back at the title while its team "
+                                         "plays: out of it, invited back")
+                              .arg(QString::fromStdString(hello.member())));
+    }
+    TakeOutOfTeams(arrived_outcome, now_ms, result);
     Settle(arrived_outcome, now_ms, result);
     if (arrived) {
         // Its state even when nothing changed for the others.
@@ -2093,33 +2142,67 @@ void Service::OnTeamRequest(Member& member, const bbcoop::TeamRequest& request, 
                         bbcoop::InvasionEnd::INVADERS_OFF, now_ms, result);
         }
     }
-    for (const TeamLobby::Departure& out : outcome.departed) {
-        TakeOutOfTeam(out, now_ms, result);
-    }
+    TakeOutOfTeams(outcome, now_ms, result);
     Settle(outcome, now_ms, result);
 }
 
+void Service::TakeOutOfTeams(const TeamLobby::Outcome& outcome, qint64 now_ms, Result& result) {
+    for (const TeamLobby::Departure& out : outcome.departed) {
+        TakeOutOfTeam(out, now_ms, result);
+    }
+}
+
 void Service::TakeOutOfTeam(const TeamLobby::Departure& out, qint64 now_ms, Result& result) {
+    if (out.party.empty()) {
+        return; // its team played no world yet
+    }
+    const QString party = FolderOf(QByteArray::fromStdString(out.party));
+    const auto world = worlds.find(party);
+    if (world == worlds.end()) {
+        return;
+    }
+    bool linked = false;
     for (auto& [key, member] : members) {
-        if (member.lobby != out.member || member.party.isEmpty()) {
-            continue;
-        }
-        const QString party = member.party;
-        const auto world = worlds.find(party);
-        if (out.party.empty() || world == worlds.end() ||
-            party != FolderOf(QByteArray::fromStdString(out.party))) {
+        if (member.lobby != out.member || member.party != party) {
             continue; // not in the world of that team
         }
+        linked = true;
         result.log.append(
             QStringLiteral("party world %1: %2 is out of team %3: out of its world")
                 .arg(party, QString::fromStdString(member.name), QString::fromStdString(out.team)));
         member.party.clear();
         member.cut_from = party;
         member.map = 0;
-        if (world->second.session && world->second.session->host() == member.name) {
-            CloseSession(world->second, now_ms, result);
-        }
-        ForgetMember(world->second, member.name, now_ms, result);
+    }
+    // Kaniel 2026-10-25: a game gone (no link left in the world) goes the same way: its session
+    // closes for the others, and its share, boards and owners go.
+    if (!linked) {
+        result.log.append(
+            QStringLiteral("party world %1: %2 is out of team %3 (its game gone): "
+                           "out of its world")
+                .arg(party, QString::fromStdString(out.member), QString::fromStdString(out.team)));
+    }
+    if (world->second.session && world->second.session->host() == out.member) {
+        CloseSession(world->second, now_ms, result);
+    }
+    ForgetMember(world->second, out.member, now_ms, result);
+    // The member hosting the session now (it took the room before the leaver was out) leads.
+    if (world->second.session && SessionHostLinked(world->second)) {
+        LeadBySession(world->second, world->second.session->host(), result);
+    }
+}
+
+void Service::LeadBySession(const PartyWorld& world, const std::string& host, Result& result) {
+    const bbcoop::Team* team = lobby.TeamOf(host);
+    if (!team || team->party().empty() ||
+        FolderOf(QByteArray::fromStdString(team->party())) != world.name) {
+        return; // not the session of its team's world
+    }
+    const std::string team_id = team->id();
+    if (lobby.Lead(host).changed) {
+        lobby_changed = true;
+        result.log.append(QStringLiteral("team lobby: %1 hosts team %2's session: it leads")
+                              .arg(QString::fromStdString(host), QString::fromStdString(team_id)));
     }
 }
 

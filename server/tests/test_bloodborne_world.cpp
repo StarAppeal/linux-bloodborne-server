@@ -2057,6 +2057,7 @@ int TheSessionHostMovesToAGuest() {
   CHECK(second.session && second.session->host() == "host");
   // The host's game dies; the first guest takes over.
   host.online = false;
+  service.Quiet(host.endpoint, true, now + 10); // its link went quiet
   first.claims_host = true;
   first.Hello(now + 10);
   bbcoop::Envelope moved;
@@ -2124,22 +2125,181 @@ int AReturningLeaderStartsAsAGuestOfTheNewHost() {
   a.Send(open, now);
   Pump(service, {&a, &b}, now);
   a.online = false;
+  service.Quiet(a.endpoint, true, now + 10); // its link went quiet
   b.claims_host = true;
   b.Hello(now + 10, party);
   bbcoop::Envelope moved;
   moved.mutable_team_session()->set_join("NXRV-bb");
   b.Send(moved, now + 10);
   Pump(service, {&b}, now + 10);
-  // aa's next run: back in the lobby, ready, Start (a started team's leader
-  // goes in at once).
+  // bb hosts the session: it leads (Kaniel 2026-10-25).
+  CHECK(b.lobby.team().leader() == "bb");
+  // aa's next run: back in the lobby (at the title while bb plays: out of the
+  // team, invited back by bb), the invite accepted, ready: in at once.
   Game a_again{1002, "aa", 21};
   a_again.run = 0x2002;
   a_again.LobbyHello(false, now + 20);
+  Pump(service, {&a_again, &b}, now + 20);
+  CHECK(!a_again.lobby.has_team() && a_again.lobby.invites_size() == 1);
+  a_again.Team(bbcoop::TeamRequest::ACCEPT, now + 20, {}, team);
   a_again.Team(bbcoop::TeamRequest::READY, now + 20, {}, {}, 1);
-  a_again.Team(bbcoop::TeamRequest::START, now + 20);
   Pump(service, {&a_again, &b}, now + 20);
   CHECK(!a_again.starts.empty());
   CHECK(a_again.starts.back().host() == "bb");
+  return 0;
+}
+
+// Kaniel 2026-10-25: a team of three playing its world, aa leading and hosting
+// the session; the party key of its world.
+QByteArray PlayingTeamOfThree(Service &service, Game &a, Game &b, Game &c,
+                              qint64 now) {
+  const std::vector<Game *> games{&a, &b, &c};
+  for (Game *game : games) {
+    game->LobbyHello(false, now);
+  }
+  Pump(service, games, now);
+  a.Team(bbcoop::TeamRequest::CREATE, now);
+  Pump(service, games, now);
+  const std::string team = a.lobby.team().id();
+  for (Game *guest : {&b, &c}) {
+    a.Team(bbcoop::TeamRequest::INVITE, now, guest->name);
+    Pump(service, games, now);
+    guest->Team(bbcoop::TeamRequest::ACCEPT, now, {}, team);
+    Pump(service, games, now);
+  }
+  for (Game *game : games) {
+    game->Team(bbcoop::TeamRequest::READY, now, {}, {}, 1);
+  }
+  Pump(service, games, now);
+  a.Team(bbcoop::TeamRequest::START, now);
+  Pump(service, games, now);
+  const QByteArray party = QByteArray::fromStdString(a.starts.at(0).party());
+  for (Game *game : games) {
+    game->LobbyHello(true, now);
+    game->claims_host = game == &a;
+    game->Hello(now, party);
+  }
+  Pump(service, games, now);
+  bbcoop::Envelope open;
+  open.mutable_team_session()->set_join("NXRV-aa");
+  a.Send(open, now);
+  Pump(service, games, now);
+  return party;
+}
+
+// Two guests' games both open a session when their host leaves (one took the
+// room, the other stood alone): the team has one host, the first. The second's
+// session is not the team's; it is told the first's to join, and the lead stays
+// with the first (rig host-quits-title3 2026-10-25: the lead went back and
+// forth).
+int OneSessionHostWhenTwoGuestsTakeOver() {
+  Service service{{}};
+  Game a{1000, "aa", 11};
+  Game b{1001, "bb", 12};
+  Game c{1002, "cc", 13};
+  qint64 now = 1'000'000;
+  const QByteArray party = PlayingTeamOfThree(service, a, b, c, now);
+  a.LobbyHello(false, now + 10);
+  Pump(service, {&a, &b, &c}, now + 10);
+  for (Game *guest : {&c, &b}) {
+    guest->claims_host = true;
+    guest->Hello(now + 20, party);
+    bbcoop::Envelope open;
+    open.mutable_team_session()->set_join("NXRV-" + guest->name);
+    guest->Send(open, now + 20);
+    Pump(service, {&a, &b, &c}, now + 20);
+  }
+  CHECK(b.lobby.team().leader() == "cc" && c.lobby.team().leader() == "cc");
+  CHECK(b.session && b.session->host() == "cc" &&
+        b.session->join() == "NXRV-cc");
+  // The new run of aa joins cc's.
+  a.Team(bbcoop::TeamRequest::ACCEPT, now + 30, {}, a.lobby.invites(0).team());
+  a.Team(bbcoop::TeamRequest::READY, now + 30, {}, {}, 1);
+  Pump(service, {&a, &b, &c}, now + 30);
+  CHECK(a.starts.back().host() == "cc");
+  return 0;
+}
+
+// The leader and host quits to the title while the others play: it is out of
+// the team at once, the others hear its session is closed, and the guest whose
+// game takes the session (it publishes it as host) leads. The old host has an
+// invite back from it; accepted, it starts as a guest of the new host.
+int AHostBackAtTheTitleHandsTheTeamToTheNewHost() {
+  Service service{{}};
+  Game a{1000, "aa", 11};
+  Game b{1001, "bb", 12};
+  Game c{1002, "cc", 13};
+  qint64 now = 1'000'000;
+  const QByteArray party = PlayingTeamOfThree(service, a, b, c, now);
+  CHECK(c.session && c.session->join() == "NXRV-aa");
+  a.LobbyHello(false, now + 10);
+  Pump(service, {&a, &b, &c}, now + 10);
+  CHECK(!a.lobby.has_team() && a.lobby.invites_size() == 1);
+  CHECK(c.session && c.session->join().empty()); // closed with its host
+  CHECK(c.lobby.team().members_size() == 2);
+  // cc's game took the room: it hosts now, and leads.
+  c.claims_host = true;
+  c.Hello(now + 20, party);
+  bbcoop::Envelope moved;
+  moved.mutable_team_session()->set_join("NXRV-cc");
+  c.Send(moved, now + 20);
+  Pump(service, {&a, &b, &c}, now + 20);
+  CHECK(b.session && b.session->join() == "NXRV-cc");
+  CHECK(b.lobby.team().leader() == "cc");
+  CHECK(a.lobby.invites_size() == 1 && a.lobby.invites(0).from() == "cc");
+  a.Team(bbcoop::TeamRequest::ACCEPT, now + 30, {}, a.lobby.invites(0).team());
+  a.Team(bbcoop::TeamRequest::READY, now + 30, {}, {}, 1);
+  Pump(service, {&a, &b, &c}, now + 30);
+  CHECK(a.starts.size() == 2 && a.starts.back().host() == "cc");
+  CHECK(a.lobby.team().leader() == "cc");
+  for (const bbcoop::TeamMember &m : a.lobby.team().members()) {
+    CHECK(m.member() != "cc" || m.sign() == 0);
+    CHECK(m.member() != "aa" || m.sign() == 6); // bb keeps its 7
+  }
+  // Back in the world it joins cc's session as a guest.
+  a.claims_host = false;
+  a.run = 0x2002;
+  a.Hello(now + 40, party);
+  Pump(service, {&a, &b, &c}, now + 40);
+  CHECK(a.session && a.session->host() == "cc");
+  return 0;
+}
+
+// The host's game is gone (its link quiet): a few seconds later it is out of
+// the team and out of its world (the others hear its session is closed), and
+// the guest whose game took the session leads. A game heard again in time
+// stays in.
+int AHostsGameGoneHandsTheTeamOver() {
+  Service service{{}};
+  Game a{1000, "aa", 11};
+  Game b{1001, "bb", 12};
+  Game c{1002, "cc", 13};
+  qint64 now = 1'000'000;
+  const QByteArray party = PlayingTeamOfThree(service, a, b, c, now);
+  service.Quiet(b.endpoint, true, now + 10);
+  service.Quiet(b.endpoint, false, now + 20);
+  a.online = false;
+  service.Quiet(a.endpoint, true, now + 100);
+  Pump(service, {&b, &c}, now + 100 + LeftGraceMs - 1);
+  CHECK(c.lobby.team().members_size() == 3);
+  Pump(service, {&b, &c}, now + 100 + LeftGraceMs);
+  CHECK(c.lobby.team().members_size() == 2 && b.lobby.team().started());
+  CHECK(c.session && c.session->join().empty());
+  b.claims_host = true;
+  b.Hello(now + 200 + LeftGraceMs, party);
+  bbcoop::Envelope moved;
+  moved.mutable_team_session()->set_join("NXRV-bb");
+  b.Send(moved, now + 200 + LeftGraceMs);
+  Pump(service, {&b, &c}, now + 200 + LeftGraceMs);
+  CHECK(c.lobby.team().leader() == "bb");
+  CHECK(c.session && c.session->join() == "NXRV-bb");
+  // aa's next run: an invite back from bb at the title.
+  Game a_again{1003, "aa", 21};
+  a_again.run = 0x3003;
+  a_again.LobbyHello(false, now + 300 + LeftGraceMs);
+  Pump(service, {&a_again, &b, &c}, now + 300 + LeftGraceMs);
+  CHECK(!a_again.lobby.has_team() && a_again.lobby.invites_size() == 1 &&
+        a_again.lobby.invites(0).from() == "bb");
   return 0;
 }
 
@@ -3309,6 +3469,11 @@ int main() {
       {"TheSessionHostMovesToAGuest", TheSessionHostMovesToAGuest},
       {"AReturningLeaderStartsAsAGuestOfTheNewHost",
        AReturningLeaderStartsAsAGuestOfTheNewHost},
+      {"AHostBackAtTheTitleHandsTheTeamToTheNewHost",
+       AHostBackAtTheTitleHandsTheTeamToTheNewHost},
+      {"AHostsGameGoneHandsTheTeamOver", AHostsGameGoneHandsTheTeamOver},
+      {"OneSessionHostWhenTwoGuestsTakeOver",
+       OneSessionHostWhenTwoGuestsTakeOver},
       {"AWrongPartyOrProtocolIsRefused", AWrongPartyOrProtocolIsRefused},
       {"AWipeStartsOneLogForTheParty", AWipeStartsOneLogForTheParty},
       {"TheHostsSessionEventsStartANewLogAGuestsTakeItsShare",

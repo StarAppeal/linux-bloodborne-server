@@ -310,6 +310,12 @@ inline constexpr auto CoopSites = std::to_array<CoopSite>({
     // Kaniel 2026-10-16: the network banner, none in a party (ShowNetworkBannerPrologue).
     {"network banner", "no multiplayer banners", CoopSiteKind::Hook, 0x01BFFE80,
      "55 48 89 E5 41 57 41 56"},
+    // Kaniel 2026-10-25: the left member's notice (MemberLeftNoticePrologue).
+    {"member left notice", "no multiplayer banners", CoopSiteKind::Hook, 0x0178B0E0,
+     "55 48 89 E5 41 57 41 56"},
+    // And the session's end's "Session lost." window (SessionLostTest).
+    {"session lost window", "no multiplayer banners", CoopSiteKind::Hook, 0x0138A602,
+     "F6 80 05 0A 00 00 01"},
     // Website shots 2026-10-19: the game names players by their characters, not online ids
     // (PlayerNameForTextOffset).
     {"name by online id switch", "character names", CoopSiteKind::Patch, 0x01AE8713, "75 14",

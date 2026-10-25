@@ -856,6 +856,13 @@ bool HoldTitleLoadForTeam(u32 slot, bool fresh = false);
 void NoteSaveOpenedForName();
 // The title menu is up again: the next load asks the team again.
 void TeamBackAtTitle();
+// The rig's quit-title: how often the title menu came up, and whether the lobby (its state as it
+// last came) still has this player playing in its team (the lobby has not heard of the title).
+u64 TeamTitleVisits();
+bool TeamLobbySaysPlaying();
+// Kaniel 2026-10-25: this game took its team's host role in play (the host left: the room came
+// here, or the lobby made it the leader); until it leaves the team or the world.
+bool TeamHostTookOver();
 // Kaniel 2026-10-16: a save loads from the title: what the last one's story removed is forgotten
 // (HoldStoryRemovals).
 void ForgetStoryRemovals();
