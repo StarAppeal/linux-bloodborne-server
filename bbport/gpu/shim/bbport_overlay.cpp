@@ -3703,7 +3703,7 @@ void Screen() {
                    "Не в команде: создайте её или примите приглашение");
     } else {
         status = std::string(lobby.members[0].name) + T("'s team", " — команда") + "   " +
-                 std::to_string(lobby.member_count) + T(" of 4", " из 4");
+                 std::to_string(lobby.member_count) + T(" of ", " из ") + std::to_string(lobby.team_size);
         if (lobby.leader && lobby.code[0]) {
             // For a friend the lobby does not list: it types the code (Join by code).
             status += std::string("   ") + T("Team code", "Код команды") + ": " + lobby.code;
@@ -3751,7 +3751,10 @@ void Screen() {
     const float left_x = win.x + S(36.0f), right_x = left_x + list_w + gap;
     ImGui::PushFont(MenuArt::Font(), 22.0f);
     draw->AddText(ImVec2(left_x, lists_y), Gold(), T("Hunters online", "Охотники в сети"));
-    draw->AddText(ImVec2(right_x, lists_y), Gold(), T("Invitations", "Приглашения"));
+    // Amanises 2026-10-25: a player in no team sees the open teams there too.
+    draw->AddText(ImVec2(right_x, lists_y), Gold(),
+                  lobby.in_team ? T("Invitations", "Приглашения")
+                                : T("Invitations and open teams", "Приглашения и открытые команды"));
     ImGui::PopFont();
     ListRule(draw, left_x, left_x + list_w, lists_y + S(36.0f));
     ListRule(draw, right_x, right_x + list_w, lists_y + S(36.0f));
@@ -3869,7 +3872,7 @@ void Screen() {
         }
     }
     y = lists_y + S(50.0f);
-    if (lobby.invite_count == 0) {
+    if (lobby.invite_count == 0 && lobby.ask_count == 0 && (lobby.in_team || lobby.open_count == 0)) {
         draw->AddText(ImVec2(right_x, y + S(8.0f)), Dim(), T("None", "Нет"));
     }
     for (int i = 0; i < lobby.invite_count && i < rows; ++i, y += row_h) {
@@ -3900,6 +3903,55 @@ void Screen() {
             bbcoop_lobby_request(BBCOOP_TEAM_DECLINE, inv.id);
         }
     }
+    // Amanises 2026-10-25, open teams: under the invitations, the leader's asks to join (take
+    // in or say no) and, for a player in no team, the open teams to ask.
+    int right_rows = std::min(lobby.invite_count, rows);
+    for (int i = 0; i < lobby.ask_count && right_rows < rows; ++i, ++right_rows, y += row_h) {
+        const bbcoop_lobby_entry& ask = lobby.asks[i];
+        const std::string text = std::string(ask.name) + T(" asks to join", " просится в команду");
+        MenuArt::Nine(draw, MenuArt::Row, ImVec2(right_x - S(6.0f), y - S(2.0f)),
+                      ImVec2(right_x + list_w + S(4.0f), y + row_h - S(4.0f)), 10.0f, S(6.0f), 0.7f);
+        draw->AddText(ImVec2(right_x + S(8.0f), y + S(8.0f)), Plain(),
+                      Fit(text.c_str(), list_w - 2 * button_w - S(32.0f)).c_str());
+        const std::string take = std::string("askok") + ask.id, refuse = std::string("askno") + ask.id;
+        if (Button(draw, take.c_str(), T("Accept", "Принять"), ImVec2(right_x + list_w - 2 * button_w - S(8.0f), y),
+                   ImVec2(button_w, row_h - S(6.0f)), lobby.member_count < lobby.team_size, true)) {
+            bbcoop_lobby_request(BBCOOP_TEAM_ASK_ACCEPT, ask.id);
+        }
+        if (Button(draw, refuse.c_str(), T("Decline", "Отклонить"), ImVec2(right_x + list_w - button_w, y),
+                   ImVec2(button_w, row_h - S(6.0f)))) {
+            bbcoop_lobby_request(BBCOOP_TEAM_ASK_DECLINE, ask.id);
+        }
+    }
+    if (!lobby.in_team) {
+        const float ask_w = S(170.0f);
+        for (int i = 0; i < lobby.open_count && right_rows < rows; ++i, ++right_rows, y += row_h) {
+            const bbcoop_lobby_open& team = lobby.open_teams[i];
+            const std::string count = std::to_string(team.members) + "/" + std::to_string(lobby.team_size);
+            const char* state = team.started ? T("In the hunt", "На охоте") : "";
+            MenuArt::Nine(draw, MenuArt::Row, ImVec2(right_x - S(6.0f), y - S(2.0f)),
+                          ImVec2(right_x + list_w + S(4.0f), y + row_h - S(4.0f)), 10.0f, S(6.0f), 0.7f);
+            const float count_x = right_x + list_w - ask_w - S(18.0f) - ImGui::CalcTextSize(count.c_str()).x;
+            const float state_x = count_x - (state[0] ? ImGui::CalcTextSize(state).x + S(14.0f) : 0.0f);
+            const std::string name = std::string(team.name) + T("'s team", " — команда");
+            draw->AddText(ImVec2(right_x + S(8.0f), y + S(8.0f)), Plain(),
+                          Fit(name.c_str(), state_x - right_x - S(20.0f)).c_str());
+            if (state[0]) {
+                draw->AddText(ImVec2(state_x, y + S(8.0f)), Dim(), state);
+            }
+            draw->AddText(ImVec2(count_x, y + S(8.0f)), Gold(), count.c_str());
+            const std::string id = std::string("askjoin") + team.id;
+            // An open team is joined at once; one that asks waits on its leader.
+            const char* label = team.open    ? T("Join", "Вступить")
+                                : team.asked ? T("Asked", "Отправлено")
+                                             : T("Ask to join", "Попроситься");
+            if (Button(draw, id.c_str(), label, ImVec2(right_x + list_w - ask_w, y), ImVec2(ask_w, row_h - S(6.0f)),
+                       true, !team.asked)) {
+                bbcoop_lobby_request(team.asked && !team.open ? BBCOOP_TEAM_ASK_CANCEL : BBCOOP_TEAM_ASK_JOIN,
+                                     team.id);
+            }
+        }
+    }
     ImGui::PopFont();
 
     // The buttons: the team, Begin the hunt, the world.
@@ -3916,6 +3968,15 @@ void Screen() {
     // Invasions (docs/INVASIONS.md): the leader allows invaders into the team's world, over the
     // buttons (the server keeps them out unless its operator turned invasions on).
     if (lobby.in_team && lobby.leader) {
+        // Amanises 2026-10-25, open teams: how the team is joined, each press the next way (by
+        // invite only, listed with its leader taking who asks, listed for anyone to join).
+        const char* join = lobby.join == BBCOOP_JOIN_OPEN ? T("Join: open to all", "Вход: открыт всем")
+                           : lobby.join == BBCOOP_JOIN_ASK ? T("Join: ask to join", "Вход: по запросу")
+                                                           : T("Join: invite only", "Вход: по приглашению");
+        if (Button(draw, "openteam", join, ImVec2(bx, by - bh - S(14.0f)), ImVec2(bw, bh), lobby.signed_in != 0)) {
+            const char* next = lobby.join == BBCOOP_JOIN_INVITE_ONLY ? "1" : lobby.join == BBCOOP_JOIN_ASK ? "2" : "0";
+            bbcoop_lobby_request(BBCOOP_TEAM_OPEN, next);
+        }
         const char* invaders = lobby.allow_invaders ? T("Invaders: allowed", "Захватчики: разрешены")
                                                     : T("Invaders: off", "Захватчики: запрещены");
         if (Button(draw, "invaders", invaders, ImVec2(win.x + (size.x - bw) * 0.5f, by - bh - S(14.0f)),

@@ -228,6 +228,16 @@ bbcoop::TeamRequest TeamMenuRequest(bbcoop::TeamRequest::Action action, const st
     case Action::DEATH_MODE:
         request.set_death_mode(id == "1" ? 1 : 0); // Kaniel 2026-10-25: "1" spectate, "0" down
         break;
+    // Amanises 2026-10-25, open teams.
+    case Action::OPEN: // the join mode's number
+        request.set_join(id == "2"   ? bbcoop::Team::OPEN
+                         : id == "1" ? bbcoop::Team::ASK
+                                     : bbcoop::Team::INVITE_ONLY);
+        break;
+    case Action::ASK_JOIN:
+    case Action::ASK_CANCEL:
+        request.set_team(id);
+        break;
     case Action::SEARCH:
         request.set_query(id); // Amanises 2026-10-25: the player search's text
         break;

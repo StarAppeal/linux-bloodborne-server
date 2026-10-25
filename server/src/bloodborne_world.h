@@ -242,6 +242,9 @@ public:
     QString VisitingOf(const ServerLink::Endpoint& link) const;
     // The party a link's game said in its hello, empty before one (phase 7: the hub's teams).
     QString PartyOf(const ServerLink::Endpoint& link) const;
+    // Amanises 2026-10-25: how long a member cut from its team still says goodbye to it (only the
+    // game's own packets, see Member::cut_ms).
+    static constexpr qint64 CutGraceMs = 30'000;
     // Phase 9: whether a game packet on `channel` goes from one link's game to another's, by the
     // channel table, their maps and their parts in their maps' enemies (coop/packet_routes.h). A
     // link without a member here gets only the game's own channels.
@@ -383,6 +386,10 @@ private:
         // Kaniel 2026-10-16: the team world it was taken out of (removed from the team, or left
         // it): no game packet goes between it and that party until its next hello.
         QString cut_from;
+        // Amanises 2026-10-25: when it was cut. For CutGraceMs the game's own packets still go
+        // between it and that party: its game says goodbye to the session's host (the leave the
+        // game waits for; dropped, the removed guest saw the host ~20 s more before it gave up).
+        qint64 cut_ms = 0;
         // Amanises 2026-10-25: its last player search (the text and what it found).
         std::string search_query;
         std::vector<FriendEntry> search;
@@ -497,6 +504,7 @@ private:
     // Amanises 2026-10-25: what a signed-in member sees (the lobby's state, its friends added),
     // the friend requests and searches (TeamRequest FRIEND_* and SEARCH), and one player's state
     // again (every game it has signed in).
+    bool InCutGrace(const Member& member) const;
     bbcoop::LobbyState LobbyStateFor(const Member& member) const;
     void OnFriendRequest(Member& member, const bbcoop::TeamRequest& request, qint64 now_ms,
                          Result& result);

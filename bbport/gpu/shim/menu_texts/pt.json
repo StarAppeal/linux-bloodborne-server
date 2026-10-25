@@ -192,7 +192,6 @@
  "Begin when you like: hunters still choosing join the hunt at once.": "Começa quando quiseres: quem ainda está a escolher junta-se à caçada logo.",
  "The leader begins the hunt; you join it at once.": "O líder começa a caçada; juntas-te logo.",
  "'s team": " — equipa",
- " of 4": " de 4",
  "Remove": "Remover",
  "Hunters online": "Caçadores online",
  "Invitations": "Convites",
@@ -486,5 +485,12 @@
  "Friends are kept on the server with your account. Type with the keyboard to search.": "Os amigos ficam guardados no servidor com a tua conta. Escreve com o teclado para procurar.",
  "Friend": "Amigo",
  "Search hunters online": "Procurar caçadores online",
- "Nobody here by that name: Enter searches the whole server": "Ninguém aqui com esse nome: Enter procura em todo o servidor"
+ "Nobody here by that name: Enter searches the whole server": "Ninguém aqui com esse nome: Enter procura em todo o servidor",
+ "Invitations and open teams": "Convites e equipas abertas",
+ " asks to join": " pede para entrar",
+ "Ask to join": "Pedir para entrar",
+ " of ": " de ",
+ "Join: invite only": "Entrada: só por convite",
+ "Join: ask to join": "Entrada: a pedido",
+ "Join: open to all": "Entrada: aberta a todos"
 }

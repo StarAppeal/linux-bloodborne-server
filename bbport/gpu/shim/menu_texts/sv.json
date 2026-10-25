@@ -192,7 +192,6 @@
  "Begin when you like: hunters still choosing join the hunt at once.": "Börja när du vill: de som fortfarande väljer går med i jakten direkt.",
  "The leader begins the hunt; you join it at once.": "Ledaren börjar jakten; du går med direkt.",
  "'s team": "s lag",
- " of 4": " av 4",
  "Remove": "Ta bort",
  "Hunters online": "Jägare online",
  "Invitations": "Inbjudningar",
@@ -486,5 +485,12 @@
  "Friends are kept on the server with your account. Type with the keyboard to search.": "Vänner sparas på servern med ditt konto. Skriv med tangentbordet för att söka.",
  "Friend": "Vän",
  "Search hunters online": "Sök jägare online",
- "Nobody here by that name: Enter searches the whole server": "Ingen här med det namnet: Enter söker på hela servern"
+ "Nobody here by that name: Enter searches the whole server": "Ingen här med det namnet: Enter söker på hela servern",
+ "Invitations and open teams": "Inbjudningar och öppna lag",
+ " asks to join": " ber att få gå med",
+ "Ask to join": "Be att få gå med",
+ " of ": " av ",
+ "Join: invite only": "Anslutning: endast inbjudan",
+ "Join: ask to join": "Anslutning: på begäran",
+ "Join: open to all": "Anslutning: öppen för alla"
 }

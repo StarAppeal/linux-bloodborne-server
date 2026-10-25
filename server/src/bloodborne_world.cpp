@@ -870,6 +870,7 @@ void Service::OnHello(Member& member, const bbcoop::Hello& hello, qint64 now_ms,
         !member.name.empty() && member.name == hello.member() && member.run == hello.run();
     member.party = FolderOf(party);
     member.cut_from.clear();
+    member.cut_ms = 0;
     const bool team = party.startsWith("world:");
     member.name = hello.member();
     member.run = hello.run();
@@ -1954,7 +1955,20 @@ QString Service::VisitingOf(const ServerLink::Endpoint& link) const {
 
 QString Service::PartyOf(const ServerLink::Endpoint& link) const {
     const auto found = members.find(link.Key());
-    return found == members.end() ? QString{} : found->second.party;
+    if (found == members.end()) {
+        return {};
+    }
+    // Amanises 2026-10-25: just cut from its team's world: still that party's for the link while
+    // its game says goodbye (RoutesPacket lets only the game's own packets through).
+    if (found->second.party.isEmpty() && InCutGrace(found->second)) {
+        return found->second.cut_from;
+    }
+    return found->second.party;
+}
+
+bool Service::InCutGrace(const Member& member) const {
+    return !member.cut_from.isEmpty() && member.cut_ms != 0 &&
+           clock_ms - member.cut_ms < CutGraceMs;
 }
 
 bool Service::RoutesPacket(const ServerLink::Endpoint& from, const ServerLink::Endpoint& to,
@@ -1968,9 +1982,16 @@ bool Service::RoutesPacket(const ServerLink::Endpoint& from, const ServerLink::E
                channel < BloodborneCoop::NativeChannelCount;
     }
     // Kaniel 2026-10-16: a member out of its team reaches none of the team's games, nor they it.
-    if ((!sender->second.cut_from.isEmpty() && sender->second.cut_from == target->second.party) ||
-        (!target->second.cut_from.isEmpty() && target->second.cut_from == sender->second.party)) {
-        return false;
+    const bool sender_cut =
+        !sender->second.cut_from.isEmpty() && sender->second.cut_from == target->second.party;
+    const bool target_cut =
+        !target->second.cut_from.isEmpty() && target->second.cut_from == sender->second.party;
+    if (sender_cut || target_cut) {
+        // Amanises 2026-10-25: right after the cut only the game's own packets (its leave).
+        const Member& cut = sender_cut ? sender->second : target->second;
+        return InCutGrace(cut) &&
+               BloodborneCoop::NativeChannelPolicy(channel) == BloodborneCoop::ChannelPolicy::Pass &&
+               channel < BloodborneCoop::NativeChannelCount;
     }
     // Invasions: a hostile visitor and the team it visits go by the hostile table; the team
     // member's part in the enemies is the visited world's.
@@ -2315,6 +2336,7 @@ void Service::TakeOutOfTeam(const TeamLobby::Departure& out, qint64 now_ms, Resu
                 .arg(party, QString::fromStdString(member.name), QString::fromStdString(out.team)));
         member.party.clear();
         member.cut_from = party;
+        member.cut_ms = now_ms;
         member.map = 0;
         if (world->second.session && world->second.session->host() == member.name) {
             CloseSession(world->second, now_ms, result);

@@ -192,7 +192,6 @@
  "Begin when you like: hunters still choosing join the hunt at once.": "İstediğinizde başlayın: hâlâ seçim yapan avcılar ava hemen katılır.",
  "The leader begins the hunt; you join it at once.": "Avı lider başlatır; hemen katılırsınız.",
  "'s team": " takımı",
- " of 4": " / 4",
  "Remove": "Çıkar",
  "Hunters online": "Çevrimiçi avcılar",
  "Invitations": "Davetler",
@@ -486,5 +485,12 @@
  "Friends are kept on the server with your account. Type with the keyboard to search.": "Arkadaşlar hesabınla birlikte sunucuda tutulur. Aramak için klavyeyle yaz.",
  "Friend": "Arkadaş",
  "Search hunters online": "Çevrimiçi avcı ara",
- "Nobody here by that name: Enter searches the whole server": "Burada bu isimde kimse yok: Enter tüm sunucuda arar"
+ "Nobody here by that name: Enter searches the whole server": "Burada bu isimde kimse yok: Enter tüm sunucuda arar",
+ "Invitations and open teams": "Davetler ve açık takımlar",
+ " asks to join": " katılmak istiyor",
+ "Ask to join": "Katılmak iste",
+ " of ": " / ",
+ "Join: invite only": "Katılım: yalnızca davetle",
+ "Join: ask to join": "Katılım: istekle",
+ "Join: open to all": "Katılım: herkese açık"
 }

@@ -192,7 +192,6 @@
  "Begin when you like: hunters still choosing join the hunt at once.": "Start når du vil: jegere som fortsatt velger, blir med i jakten med en gang.",
  "The leader begins the hunt; you join it at once.": "Lederen starter jakten; du blir med med en gang.",
  "'s team": "s lag",
- " of 4": " av 4",
  "Remove": "Fjern",
  "Hunters online": "Tilkoblede jegere",
  "Invitations": "Invitasjoner",
@@ -486,5 +485,12 @@
  "Friends are kept on the server with your account. Type with the keyboard to search.": "Venner lagres på serveren med kontoen din. Skriv med tastaturet for å søke.",
  "Friend": "Venn",
  "Search hunters online": "Søk etter jegere på nett",
- "Nobody here by that name: Enter searches the whole server": "Ingen her med det navnet: Enter søker på hele serveren"
+ "Nobody here by that name: Enter searches the whole server": "Ingen her med det navnet: Enter søker på hele serveren",
+ "Invitations and open teams": "Invitasjoner og åpne lag",
+ " asks to join": " ber om å bli med",
+ "Ask to join": "Spør om å bli med",
+ " of ": " av ",
+ "Join: invite only": "Tilgang: kun invitasjon",
+ "Join: ask to join": "Tilgang: spør først",
+ "Join: open to all": "Tilgang: åpen for alle"
 }

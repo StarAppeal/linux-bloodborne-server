@@ -25,6 +25,7 @@
 #include "coop/coop_messages.h"
 #include "coop/invasions.h"
 #include "coop/trade.h"
+#include "coop/packet_routes.h"
 
 using namespace BloodborneCoop;
 using BloodborneWorld::Service;
@@ -2546,6 +2547,53 @@ int GamePacketsGoByMapAndOwner() {
 // nothing more of it, the others' boards forget it, and no game packet goes
 // between it and the team (its game leaves the session; the server's word
 // stands even if it did not). Invited again, its hello brings it back in.
+// Amanises 2026-10-25: a removed member's goodbye goes through for CutGraceMs only; then nothing
+// goes between it and the team's games.
+int ARemovedMembersGoodbyeEndsAfterTheGrace() {
+  Service service{{}};
+  Game a{1000, "aa", 11};
+  Game b{1001, "bb", 12};
+  const std::vector<Game *> games{&a, &b};
+  qint64 now = 1'000'000;
+  a.LobbyHello(false, now);
+  b.LobbyHello(false, now);
+  Pump(service, games, now);
+  a.Team(bbcoop::TeamRequest::CREATE, now);
+  Pump(service, games, now);
+  const std::string team = a.lobby.team().id();
+  a.Team(bbcoop::TeamRequest::INVITE, now, "bb");
+  Pump(service, games, now);
+  b.Team(bbcoop::TeamRequest::ACCEPT, now, {}, team);
+  Pump(service, games, now);
+  a.Team(bbcoop::TeamRequest::READY, now, {}, {}, 1);
+  b.Team(bbcoop::TeamRequest::READY, now, {}, {}, 2);
+  Pump(service, games, now);
+  a.Team(bbcoop::TeamRequest::START, now);
+  Pump(service, games, now);
+  a.LobbyHello(true, now);
+  b.LobbyHello(true, now);
+  const QByteArray party = QByteArray::fromStdString(a.starts.at(0).party());
+  a.Hello(now, party);
+  b.claims_host = false;
+  b.Hello(now, party);
+  a.Map(0x18010000, now);
+  b.Map(0x18010000, now);
+  Pump(service, games, now);
+  a.Team(bbcoop::TeamRequest::REMOVE, now + 10, "bb");
+  Pump(service, games, now + 10);
+  CHECK(!service.PartyOf(b.endpoint).isEmpty());
+  // Half way through: still saying goodbye; past the grace: gone.
+  Pump(service, games, now + 10 + Service::CutGraceMs / 2);
+  CHECK(!service.PartyOf(b.endpoint).isEmpty());
+  Pump(service, games, now + 10 + Service::CutGraceMs);
+  CHECK(service.PartyOf(b.endpoint).isEmpty());
+  for (const u32 channel : {0x06u, 0x10u, 0x07u}) {
+    CHECK(!service.RoutesPacket(a.endpoint, b.endpoint, channel) &&
+          !service.RoutesPacket(b.endpoint, a.endpoint, channel));
+  }
+  return 0;
+}
+
 int ARemovedMemberIsOutOfTheTeamsWorld() {
   Service service{{}};
   Game a{1000, "aa", 11};
@@ -2586,12 +2634,19 @@ int ARemovedMemberIsOutOfTheTeamsWorld() {
   a.Team(bbcoop::TeamRequest::REMOVE, now + 10, "bb");
   Pump(service, games, now + 10);
   CHECK(!b.lobby.has_team());
-  CHECK(service.PartyOf(b.endpoint).isEmpty());
   CHECK(a.map_board.members_size() == 1 &&
         a.map_board.members(0).member() == "aa");
+  // Amanises 2026-10-25: for a moment its game's own packets still go both ways (its game says
+  // goodbye to the session's host), none of the team's world.
+  CHECK(service.PartyOf(b.endpoint) == service.PartyOf(a.endpoint));
   for (const u32 channel : {0x06u, 0x10u, 0x07u}) {
-    CHECK(!routes(a, b, channel) && !routes(b, a, channel));
+    const bool native =
+        BloodborneCoop::NativeChannelPolicy(channel) == BloodborneCoop::ChannelPolicy::Pass &&
+        channel < BloodborneCoop::NativeChannelCount;
+    CHECK(routes(a, b, channel) == native && routes(b, a, channel) == native);
   }
+  CHECK(!routes(a, b, 0x10u) || BloodborneCoop::NativeChannelPolicy(0x10u) ==
+                                     BloodborneCoop::ChannelPolicy::Pass);
   // What its game still sends of the team's world counts for nothing.
   b.Map(0x18000000, now + 20);
   Pump(service, games, now + 20);
@@ -2610,11 +2665,14 @@ int ARemovedMemberIsOutOfTheTeamsWorld() {
   CHECK(routes(a, b, 0x06) && routes(b, a, 0x06));
   CHECK(a.map_board.members_size() == 2);
 
-  // A member that leaves by itself is out the same way.
+  // A member that leaves by itself is out the same way (its goodbye first, as above).
   b.Team(bbcoop::TeamRequest::LEAVE, now + 50);
   Pump(service, games, now + 50);
-  CHECK(service.PartyOf(b.endpoint).isEmpty());
-  CHECK(!routes(a, b, 0x06) && !routes(b, a, 0x06));
+  CHECK(service.PartyOf(b.endpoint) == service.PartyOf(a.endpoint));
+  const bool native06 =
+      BloodborneCoop::NativeChannelPolicy(0x06u) == BloodborneCoop::ChannelPolicy::Pass &&
+      0x06u < BloodborneCoop::NativeChannelCount;
+  CHECK(routes(a, b, 0x06) == native06 && routes(b, a, 0x06) == native06);
   return 0;
 }
 
@@ -3829,6 +3887,8 @@ int main() {
       {"GamePacketsGoByMapAndOwner", GamePacketsGoByMapAndOwner},
       {"ARemovedMemberIsOutOfTheTeamsWorld",
        ARemovedMemberIsOutOfTheTeamsWorld},
+      {"ARemovedMembersGoodbyeEndsAfterTheGrace",
+       ARemovedMembersGoodbyeEndsAfterTheGrace},
       {"PublicLobbyIdentityComesFromTheAuthenticatedAccount",
        PublicLobbyIdentityComesFromTheAuthenticatedAccount},
       {"OnlyTheOwnersKillsAndHpCount", OnlyTheOwnersKillsAndHpCount},

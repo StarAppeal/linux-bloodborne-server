@@ -577,6 +577,7 @@ extern "C" int bbcoop_lobby_view(bbcoop_lobby* lobby) {
         CopyName(lobby->code, sizeof(lobby->code), BloodborneCoop::FormatTeamCode(team.code()));
         lobby->allow_invaders = team.allow_invaders() ? 1 : 0;
         lobby->death_mode = static_cast<int>(Core::Bloodborne::TeamDeathMode(*state));
+        lobby->join = static_cast<int>(team.join());
         // The leader first.
         std::vector<const bbcoop::TeamMember*> members;
         for (const bbcoop::TeamMember& m : team.members()) {
@@ -651,6 +652,28 @@ extern "C" int bbcoop_lobby_view(bbcoop_lobby* lobby) {
     CopyPlayers(lobby->sent, lobby->sent_count, state->friend_requests_sent(), own_team);
     CopyPlayers(lobby->search, lobby->search_count, state->search(), own_team);
     CopyName(lobby->search_query, sizeof(lobby->search_query), state->search_query());
+    // Amanises 2026-10-25, open teams (an older server says no size: the game's four).
+    lobby->team_size = state->team_size() > 0 ? static_cast<int>(state->team_size()) : BBCOOP_LOBBY_TEAM;
+    for (const bbcoop::OpenTeam& open : state->open_teams()) {
+        if (lobby->open_count == BBCOOP_LOBBY_OPEN) {
+            break;
+        }
+        bbcoop_lobby_open& out = lobby->open_teams[lobby->open_count++];
+        CopyName(out.name, sizeof(out.name), open.leader_name());
+        CopyName(out.id, sizeof(out.id), open.team());
+        out.members = static_cast<int>(open.members());
+        out.started = open.started() ? 1 : 0;
+        out.asked = open.asked() ? 1 : 0;
+        out.open = open.join() == bbcoop::Team::OPEN ? 1 : 0;
+    }
+    for (const bbcoop::TeamAsk& ask : state->asks()) {
+        if (lobby->ask_count == BBCOOP_LOBBY_ASKS) {
+            break;
+        }
+        bbcoop_lobby_entry& out = lobby->asks[lobby->ask_count++];
+        CopyName(out.name, sizeof(out.name), ask.name());
+        CopyName(out.id, sizeof(out.id), ask.member());
+    }
     for (const bbcoop::TeamInvite& invite : state->invites()) {
         if (lobby->invite_count == BBCOOP_LOBBY_INVITES) {
             break;
@@ -820,7 +843,14 @@ static_assert(BBCOOP_TEAM_WORLD == bbcoop::TeamRequest::WORLD &&
               BBCOOP_TEAM_FRIEND_ADD == bbcoop::TeamRequest::FRIEND_ADD &&
               BBCOOP_TEAM_FRIEND_REMOVE == bbcoop::TeamRequest::FRIEND_REMOVE &&
               BBCOOP_TEAM_FRIEND_DECLINE == bbcoop::TeamRequest::FRIEND_DECLINE &&
-              BBCOOP_TEAM_SEARCH == bbcoop::TeamRequest::SEARCH);
+              BBCOOP_TEAM_SEARCH == bbcoop::TeamRequest::SEARCH &&
+              BBCOOP_TEAM_OPEN == bbcoop::TeamRequest::OPEN &&
+              BBCOOP_TEAM_ASK_JOIN == bbcoop::TeamRequest::ASK_JOIN &&
+              BBCOOP_TEAM_ASK_CANCEL == bbcoop::TeamRequest::ASK_CANCEL &&
+              BBCOOP_TEAM_ASK_ACCEPT == bbcoop::TeamRequest::ASK_ACCEPT &&
+              BBCOOP_TEAM_ASK_DECLINE == bbcoop::TeamRequest::ASK_DECLINE);
+static_assert(BBCOOP_JOIN_INVITE_ONLY == bbcoop::Team::INVITE_ONLY &&
+              BBCOOP_JOIN_ASK == bbcoop::Team::ASK && BBCOOP_JOIN_OPEN == bbcoop::Team::OPEN);
 
 extern "C" void bbcoop_lobby_request(int action, const char* id) {
     Core::Bloodborne::Coop::TeamLobbyRequest(static_cast<bbcoop::TeamRequest::Action>(action),

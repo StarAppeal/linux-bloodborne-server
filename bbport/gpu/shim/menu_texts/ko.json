@@ -192,7 +192,6 @@
  "Begin when you like: hunters still choosing join the hunt at once.": "원할 때 시작하세요: 아직 선택 중인 사냥꾼은 바로 합류합니다.",
  "The leader begins the hunt; you join it at once.": "리더가 사냥을 시작하면 바로 합류합니다.",
  "'s team": "의 팀",
- " of 4": " / 4",
  "Remove": "제외",
  "Hunters online": "온라인 사냥꾼",
  "Invitations": "초대",
@@ -486,5 +485,12 @@
  "Friends are kept on the server with your account. Type with the keyboard to search.": "친구는 계정과 함께 서버에 저장됩니다. 검색하려면 키보드로 입력하세요.",
  "Friend": "친구",
  "Search hunters online": "접속 중인 사냥꾼 검색",
- "Nobody here by that name: Enter searches the whole server": "여기에 그 이름의 사냥꾼이 없습니다: Enter로 서버 전체 검색"
+ "Nobody here by that name: Enter searches the whole server": "여기에 그 이름의 사냥꾼이 없습니다: Enter로 서버 전체 검색",
+ "Invitations and open teams": "초대와 공개 팀",
+ " asks to join": " 님이 참가 요청",
+ "Ask to join": "참가 요청",
+ " of ": " / ",
+ "Join: invite only": "참가: 초대 전용",
+ "Join: ask to join": "참가: 요청 후 승인",
+ "Join: open to all": "참가: 모두에게 공개"
 }

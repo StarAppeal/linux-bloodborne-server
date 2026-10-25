@@ -675,6 +675,14 @@ message TeamRequest {
         FRIEND_REMOVE = 20;  // `member` off the friends, or the request sent to it taken back
         FRIEND_DECLINE = 21; // the request `member` sent refused
         SEARCH = 22;         // the server's accounts whose name holds `query` (empty: clear)
+        // Amanises 2026-10-25, open teams: the leader says how its team is joined (`join`); a
+        // player in no team joins an open team or asks to join one that asks (`team`), or takes
+        // the ask back; the leader takes the one who asked (`member`) in, or says no.
+        OPEN = 23;
+        ASK_JOIN = 24;
+        ASK_CANCEL = 25;
+        ASK_ACCEPT = 26;
+        ASK_DECLINE = 27;
     }
     Action action = 1;
     string member = 2;
@@ -689,6 +697,7 @@ message TeamRequest {
     repeated uint32 rot = 11; // RotKind values, the oldest first
     uint32 death_mode = 12; // DEATH_MODE
     string query = 13; // SEARCH
+    Team.Join join = 14; // OPEN
 }
 
 // Kaniel 2026-10-25: the host rules, the leader's choice for its whole team, all off by default.
@@ -790,6 +799,30 @@ message Team {
     // one for the whole team (the leader's pick): 0 it goes down until struck back up (party
     // death), 1 it spectates its teammates until one uses a lamp or the area's boss dies.
     uint32 death_mode = 11;
+    // Amanises 2026-10-25: how the team is joined (TeamRequest.OPEN): by invite only (not
+    // listed), asked (listed; its leader takes them in) or open (listed; anyone joins).
+    enum Join {
+        INVITE_ONLY = 0;
+        ASK = 1;
+        OPEN = 2;
+    }
+    Join join = 12;
+}
+
+// Amanises 2026-10-25: an open team as a player in no team sees it.
+message OpenTeam {
+    string team = 1;
+    string leader_name = 2;
+    uint32 members = 3;
+    bool started = 4; // its hunt is on (a new member joins it in its world)
+    bool asked = 5;   // this player asked to join it
+    Team.Join join = 6; // ASK or OPEN
+}
+
+// Amanises 2026-10-25: one who asked to join the leader's team.
+message TeamAsk {
+    string member = 1;
+    string name = 2;
 }
 
 message TeamInvite {
@@ -817,6 +850,12 @@ message LobbyState {
     repeated LobbyPlayer friend_requests_sent = 9;
     string search_query = 10;
     repeated LobbyPlayer search = 11;
+    // Amanises 2026-10-25, open teams: to a player in no team, the open teams with room (and
+    // whether it asked one); to a leader, who asked to join its team; the most a team holds
+    // (the server's, for "2/4").
+    repeated OpenTeam open_teams = 12;
+    repeated TeamAsk asks = 13;
+    uint32 team_size = 14;
 }
 
 // server -> game: load your save and play the team's world. To every ready member at Start, and

@@ -192,7 +192,6 @@
  "Begin when you like: hunters still choosing join the hunt at once.": "隨時可以開始：仍在選擇的獵人會立即加入狩獵。",
  "The leader begins the hunt; you join it at once.": "由隊長開始狩獵；您會立即加入。",
  "'s team": "的隊伍",
- " of 4": " / 4",
  "Remove": "移除",
  "Hunters online": "線上獵人",
  "Invitations": "邀請",
@@ -486,5 +485,12 @@
  "Friends are kept on the server with your account. Type with the keyboard to search.": "好友會隨你的帳號保存在伺服器上。請用鍵盤輸入以搜尋。",
  "Friend": "好友",
  "Search hunters online": "搜尋線上獵人",
- "Nobody here by that name: Enter searches the whole server": "這裡沒有這個名字的獵人：按 Enter 搜尋整個伺服器"
+ "Nobody here by that name: Enter searches the whole server": "這裡沒有這個名字的獵人：按 Enter 搜尋整個伺服器",
+ "Invitations and open teams": "邀請與公開隊伍",
+ " asks to join": " 請求加入",
+ "Ask to join": "申請加入",
+ " of ": " / ",
+ "Join: invite only": "加入：僅限邀請",
+ "Join: ask to join": "加入：需申請",
+ "Join: open to all": "加入：對所有人開放"
 }

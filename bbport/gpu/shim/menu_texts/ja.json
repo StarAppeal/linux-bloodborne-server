@@ -192,7 +192,6 @@
  "Begin when you like: hunters still choosing join the hunt at once.": "いつでも始められます：選択中の狩人はすぐに狩りに加わります。",
  "The leader begins the hunt; you join it at once.": "リーダーが狩りを始めます。すぐに参加します。",
  "'s team": "のチーム",
- " of 4": " / 4",
  "Remove": "除名",
  "Hunters online": "オンラインの狩人",
  "Invitations": "招待",
@@ -486,5 +485,12 @@
  "Friends are kept on the server with your account. Type with the keyboard to search.": "フレンドはアカウントと一緒にサーバーに保存されます。検索はキーボードで入力してください。",
  "Friend": "フレンド",
  "Search hunters online": "オンラインの狩人を検索",
- "Nobody here by that name: Enter searches the whole server": "その名前の狩人はここにいません：Enterでサーバー全体を検索"
+ "Nobody here by that name: Enter searches the whole server": "その名前の狩人はここにいません：Enterでサーバー全体を検索",
+ "Invitations and open teams": "招待と公開チーム",
+ " asks to join": "が参加を希望",
+ "Ask to join": "参加を申し込む",
+ " of ": " / ",
+ "Join: invite only": "参加：招待のみ",
+ "Join: ask to join": "参加：申請制",
+ "Join: open to all": "参加：誰でも可"
 }
