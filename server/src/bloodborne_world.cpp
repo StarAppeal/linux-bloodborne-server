@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <condition_variable>
 #include <deque>
@@ -87,6 +88,10 @@ QByteArray Framed(const bbcoop::JournalRecord& record) {
 
 QString Hex(quint64 value) {
     return QStringLiteral("%1").arg(value, 0, 16);
+}
+
+std::string AuthenticatedMember(const QByteArray& online_id) {
+    return online_id.toHex().toStdString();
 }
 
 // Phase 11: what was written reaches the disk, not only the system's cache (a power cut or a
@@ -837,6 +842,9 @@ void Service::OnHello(Member& member, const bbcoop::Hello& hello, qint64 now_ms,
                          ", this server speaks " + std::to_string(CoopProtocol));
     } else if (party.indexOf(':') <= 0 || hello.member().empty()) {
         welcome.set_text("no party key or member name");
+    } else if (require_authenticated_identity &&
+               hello.member() != AuthenticatedMember(member.online_id)) {
+        welcome.set_text("member identity does not match the signed-in account");
     } else if (hosted.enabled && !OwnName(member, hello.member())) {
         welcome.set_text("the member name is not this player's");
     } else if (hosted.enabled) {
@@ -2141,12 +2149,17 @@ void Service::TakeTeamWorld(Member& member, PartyWorld& world, const bbcoop::Tea
 
 void Service::OnLobbyHello(Member& member, const bbcoop::LobbyHello& hello, qint64 now_ms,
                            Result& result) {
-    if (hello.protocol() != CoopProtocol || hello.member().empty()) {
+    const bool wrong_identity = require_authenticated_identity &&
+                                hello.member() != AuthenticatedMember(member.online_id);
+    if (hello.protocol() != CoopProtocol || hello.member().empty() || wrong_identity) {
         bbcoop::Envelope answer;
         answer.mutable_lobby_state()->set_notice(
-            hello.member().empty() ? "no member name"
-                                   : "co-op protocol " + std::to_string(hello.protocol()) +
-                                         ", this server speaks " + std::to_string(CoopProtocol));
+            hello.member().empty()
+                ? "no member name"
+                : wrong_identity
+                      ? "member identity does not match the signed-in account"
+                      : "co-op protocol " + std::to_string(hello.protocol()) +
+                            ", this server speaks " + std::to_string(CoopProtocol));
         SendTo(member, answer, now_ms);
         result.log.append(QStringLiteral("team lobby: refused %1: %2")
                               .arg(QString::fromStdString(Who(member)),
@@ -2165,6 +2178,9 @@ void Service::OnLobbyHello(Member& member, const bbcoop::LobbyHello& hello, qint
     const bool arrived = member.lobby.empty() || std::exchange(member.lobby_again, false);
     member.lobby = hello.member();
     member.display = hello.name();
+    if (!hello.name().empty()) {
+        lobby_names[member.lobby] = hello.name();
+    }
     if (arrived) {
         result.log.append(
             QStringLiteral("team lobby: %1 (%2) signed in")
@@ -2179,7 +2195,7 @@ void Service::OnLobbyHello(Member& member, const bbcoop::LobbyHello& hello, qint
     if (arrived) {
         // Its state even when nothing changed for the others.
         bbcoop::Envelope envelope;
-        *envelope.mutable_lobby_state() = lobby.StateFor(member.lobby);
+        *envelope.mutable_lobby_state() = LobbyStateFor(member);
         SendTo(member, envelope, now_ms);
     }
     // A region: what the shard that sent it here asked (join its team, make its team again).
@@ -2228,6 +2244,16 @@ void Service::OnTeamRequest(Member& member, const bbcoop::TeamRequest& said, qin
     if (!ticket && request.action() == bbcoop::TeamRequest::CREATE) {
         request.clear_code(); // a team's code is the server's to make
     }
+    switch (request.action()) {
+    case bbcoop::TeamRequest::FRIEND_ADD:
+    case bbcoop::TeamRequest::FRIEND_REMOVE:
+    case bbcoop::TeamRequest::FRIEND_DECLINE:
+    case bbcoop::TeamRequest::SEARCH:
+        OnFriendRequest(member, request, now_ms, result);
+        return;
+    default:
+        break;
+    }
     const TeamLobby::Outcome outcome = lobby.Request(member.lobby, request, now_ms);
     // Kaniel 2026-10-16: the world a Start plays is the team's last played.
     if (request.action() == bbcoop::TeamRequest::START && !outcome.starts.empty()) {
@@ -2251,7 +2277,7 @@ void Service::OnTeamRequest(Member& member, const bbcoop::TeamRequest& said, qin
                      : QStringLiteral(": refused, ") + QString::fromStdString(outcome.notice)));
     if (!outcome.notice.empty()) {
         bbcoop::Envelope envelope;
-        *envelope.mutable_lobby_state() = lobby.StateFor(member.lobby);
+        *envelope.mutable_lobby_state() = LobbyStateFor(member);
         envelope.mutable_lobby_state()->set_notice(outcome.notice);
         SendTo(member, envelope, now_ms);
     }
@@ -2366,7 +2392,7 @@ void Service::SendLobby(qint64 now_ms) {
     for (auto& [key, member] : members) {
         if (!member.lobby.empty()) {
             bbcoop::Envelope envelope;
-            *envelope.mutable_lobby_state() = lobby.StateFor(member.lobby);
+            *envelope.mutable_lobby_state() = LobbyStateFor(member);
             if (hosted.enabled) {
                 // Only to the players whose own state changed.
                 std::string bytes = envelope.lobby_state().SerializeAsString();
@@ -2379,6 +2405,114 @@ void Service::SendLobby(qint64 now_ms) {
             SendTo(member, envelope, now_ms);
         }
     }
+}
+
+bbcoop::LobbyState Service::LobbyStateFor(const Member& member) const {
+    bbcoop::LobbyState state = lobby.StateFor(member.lobby);
+    if (friend_book) {
+        FriendRelations relations = friend_book->Of(member.lobby);
+        for (auto* list : {&relations.friends, &relations.received, &relations.sent}) {
+            for (FriendEntry& entry : *list) {
+                if (const auto name = lobby_names.find(entry.member); name != lobby_names.end()) {
+                    entry.name = name->second;
+                }
+            }
+        }
+        AddFriendsToLobby(state, member.lobby, relations, member.search_query, member.search);
+    }
+    return state;
+}
+
+void Service::SendLobbyTo(const std::string& lobby_member, qint64 now_ms) {
+    for (auto& [key, member] : members) {
+        if (member.lobby == lobby_member) {
+            bbcoop::Envelope envelope;
+            *envelope.mutable_lobby_state() = LobbyStateFor(member);
+            SendTo(member, envelope, now_ms);
+        }
+    }
+}
+
+// Amanises 2026-10-25: the players whose name holds `query` (any case): the lobby's names first
+// (what players see; the account name is an id made on the player's PC), then the accounts'.
+std::vector<FriendEntry> Service::SearchPlayers(const std::string& searcher,
+                                                const std::string& query) const {
+    const auto lower = [](std::string text) {
+        std::transform(text.begin(), text.end(), text.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return text;
+    };
+    const std::string wanted = lower(query);
+    std::vector<FriendEntry> found;
+    std::set<std::string> listed;
+    for (const auto& [lobby_member, name] : lobby_names) {
+        if (found.size() < FriendSearchLimit && lower(name).find(wanted) != std::string::npos) {
+            found.push_back({lobby_member, name});
+            listed.insert(lobby_member);
+        }
+    }
+    // Names that start with the text first, as the accounts' search lists them.
+    std::stable_sort(found.begin(), found.end(), [&](const FriendEntry& a, const FriendEntry& b) {
+        return (lower(a.name).rfind(wanted, 0) == 0) > (lower(b.name).rfind(wanted, 0) == 0);
+    });
+    if (friend_book) {
+        for (FriendEntry& entry : friend_book->Search(searcher, query, FriendSearchLimit)) {
+            if (found.size() < FriendSearchLimit && listed.insert(entry.member).second) {
+                found.push_back(std::move(entry));
+            }
+        }
+    }
+    return found;
+}
+
+void Service::OnFriendRequest(Member& member, const bbcoop::TeamRequest& request, qint64 now_ms,
+                              Result& result) {
+    const auto action = request.action();
+    std::string notice;
+    if (!friend_book) {
+        notice = "friends are not kept on this server";
+    } else if (action == bbcoop::TeamRequest::SEARCH) {
+        // Its own list: only the searcher sees it, until the next search (empty clears it).
+        std::string query = request.query();
+        if (query.size() > 32) {
+            query.resize(32);
+        }
+        member.search_query = query;
+        member.search.clear();
+        if (query.size() >= FriendSearchMinLength) {
+            member.search = SearchPlayers(member.lobby, query);
+        } else if (!query.empty()) {
+            notice = "type at least " + std::to_string(FriendSearchMinLength) + " letters";
+        }
+        result.log.append(QStringLiteral("team lobby: %1 searched \"%2\": %3 found")
+                              .arg(QString::fromStdString(member.lobby),
+                                   QString::fromStdString(query))
+                              .arg(member.search.size()));
+    } else if (request.member().empty() || request.member() == member.lobby) {
+        notice = "no such player";
+    } else {
+        notice = action == bbcoop::TeamRequest::FRIEND_ADD
+                     ? friend_book->Add(member.lobby, request.member())
+                 : action == bbcoop::TeamRequest::FRIEND_REMOVE
+                     ? friend_book->Remove(member.lobby, request.member())
+                     : friend_book->Decline(member.lobby, request.member());
+        result.log.append(
+            QStringLiteral("team lobby: %1 %2 %3%4")
+                .arg(QString::fromStdString(member.lobby),
+                     QString::fromStdString(bbcoop::TeamRequest::Action_Name(action)),
+                     QString::fromStdString(request.member()))
+                .arg(notice.empty() ? QString{}
+                                    : QStringLiteral(": refused, ") +
+                                          QString::fromStdString(notice)));
+    }
+    // The other player's lists changed too (its request, its friend).
+    if (notice.empty() && action != bbcoop::TeamRequest::SEARCH) {
+        SendLobbyTo(request.member(), now_ms);
+    }
+    bbcoop::Envelope envelope;
+    *envelope.mutable_lobby_state() = LobbyStateFor(member);
+    envelope.mutable_lobby_state()->set_notice(notice);
+    SendTo(member, envelope, now_ms);
 }
 
 void Service::SetHosted(const HostedRules& rules) {

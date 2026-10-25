@@ -11,6 +11,7 @@
 #include <cstring>
 #include <mutex>
 #include <functional>
+#include <cctype>
 #include <string>
 #include <string_view>
 #include <optional>
@@ -3374,6 +3375,219 @@ void DrawWorldPicker(ImDrawList* draw, ImVec2 win, ImVec2 size) {
     }
 }
 
+/// Amanises 2026-10-25: the friends page, over the team screen as the world list is: a search for
+/// players by name (typed on the keyboard), the friends with their state (invite the online ones,
+/// remove), the requests waiting for an answer and the ones sent, and what the search found.
+/// Circle / Escape goes back.
+struct FriendsPage {
+    bool open = false;
+    char query[40] = {};
+    bool typing = false; // the search box had the keyboard last frame: keys are its, not the focus's
+    std::string removing; // the friend Remove asked about (pressed twice), and when
+    double removing_at = 0.0;
+    // Amanises 2026-10-25: the team screen's box over Hunters online (only the names holding it).
+    char online_filter[40] = {};
+    bool online_typing = false;
+};
+FriendsPage friends;
+
+void OpenFriends() {
+    friends.open = true;
+    friends.removing.clear();
+    focus.fresh = true;
+    // The press that opened it is used up: over the game the team screen's fresh focus is its Close
+    // button, which the same press closed at once (the screen and the game's page under it).
+    focus.activate = false;
+    std::snprintf(friends.query, sizeof(friends.query), "%s", lobby.search_query);
+}
+
+/// One player's row: the name, then `status` right-aligned before `buttons` of width each.
+void FriendRow(ImDrawList* draw, float x, float y, float w, float h, const bbcoop_lobby_entry& p,
+               const char* status, ImU32 status_color, int buttons, float button_w) {
+    MenuArt::Nine(draw, MenuArt::Row, ImVec2(x - S(6.0f), y - S(2.0f)), ImVec2(x + w + S(4.0f), y + h - S(4.0f)),
+                  10.0f, S(6.0f), 0.7f);
+    const float buttons_w = buttons * (button_w + S(6.0f));
+    const float status_x = x + w - buttons_w - S(10.0f) - ImGui::CalcTextSize(status).x;
+    draw->AddText(ImVec2(x + S(8.0f), y + S(8.0f)), p.state == BBCOOP_LOBBY_OFFLINE ? Plain(0.6f) : Plain(),
+                  Fit(p.name, status_x - x - S(20.0f)).c_str());
+    draw->AddText(ImVec2(status_x, y + S(8.0f)), status_color, status);
+}
+
+void DrawFriends(ImDrawList* draw, ImVec2 win, ImVec2 size) {
+    const bool back = !friends.typing && (ImGui::IsKeyPressed(ImGuiKey_Escape, false) ||
+                                          ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false));
+    ImGui::PushFont(MenuArt::Font(), 40.0f);
+    const char* title = T("Friends", "Друзья");
+    ImVec2 ts = ImGui::CalcTextSize(title);
+    draw->AddText(ImVec2(win.x + (size.x - ts.x) * 0.5f, win.y + S(30.0f)), Bright(), title);
+    ImGui::PopFont();
+
+    // The search: the box, Search and Clear.
+    ImGui::PushFont(MenuArt::Font(), 22.0f);
+    const float box_w = std::min(S(560.0f), size.x * 0.4f), box_h = S(44.0f), sbw = S(150.0f), gap = S(16.0f);
+    const float sx = win.x + (size.x - (box_w + 2 * (sbw + gap))) * 0.5f, sy = win.y + S(96.0f);
+    ImGui::SetCursorScreenPos(ImVec2(sx, sy + (box_h - ImGui::GetFrameHeight()) * 0.5f));
+    ImGui::SetNextItemWidth(box_w);
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.06f, 0.055f, 0.05f, 0.9f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImGui::ColorConvertU32ToFloat4(Gold(0.6f)));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+    const bool entered = ImGui::InputTextWithHint("##friend_search", T("Hunter's name", "Имя охотника"),
+                                                  friends.query, sizeof(friends.query),
+                                                  ImGuiInputTextFlags_EnterReturnsTrue);
+    friends.typing = ImGui::IsItemActive();
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(2);
+    float bx = sx + box_w + gap;
+    if (Button(draw, "friend_search", T("Search", "Найти"), ImVec2(bx, sy), ImVec2(sbw, box_h)) || entered) {
+        bbcoop_lobby_request(BBCOOP_TEAM_SEARCH, friends.query);
+    }
+    bx += sbw + gap;
+    if (Button(draw, "friend_clear", T("Clear", "Очистить"), ImVec2(bx, sy), ImVec2(sbw, box_h),
+               friends.query[0] != 0 || lobby.search_query[0] != 0)) {
+        friends.query[0] = 0;
+        bbcoop_lobby_request(BBCOOP_TEAM_SEARCH, "");
+    }
+    ImGui::PopFont();
+
+    // Three lists: friends, requests (received, then sent), what the search found.
+    const float lists_y = sy + box_h + S(28.0f), lists_end = win.y + size.y - S(176.0f);
+    const float col_gap = S(24.0f), col_w = (size.x - S(72.0f) - 2 * col_gap) / 3.0f;
+    const float col_x[3] = {win.x + S(36.0f), win.x + S(36.0f) + col_w + col_gap,
+                            win.x + S(36.0f) + 2 * (col_w + col_gap)};
+    const float row_h = S(42.0f), small_w = S(104.0f);
+    const int rows = std::max(1, static_cast<int>((lists_end - lists_y - S(50.0f)) / row_h));
+    ImGui::PushFont(MenuArt::Font(), 22.0f);
+    const std::string friends_title =
+        std::string(T("Your friends", "Ваши друзья")) + "  (" + std::to_string(lobby.friend_count) + ")";
+    draw->AddText(ImVec2(col_x[0], lists_y), Gold(), friends_title.c_str());
+    draw->AddText(ImVec2(col_x[1], lists_y), Gold(), T("Friend requests", "Заявки в друзья"));
+    draw->AddText(ImVec2(col_x[2], lists_y), Gold(), T("Found", "Найдено"));
+    ImGui::PopFont();
+    for (const float x : col_x) {
+        ListRule(draw, x, x + col_w, lists_y + S(36.0f));
+    }
+    ImGui::PushFont(MenuArt::Font(), 19.0f);
+    const bool can_invite = lobby.in_team && lobby.member_count < BBCOOP_LOBBY_TEAM;
+    const auto more = [&](float x, float y, int left) {
+        if (left > 0) {
+            const std::string line = std::string(T("and more: ", "и ещё: ")) + std::to_string(left);
+            draw->AddText(ImVec2(x + S(8.0f), y + S(8.0f)), Dim(), line.c_str());
+        }
+    };
+
+    // Friends: online first (the server's order). Remove asks again before it removes.
+    float y = lists_y + S(50.0f);
+    if (lobby.friend_count == 0) {
+        draw->AddText(ImVec2(col_x[0], y + S(8.0f)), Dim(),
+                      T("No friends yet: search for a hunter", "Пока нет друзей: найдите охотника"));
+    }
+    const int friend_rows = std::min(lobby.friend_count, rows);
+    for (int i = 0; i < friend_rows; ++i, y += row_h) {
+        const bbcoop_lobby_entry& f = lobby.friends[i];
+        const bool armed = friends.removing == f.id && ImGui::GetTime() - friends.removing_at < 4.0;
+        const char* status = f.in_my_team ? T("In your team", "В вашей команде") : StateText(f, false);
+        FriendRow(draw, col_x[0], y, col_w, row_h, f, status, f.in_my_team ? Gold() : StateColor(f, false), 2,
+                  small_w);
+        const float b1 = col_x[0] + col_w - 2 * small_w - S(6.0f), b2 = col_x[0] + col_w - small_w;
+        const ImVec2 bs(small_w, row_h - S(6.0f));
+        if (Button(draw, (std::string("finvite") + f.id).c_str(), T("Invite", "Пригласить"), ImVec2(b1, y), bs,
+                   can_invite && !f.in_my_team && f.state != BBCOOP_LOBBY_OFFLINE)) {
+            bbcoop_lobby_request(BBCOOP_TEAM_INVITE, f.id);
+        }
+        if (Button(draw, (std::string("fremove") + f.id).c_str(), armed ? T("Sure?", "Точно?") : T("Remove", "Удалить"),
+                   ImVec2(b2, y), bs)) {
+            if (armed) {
+                friends.removing.clear();
+                bbcoop_lobby_request(BBCOOP_TEAM_FRIEND_REMOVE, f.id);
+            } else {
+                friends.removing = f.id;
+                friends.removing_at = ImGui::GetTime();
+            }
+        }
+    }
+    more(col_x[0], y, lobby.friend_count - friend_rows);
+
+    // Requests: the ones to answer, then the ones sent (Cancel takes one back).
+    y = lists_y + S(50.0f);
+    int used = 0;
+    if (lobby.request_count == 0 && lobby.sent_count == 0) {
+        draw->AddText(ImVec2(col_x[1], y + S(8.0f)), Dim(), T("None", "Нет"));
+    }
+    for (int i = 0; i < lobby.request_count && used < rows; ++i, ++used, y += row_h) {
+        const bbcoop_lobby_entry& r = lobby.requests[i];
+        FriendRow(draw, col_x[1], y, col_w, row_h, r, T("asks you", "просит"), Gold(), 2, small_w);
+        const float b1 = col_x[1] + col_w - 2 * small_w - S(6.0f), b2 = col_x[1] + col_w - small_w;
+        const ImVec2 bs(small_w, row_h - S(6.0f));
+        if (Button(draw, (std::string("faccept") + r.id).c_str(), T("Accept", "Принять"), ImVec2(b1, y), bs, true,
+                   true)) {
+            bbcoop_lobby_request(BBCOOP_TEAM_FRIEND_ADD, r.id);
+        }
+        if (Button(draw, (std::string("fdecline") + r.id).c_str(), T("Decline", "Отклонить"), ImVec2(b2, y), bs)) {
+            bbcoop_lobby_request(BBCOOP_TEAM_FRIEND_DECLINE, r.id);
+        }
+    }
+    for (int i = 0; i < lobby.sent_count && used < rows; ++i, ++used, y += row_h) {
+        const bbcoop_lobby_entry& s = lobby.sent[i];
+        FriendRow(draw, col_x[1], y, col_w, row_h, s, T("asked", "отправлено"), Plain(0.7f), 1, small_w);
+        if (Button(draw, (std::string("fcancel") + s.id).c_str(), T("Cancel", "Отменить"),
+                   ImVec2(col_x[1] + col_w - small_w, y), ImVec2(small_w, row_h - S(6.0f)))) {
+            bbcoop_lobby_request(BBCOOP_TEAM_FRIEND_REMOVE, s.id);
+        }
+    }
+    more(col_x[1], y, lobby.request_count + lobby.sent_count - used);
+
+    // The search: each found hunter with what can be done (online or not).
+    y = lists_y + S(50.0f);
+    if (lobby.search_count == 0) {
+        draw->AddText(ImVec2(col_x[2], y + S(8.0f)), Dim(),
+                      lobby.search_query[0] ? T("Nobody by that name", "Никого с таким именем")
+                                            : T("Type a name and press Search", "Введите имя и нажмите «Найти»"));
+    }
+    for (int i = 0; i < lobby.search_count && i < rows; ++i, y += row_h) {
+        const bbcoop_lobby_entry& p = lobby.search[i];
+        const bool self = p.relation == BBCOOP_FRIEND_SELF;
+        FriendRow(draw, col_x[2], y, col_w, row_h, p, self ? T("You", "Вы") : StateText(p, false),
+                  StateColor(p, false), 1, small_w);
+        const char* label = p.relation == BBCOOP_FRIEND_YES        ? T("Friends", "Друзья")
+                            : p.relation == BBCOOP_FRIEND_SENT     ? T("Asked", "Отправлено")
+                            : p.relation == BBCOOP_FRIEND_RECEIVED ? T("Accept", "Принять")
+                            : self                                 ? "-"
+                                                                   : T("Add", "Добавить");
+        const bool can = p.relation == BBCOOP_FRIEND_NONE || p.relation == BBCOOP_FRIEND_RECEIVED;
+        if (Button(draw, (std::string("fadd") + p.id).c_str(), label, ImVec2(col_x[2] + col_w - small_w, y),
+                   ImVec2(small_w, row_h - S(6.0f)), can && !self, p.relation == BBCOOP_FRIEND_RECEIVED)) {
+            bbcoop_lobby_request(BBCOOP_TEAM_FRIEND_ADD, p.id);
+        }
+    }
+    ImGui::PopFont();
+
+    // Back, the server's last refusal or the hint, and the keys.
+    ImGui::PushFont(MenuArt::Font(), 24.0f);
+    const float bw = S(260.0f), bh = S(54.0f), by = win.y + size.y - S(180.0f);
+    const bool pressed_back = Button(draw, "friends_back", T("Back", "Назад"),
+                                     ImVec2(win.x + (size.x - bw) * 0.5f, by), ImVec2(bw, bh));
+    ImGui::PopFont();
+    ImGui::PushFont(MenuArt::Font(), 18.0f);
+    const char* line = lobby.notice[0]
+                           ? lobby.notice
+                           : T("Friends are kept on the server with your account. Type with the keyboard to search.",
+                               "Друзья хранятся на сервере вместе с аккаунтом. Для поиска печатайте на клавиатуре.");
+    ts = ImGui::CalcTextSize(line);
+    draw->AddText(ImVec2(win.x + (size.x - ts.x) * 0.5f, by + bh + S(20.0f)),
+                  lobby.notice[0] ? ImU32(IM_COL32(220, 150, 110, 255)) : Plain(0.8f), line);
+    const Keys::Hint keys[] = {{"Dpad", "Arrows", T("Move", "Выбор")},
+                               {"Cross", "Enter", T("Choose", "Нажать")},
+                               {"Circle", "Esc", T("Back", "Назад")}};
+    Keys::Guide(draw, keys, win.x + S(36.0f), win.x + size.x - S(36.0f),
+                win.y + size.y - S(BbKeyGuide::BottomClearance));
+    ImGui::PopFont();
+    if (back || pressed_back) {
+        friends.open = false;
+        friends.typing = false;
+        focus.fresh = true;
+    }
+}
+
 void Screen() {
     const GreyAccent grey; // Kaniel 2026-10-18: the souls counter's grey, not gold
     const auto pressed_any = [](std::initializer_list<ImGuiKey> keys) {
@@ -3397,13 +3611,14 @@ void Screen() {
     focus.items = 0;
     focus.ids.clear();
     PollAsk();
-    if (asking != Ask::None) {
+    // Amanises 2026-10-25: while the friends page's search box has the keyboard, the keys type.
+    if (asking != Ask::None || (friends.open ? friends.typing : friends.online_typing)) {
         focus.move = 0; // the pad's other buttons stay with the text entry
         focus.activate = false;
     }
     // Kaniel 2026-10-16: opened from the game's System menu (lobby.menu), Circle or Escape closes
-    // it, as the game's own pages close.
-    if (lobby.menu && (ImGui::IsKeyPressed(ImGuiKey_Escape, false) ||
+    // it, as the game's own pages close (the friends page takes them first: back to the team).
+    if (lobby.menu && !friends.open && !friends.online_typing && (ImGui::IsKeyPressed(ImGuiKey_Escape, false) ||
                        ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false))) {
         bbcoop_team_menu(0);
     }
@@ -3450,6 +3665,17 @@ void Screen() {
     if (picker.open) {
         DrawWorldPicker(draw, win, size);
         focus.fresh = true; // back on the team screen: the focus goes to Begin again
+        ImGui::End();
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+        return;
+    }
+    if (friends.open) {
+        DrawFriends(draw, win, size);
+        if (focus.items > 0) {
+            focus.focus = ((focus.focus + focus.move) % focus.items + focus.items) % focus.items;
+            focus.id = focus.ids[static_cast<size_t>(focus.focus)];
+        }
         ImGui::End();
         ImGui::PopStyleVar();
         ImGui::PopStyleColor();
@@ -3551,24 +3777,91 @@ void Screen() {
                           lobby.signed_in && !lobby.in_team && asking == Ask::None)) {
             BeginAsk(Ask::Code);
         }
+        // Amanises 2026-10-25: the friends page, before "Invite by name" (requests waiting
+        // counted on it).
+        const std::string label = lobby.request_count > 0 ? std::string(T("Friends", "Друзья")) + " (" +
+                                                                 std::to_string(lobby.request_count) + ")"
+                                                           : std::string(T("Friends", "Друзья"));
+        const ImVec2 fsize(S(170.0f), ask_size.y);
+        if (Button(draw, "friends", label.c_str(),
+                   ImVec2(left_x + list_w - ask_size.x - S(12.0f) - fsize.x, ask_y), fsize,
+                   lobby.signed_in != 0 && asking == Ask::None, lobby.request_count > 0)) {
+            OpenFriends();
+        }
     }
     // As many rows as fit above the world row and the buttons (5 on the old 900 px panel).
     const int rows = 5;
     float y = lists_y + S(50.0f);
     const bool can_invite = lobby.in_team && lobby.member_count < BBCOOP_LOBBY_TEAM;
+    // Amanises 2026-10-25: a box over the list keeps only the names holding its text (any case); a
+    // name nobody here has goes to the friends page's search of the whole server with Enter (a
+    // public server lists only some of its players here).
+    const float filter_h = S(36.0f);
+    ImGui::SetCursorScreenPos(ImVec2(left_x - S(2.0f), y + (filter_h - ImGui::GetFrameHeight()) * 0.5f));
+    ImGui::SetNextItemWidth(list_w + S(6.0f));
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.06f, 0.055f, 0.05f, 0.9f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImGui::ColorConvertU32ToFloat4(Gold(0.45f)));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+    const bool filter_entered =
+        ImGui::InputTextWithHint("##online_filter", T("Search hunters online", "Поиск охотников в сети"),
+                                 friends.online_filter, sizeof(friends.online_filter),
+                                 ImGuiInputTextFlags_EnterReturnsTrue);
+    friends.online_typing = ImGui::IsItemActive();
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(2);
+    y += filter_h + S(8.0f);
+    const auto lower = [](const char* text) {
+        std::string out(text ? text : "");
+        for (char& c : out) {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        return out;
+    };
+    const std::string wanted = lower(friends.online_filter);
+    std::vector<int> shown;
+    for (int i = 0; i < lobby.player_count; ++i) {
+        if (wanted.empty() || lower(lobby.players[i].name).find(wanted) != std::string::npos) {
+            shown.push_back(i);
+        }
+    }
+    if (filter_entered && !wanted.empty() && shown.empty() && lobby.signed_in) {
+        OpenFriends();
+        std::snprintf(friends.query, sizeof(friends.query), "%s", friends.online_filter);
+        bbcoop_lobby_request(BBCOOP_TEAM_SEARCH, friends.query);
+    }
     if (lobby.player_count == 0) {
         draw->AddText(ImVec2(left_x, y + S(8.0f)), Dim(), T("Nobody else is online", "Больше никого нет в сети"));
+    } else if (shown.empty()) {
+        draw->AddText(ImVec2(left_x, y + S(8.0f)), Dim(),
+                      Fit(T("Nobody here by that name: Enter searches the whole server",
+                            "Здесь нет такого имени: Enter ищет по всему серверу"),
+                          list_w - S(8.0f))
+                          .c_str());
     }
-    for (int i = 0; i < lobby.player_count && i < rows; ++i, y += row_h) {
-        const bbcoop_lobby_entry& p = lobby.players[i];
+    for (int n = 0; n < static_cast<int>(shown.size()) && n < rows - 1; ++n, y += row_h) {
+        const bbcoop_lobby_entry& p = lobby.players[shown[static_cast<size_t>(n)]];
         MenuArt::Nine(draw, MenuArt::Row, ImVec2(left_x - S(6.0f), y - S(2.0f)),
                       ImVec2(left_x + list_w + S(4.0f), y + row_h - S(4.0f)), 10.0f, S(6.0f), 0.7f);
-        // The state right-aligned before the button, the name in what is left.
-        const char* state = StateText(p, false);
-        const float state_x = left_x + list_w - button_w - S(18.0f) - ImGui::CalcTextSize(state).x;
+        // The state right-aligned before the buttons, the name in what is left. Amanises
+        // 2026-10-25: a friend says so; another player can be asked from here (Add).
+        const bool is_friend = p.relation == BBCOOP_FRIEND_YES;
+        const char* state = is_friend ? T("Friend", "Друг") : StateText(p, false);
+        const float add_w = S(110.0f);
+        const float state_x = left_x + list_w - button_w - add_w - S(24.0f) - ImGui::CalcTextSize(state).x;
         draw->AddText(ImVec2(left_x + S(8.0f), y + S(8.0f)), Plain(),
                       Fit(p.name, state_x - left_x - S(24.0f)).c_str());
-        draw->AddText(ImVec2(state_x, y + S(8.0f)), StateColor(p, false), state);
+        draw->AddText(ImVec2(state_x, y + S(8.0f)), is_friend ? Gold() : StateColor(p, false), state);
+        // A friend already: no button (the state says so).
+        const char* add = p.relation == BBCOOP_FRIEND_SENT       ? T("Asked", "Отправлено")
+                          : p.relation == BBCOOP_FRIEND_RECEIVED ? T("Accept", "Принять")
+                                                                 : T("Add", "Добавить");
+        const std::string add_id = std::string("befriend") + p.id;
+        if (!is_friend &&
+            Button(draw, add_id.c_str(), add, ImVec2(left_x + list_w - button_w - add_w - S(6.0f), y),
+                   ImVec2(add_w, row_h - S(6.0f)),
+                   p.relation == BBCOOP_FRIEND_NONE || p.relation == BBCOOP_FRIEND_RECEIVED)) {
+            bbcoop_lobby_request(BBCOOP_TEAM_FRIEND_ADD, p.id);
+        }
         const std::string id = std::string("invite") + p.id;
         if (Button(draw, id.c_str(), T("Invite", "Пригласить"), ImVec2(left_x + list_w - button_w, y),
                    ImVec2(button_w, row_h - S(6.0f)), can_invite)) {
@@ -7177,6 +7470,10 @@ bool Visible() {
     const bool team_travel = initialized && TeamTravel::Read();
     const bool was_team = Team::open;
     Team::open = initialized && bbcoop_team_screen() != 0 && bbcoop_lobby_view(&Team::lobby) != 0;
+    if (!Team::open) {
+        Team::friends.open = false; // the team screen opens on the team, not where it was left
+        Team::friends.online_typing = false;
+    }
     Joining::open = initialized && bbcoop_team_load_view(&Joining::load) != 0;
     loading_cover = Joining::open;
     Map::was_open = Map::open;

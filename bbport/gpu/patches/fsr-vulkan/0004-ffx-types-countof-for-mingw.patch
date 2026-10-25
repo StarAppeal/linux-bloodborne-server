@@ -1,0 +1,20 @@
+From: bbport
+Subject: [PATCH] FidelityFX: provide _countof for MinGW clang
+
+---
+diff --git a/upstream/ffx-1.1.4/sdk/include/FidelityFX/host/ffx_types.h b/upstream/ffx-1.1.4/sdk/include/FidelityFX/host/ffx_types.h
+index 0907fb0..6de4170 100644
+--- a/upstream/ffx-1.1.4/sdk/include/FidelityFX/host/ffx_types.h
++++ b/upstream/ffx-1.1.4/sdk/include/FidelityFX/host/ffx_types.h
+@@ -24,6 +24,11 @@
+ 
+ #include <stdint.h>
+ 
++// MSVC supplies this helper, but MinGW clang does not even though the SDK takes its Windows path.
++#if defined(__MINGW32__) && !defined(_countof)
++#define _countof(array) (sizeof(array) / sizeof((array)[0]))
++#endif
++
+ ///
+ /// @defgroup ffxSDK SDK
+ /// The SDK module provides detailed descriptions of the various class, structs, and function which comprise the FidelityFX SDK. It is divided into several sub-modules.

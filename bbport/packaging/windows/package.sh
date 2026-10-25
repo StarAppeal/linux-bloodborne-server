@@ -34,10 +34,19 @@ for module in argparse base64 bisect collections contextlib hashlib json re shut
               urllib.request ctypes.wintypes binascii datetime http.server secrets sqlite3 uuid zlib; do
     hidden+=(--hidden-import "$module")
 done
+# The bundled workspace Python has a complete Tcl/Tk runtime, but its Tcl discovery
+# is not usable while PyInstaller analyses the venv.  Include it explicitly so the
+# frozen launcher does not silently lose tkinter (and therefore fail on startup).
+pybase=$(out/pyenv/Scripts/python.exe -c 'import sys; print(sys.base_prefix)')
 out/pyenv/Scripts/python.exe -m PyInstaller --noconfirm --clean --log-level WARN --windowed \
     --name BLauncher --icon "$(cygpath -w "$PWD/launcher/bloodborne.ico")" --distpath out/pyi-dist \
     --workpath out/pyi-work --specpath out/pyi-work --paths "$(cygpath -w "$PWD/scripts")" \
-    --paths "$(cygpath -w "$PWD/tools")" --hidden-import fetch_fsr4vk --hidden-import bbport_icons "${hidden[@]}" \
+    --paths "$(cygpath -w "$PWD/tools")" --hidden-import fetch_fsr4vk --hidden-import bbport_icons \
+    --hidden-import tkinter --hidden-import tkinter.ttk --hidden-import tkinter.filedialog \
+    --hidden-import tkinter.messagebox --runtime-hook "$(cygpath -w "$PWD/packaging/windows/tk_runtime_hook.py")" \
+    --add-binary "$pybase\\DLLs\\_tkinter.pyd;." --add-binary "$pybase\\DLLs\\tcl86t.dll;." \
+    --add-binary "$pybase\\DLLs\\tk86t.dll;." --add-data "$pybase\\tcl\\tcl8.6;_tcl_data" \
+    --add-data "$pybase\\tcl\\tk8.6;_tk_data" "${hidden[@]}" \
     "$(cygpath -w "$PWD/launcher/bbport_launcher_win.py")"
 
 # PkgTool (maxton/LibOrbisPkg v0.2, LGPL-3.0, shipped unmodified) extracts the game from the .pkg files the
@@ -114,6 +123,11 @@ dest=out/stage/bbport-windows
 rm -rf -- out/stage
 mkdir -p "$dest/bin" "$dest/launcher"
 cp -r out/pyi-dist/BLauncher/. "$dest/"
+# PyInstaller's Tcl probe rejects the portable workspace Python even though its
+# runtime is complete.  The native extension and Tcl/Tk data are added above;
+# install the pure-Python tkinter package beside them as the final component.
+pybase_u=$(cygpath -u "$pybase")
+cp -r "$pybase_u/Lib/tkinter" "$dest/_internal/"
 llvm-strip -o "$dest/Bloodborne.exe" out/bb-play.exe
 cp launcher/bloodborne.ico launcher/bloodborne.png "$dest/launcher/"
 cp -r launcher/art "$dest/launcher/"  # the launcher's painted pictures

@@ -228,6 +228,9 @@ bbcoop::TeamRequest TeamMenuRequest(bbcoop::TeamRequest::Action action, const st
     case Action::DEATH_MODE:
         request.set_death_mode(id == "1" ? 1 : 0); // Kaniel 2026-10-25: "1" spectate, "0" down
         break;
+    case Action::SEARCH:
+        request.set_query(id); // Amanises 2026-10-25: the player search's text
+        break;
     default:
         request.set_member(id);
         break;

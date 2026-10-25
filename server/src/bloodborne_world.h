@@ -34,6 +34,7 @@
 #include "coop/team_lobby.h"
 #include "coop/trade.h"
 #include "coop/world_log.h"
+#include "lobby_friends.h"
 #include "server_link.h"
 
 namespace BloodborneWorld {
@@ -177,6 +178,17 @@ public:
     // `folder`: where the worlds are kept (one folder per party); empty keeps them in memory only.
     explicit Service(QString folder, qint64 heartbeat_ms = 1000, int compact_records = 200,
                      qint64 compact_ms = 30'000);
+
+    // A public server must not trust the member field carried by a client after login. Private
+    // unit tests and old embedded uses keep their historical synthetic ids unless this is enabled.
+    void RequireAuthenticatedIdentity() {
+        require_authenticated_identity = true;
+    }
+    // Amanises 2026-10-25: where the lobby's friends are kept (shadNet's database); none: the
+    // lobby refuses friend requests and searches. Not owned; it outlives the service.
+    void SetFriendBook(FriendBook* book) {
+        friend_book = book;
+    }
 
     struct Send {
         ServerLink::Endpoint to;
@@ -371,6 +383,9 @@ private:
         // Kaniel 2026-10-16: the team world it was taken out of (removed from the team, or left
         // it): no game packet goes between it and that party until its next hello.
         QString cut_from;
+        // Amanises 2026-10-25: its last player search (the text and what it found).
+        std::string search_query;
+        std::vector<FriendEntry> search;
         // Invasions: the party it visits as an invader (hostile): it shares that party's routing
         // by the hostile table, and is no member of its world.
         QString visiting;
@@ -479,6 +494,14 @@ private:
     // What goes when a guest leaves its party's world (its game said so, or its team let it go).
     void ForgetMember(PartyWorld& world, const std::string& name, qint64 now_ms, Result& result);
     void SendLobby(qint64 now_ms);
+    // Amanises 2026-10-25: what a signed-in member sees (the lobby's state, its friends added),
+    // the friend requests and searches (TeamRequest FRIEND_* and SEARCH), and one player's state
+    // again (every game it has signed in).
+    bbcoop::LobbyState LobbyStateFor(const Member& member) const;
+    void OnFriendRequest(Member& member, const bbcoop::TeamRequest& request, qint64 now_ms,
+                         Result& result);
+    void SendLobbyTo(const std::string& lobby_member, qint64 now_ms);
+    std::vector<FriendEntry> SearchPlayers(const std::string& searcher, const std::string& query) const;
     // Phase 5b: the team's world, read from its folder once; a host's report taken.
     const std::optional<bbcoop::TeamWorld>& TeamWorldOf(PartyWorld& world);
     void TakeTeamWorld(Member& member, PartyWorld& world, const bbcoop::TeamWorld& report,
@@ -542,6 +565,11 @@ private:
     std::map<std::string, std::vector<bbcoop::TeamRequest>> expected; // Expect, by member
     // The listed worlds' folders by world id, for those not in PartyFolderName("world:<id>").
     std::map<std::string, QString> world_folders;
+    bool require_authenticated_identity = false;
+    FriendBook* friend_book = nullptr;
+    // Amanises 2026-10-25: each lobby member's last name (its character's, as the lobby shows it)
+    // since the server started: offline friends and searches go by it, the account name is an id.
+    std::map<std::string, std::string> lobby_names;
 
     InvasionRules invasion_rules;
     std::map<QString, Invasion> invasions; // by the invaded world

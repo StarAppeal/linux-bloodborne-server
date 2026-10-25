@@ -510,6 +510,29 @@ int LobbyStateOf(bbcoop::LobbyPlayer::State state) {
                                                  : BBCOOP_LOBBY_OFFLINE;
 }
 
+static_assert(BBCOOP_FRIEND_NONE == bbcoop::LobbyPlayer::NONE &&
+              BBCOOP_FRIEND_YES == bbcoop::LobbyPlayer::FRIEND &&
+              BBCOOP_FRIEND_SENT == bbcoop::LobbyPlayer::REQUEST_SENT &&
+              BBCOOP_FRIEND_RECEIVED == bbcoop::LobbyPlayer::REQUEST_RECEIVED &&
+              BBCOOP_FRIEND_SELF == bbcoop::LobbyPlayer::SELF);
+
+// Amanises 2026-10-25: a list of players (friends, requests, search results) into `out`.
+template <size_t N, typename List>
+void CopyPlayers(bbcoop_lobby_entry (&out)[N], int& count, const List& list,
+                 const std::string& own_team) {
+    for (const bbcoop::LobbyPlayer& player : list) {
+        if (count == static_cast<int>(N)) {
+            break;
+        }
+        bbcoop_lobby_entry& entry = out[count++];
+        CopyName(entry.name, sizeof(entry.name), player.name());
+        CopyName(entry.id, sizeof(entry.id), player.member());
+        entry.state = LobbyStateOf(player.state());
+        entry.relation = static_cast<int>(player.relation());
+        entry.in_my_team = !own_team.empty() && player.team() == own_team;
+    }
+}
+
 } // namespace
 
 extern "C" int bbcoop_lobby_view(bbcoop_lobby* lobby) {
@@ -621,7 +644,13 @@ extern "C" int bbcoop_lobby_view(bbcoop_lobby* lobby) {
         CopyName(out.name, sizeof(out.name), player.name());
         CopyName(out.id, sizeof(out.id), player.member());
         out.state = LobbyStateOf(player.state());
+        out.relation = static_cast<int>(player.relation());
     }
+    CopyPlayers(lobby->friends, lobby->friend_count, state->friends(), own_team);
+    CopyPlayers(lobby->requests, lobby->request_count, state->friend_requests(), own_team);
+    CopyPlayers(lobby->sent, lobby->sent_count, state->friend_requests_sent(), own_team);
+    CopyPlayers(lobby->search, lobby->search_count, state->search(), own_team);
+    CopyName(lobby->search_query, sizeof(lobby->search_query), state->search_query());
     for (const bbcoop::TeamInvite& invite : state->invites()) {
         if (lobby->invite_count == BBCOOP_LOBBY_INVITES) {
             break;
@@ -787,7 +816,11 @@ static_assert(BBCOOP_TEAM_WORLD == bbcoop::TeamRequest::WORLD &&
               BBCOOP_TEAM_NEW_CODE == bbcoop::TeamRequest::NEW_CODE &&
               BBCOOP_TEAM_INVITE_NAME == bbcoop::TeamRequest::INVITE_NAME &&
               BBCOOP_TEAM_DEATH_MODE == bbcoop::TeamRequest::DEATH_MODE &&
-              BBCOOP_DEATH_SPECTATE == int(Core::Bloodborne::DeathMode::Spectate));
+              BBCOOP_DEATH_SPECTATE == int(Core::Bloodborne::DeathMode::Spectate) &&
+              BBCOOP_TEAM_FRIEND_ADD == bbcoop::TeamRequest::FRIEND_ADD &&
+              BBCOOP_TEAM_FRIEND_REMOVE == bbcoop::TeamRequest::FRIEND_REMOVE &&
+              BBCOOP_TEAM_FRIEND_DECLINE == bbcoop::TeamRequest::FRIEND_DECLINE &&
+              BBCOOP_TEAM_SEARCH == bbcoop::TeamRequest::SEARCH);
 
 extern "C" void bbcoop_lobby_request(int action, const char* id) {
     Core::Bloodborne::Coop::TeamLobbyRequest(static_cast<bbcoop::TeamRequest::Action>(action),
