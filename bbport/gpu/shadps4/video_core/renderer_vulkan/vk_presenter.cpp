@@ -147,16 +147,11 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
     const u32 num_images = swapchain.GetImageCount();
     const vk::Device device = instance.GetDevice();
 
-    // Create presentation frames.
-    present_frames.resize(num_images);
-    for (u32 i = 0; i < num_images; i++) {
-        Frame& frame = present_frames[i];
-        frame.id = i;
-        auto fence = Check<"create present done fence">(
-            device.createFence({.flags = vk::FenceCreateFlagBits::eSignaled}));
-        frame.present_done = fence;
-        free_queue.push(&frame);
-    }
+    // Create presentation frames. bbport: room for the ones frame generation adds while it is on
+    // (AddPresentFrames); the vector never moves, the free queue points into it.
+    base_frame_count = num_images;
+    present_frames.reserve(std::max(num_images, BbFrameGenPace::MaxPresentFrames));
+    AddPresentFrames(num_images);
 
     fsr_settings.enable = EmulatorSettings.IsFsrEnabled();
     fsr_settings.use_rcas = EmulatorSettings.IsRcasEnabled();
@@ -169,7 +164,7 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
     // bbport: frame generation presents two images a frame: the overlay's buffers cover them.
     BbOverlay::Init(instance, swapchain.GetSurfaceFormat().format, num_images + 2);
     rasterizer->GetUpscaler().SetFrameGeneration(&frame_generation);
-    scene_hdr.SetSlots(num_images);
+    scene_hdr.SetSlots(u32(present_frames.capacity()));
     rasterizer->GetUpscaler().SetSceneHdr(&scene_hdr);
 }
 
@@ -1100,8 +1095,15 @@ void Presenter::PresentGenerated(Frame* frame,
     if (count) {
         generated_done.fetch_add(1, std::memory_order_release);
     }
-    if (shown && !fifo && !behind()) {
-        SleepUntil(start + step * shown);
+    // Generated frames whose spacing the game cut (it needed every presentation frame): not
+    // sent, or sent right before the game frame. The log counts them (PresentFramesNeeded).
+    u32 starved = count - shown;
+    if (shown && !fifo) {
+        if (behind()) {
+            ++starved;
+        } else {
+            SleepUntil(start + step * shown);
+        }
     }
     PresentFrame(frame, false, true);
     const auto game_sent = steady_clock::now();
@@ -1111,7 +1113,7 @@ void Presenter::PresentGenerated(Frame* frame,
         seen += BbFrameGenPace::GeneratedShown(duration<double, std::milli>(next - sent[i]).count(),
                                                hz, fifo);
     }
-    frame_generation.OnPresented(shown, seen);
+    frame_generation.OnPresented(shown, seen, starved);
 
     // How many the display has room for from the next frames on (fit to display; always with
     // V-Sync, where each image more waits for the display).
@@ -1468,11 +1470,34 @@ void Presenter::PresentFrame(Frame* frame, bool is_reusing_frame, bool is_game_f
     }
 }
 
+// Under free_mutex (or before the swap thread runs): `count` more presentation frames, within the
+// reserved capacity; their images are made at first use (GetRenderFrame).
+void Presenter::AddPresentFrames(u32 count) {
+    const vk::Device device = instance.GetDevice();
+    for (u32 i = 0; i < count && present_frames.size() < present_frames.capacity(); ++i) {
+        Frame& frame = present_frames.emplace_back();
+        frame.id = u8(present_frames.size() - 1);
+        frame.present_done = Check<"create present done fence">(
+            device.createFence({.flags = vk::FenceCreateFlagBits::eSignaled}));
+        free_queue.push(&frame);
+    }
+}
+
 Frame* Presenter::GetRenderFrame() {
     // Wait for free presentation frames
     Frame* frame;
     {
         std::unique_lock lock{free_mutex};
+        // bbport: with frame generation the swap thread holds each frame through the generated
+        // frames' spacing; more frames, so the game never takes the last one and cuts it short.
+        const u32 needed =
+            BbFrameGenPace::PresentFramesNeeded(base_frame_count, FrameGeneration::Requested());
+        if (present_frames.size() < needed) {
+            const u32 before = u32(present_frames.size());
+            AddPresentFrames(needed - before);
+            std::printf("Presenter: %u presentation frames for frame generation (were %u)\n",
+                        u32(present_frames.size()), before);
+        }
         free_cv.wait(lock, [this] { return !free_queue.empty(); });
         LOG_DEBUG(Render_Vulkan, "Got render frame, remaining {}", free_queue.size() - 1);
 

@@ -185,11 +185,25 @@ inline bool GeneratedShown(double gap_ms, unsigned hz, bool fifo) {
 }
 
 /// One measuring window of the swap thread: game frames presented, generated frames presented
-/// and how many of those were shown (GeneratedShown).
+/// and how many of those were shown (GeneratedShown); `starved`: generated frames sent without
+/// their spacing because the game needed every presentation frame (the log's count).
 struct Window {
     double seconds = 0.0;
-    unsigned game = 0, generated = 0, shown = 0;
+    unsigned game = 0, generated = 0, shown = 0, starved = 0;
 };
+
+/// Presentation frames (the game frames' images) the presenter keeps at most.
+constexpr unsigned MaxPresentFrames = 8;
+
+/// Presentation frames for `images` swapchain images. With frame generation the present thread
+/// holds each game frame from its GPU end through the generated frames' spacing (half a frame at
+/// 2x), while the game draws the next one, another waits in the swap queue and the last one's
+/// present copy still runs: five, so the game always finds a free one and the spacing is never
+/// cut (Mailbox then replaced the generated frame: the release thread's test 2026-10-25, three
+/// frames, 25 of 55 generated frames a second shown).
+inline unsigned PresentFramesNeeded(unsigned images, bool generating) {
+    return std::min(generating ? std::max(images, 5u) : images, std::max(images, MaxPresentFrames));
+}
 
 /// What the menu, the FPS counter and the log say about a window.
 struct Status {

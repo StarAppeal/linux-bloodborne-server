@@ -114,6 +114,7 @@ public:
 
 private:
     Frame* GetRenderFrame();
+    void AddPresentFrames(u32 count);
 
     /// `may_fail`: false instead of stopping when video memory is full (generated frames).
     bool RecreateFrame(Frame* frame, u32 width, u32 height, vk::Format format = {},
@@ -171,6 +172,9 @@ private:
     VideoCore::TextureCache& texture_cache;
     vk::UniqueCommandPool command_pool;
     std::vector<Frame> present_frames;
+    /// bbport: presentation frames made at start (the swapchain's images); frame generation adds
+    /// up to BbFrameGenPace::PresentFramesNeeded (AddPresentFrames).
+    u32 base_frame_count{0};
     /// bbport: generated frames (Presenter::Present shows them before their game frame) and the
     /// game frame without UI; their images exist only while frame generation is on. Four game
     /// frames' worth of the ring are in use (4 x the frames generated per game frame).

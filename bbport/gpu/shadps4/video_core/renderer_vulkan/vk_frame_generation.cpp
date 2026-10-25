@@ -925,7 +925,7 @@ void FrameGeneration::OnSwitchedOff() {
     tracker.Reset();
 }
 
-void FrameGeneration::OnPresented(u32 generated, u32 shown) {
+void FrameGeneration::OnPresented(u32 generated, u32 shown, u32 starved) {
     const auto now = std::chrono::steady_clock::now();
     if (stats_start.time_since_epoch().count() == 0) {
         stats_start = now;
@@ -941,6 +941,7 @@ void FrameGeneration::OnPresented(u32 generated, u32 shown) {
         ++window->game;
         window->generated += generated;
         window->shown += shown;
+        window->starved += starved;
     }
     // Twice a second: the menu's status and the FPS counter's "120 FPS (game 60, frame gen 2x)",
     // from the generated frames that reached the display, not the ones handed to the driver.
@@ -970,11 +971,11 @@ void FrameGeneration::OnPresented(u32 generated, u32 shown) {
     if (summary.seconds >= 30.0) {
         const auto status =
             BbFrameGenPace::Judge(summary, plan_idle.load(std::memory_order_relaxed));
-        std::printf("Frame generation: %.1f generated/s made, %.1f shown, game %.1f FPS, shown "
-                    "%.1f FPS over %.0f s (%s)\n",
+        std::printf("Frame generation: %.1f generated/s made, %.1f shown, %.1f cut short (no free "
+                    "presentation frame), game %.1f FPS, shown %.1f FPS over %.0f s (%s)\n",
                     summary.generated / summary.seconds, summary.shown / summary.seconds,
-                    status.game_fps, status.shown_fps, summary.seconds,
-                    BbFrameGenPace::IdleText(status.idle));
+                    summary.starved / summary.seconds, status.game_fps, status.shown_fps,
+                    summary.seconds, BbFrameGenPace::IdleText(status.idle));
         summary = {};
         summary_start = now;
     }

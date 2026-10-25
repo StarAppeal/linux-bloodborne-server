@@ -158,6 +158,27 @@ int main() {
         assert(std::strcmp(IdleText(IdleNone), "generating") == 0);
     }
 
+    // Presentation frames: with frame generation the present thread holds each game frame for
+    // the spacing, so the pool must leave the game one to draw into meanwhile (the release
+    // thread's test 2026-10-25: 3 frames, 25 of 55 generated frames/s shown, the rest sent
+    // with no spacing because no frame was free).
+    assert(PresentFramesNeeded(3, false) == 3);
+    assert(PresentFramesNeeded(4, false) == 4);
+    assert(PresentFramesNeeded(3, true) == 5);
+    assert(PresentFramesNeeded(4, true) == 5);
+    assert(PresentFramesNeeded(6, true) == 6);
+    assert(PresentFramesNeeded(2, true) <= MaxPresentFrames);
+    assert(PresentFramesNeeded(9, false) == 9);
+
+    // Generated frames lost because the game needed every presentation frame (no spacing) are
+    // counted apart, for the log.
+    {
+        const Status st = Judge({1.0, 60, 60, 25, 35}, IdleNone);
+        assert(st.active && st.multiplier == 1);
+        Window w{1.0, 60, 60, 25, 35};
+        assert(w.starved == 35);
+    }
+
     // A change of status is reported once it held for two windows.
     {
         StatusTracker tracker;

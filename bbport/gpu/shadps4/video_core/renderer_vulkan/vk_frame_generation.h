@@ -146,8 +146,9 @@ public:
     }
     /// Swap thread: a game frame went out after `generated` generated frames, `shown` of which
     /// the display had time to show (BbFrameGenPace::GeneratedShown). Feeds the menu, the FPS
-    /// counter and the log with what really reaches the display.
-    void OnPresented(u32 generated, u32 shown);
+    /// counter and the log with what really reaches the display. `starved`: generated frames
+    /// whose spacing was cut because the game needed every presentation frame.
+    void OnPresented(u32 generated, u32 shown, u32 starved);
     /// Swap thread: a game frame goes out with generation switched off.
     void OnSwitchedOff();
     /// Smoothed interval between game frames in ms, 0 until known.
