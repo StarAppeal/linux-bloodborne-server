@@ -1988,8 +1988,13 @@ bool Service::RoutesPacket(const ServerLink::Endpoint& from, const ServerLink::E
         !target->second.cut_from.isEmpty() && target->second.cut_from == sender->second.party;
     if (sender_cut || target_cut) {
         // Amanises 2026-10-25: right after the cut only the game's own packets (its leave).
+        // Kaniel 2026-10-26: and only between it and the session's host, the one its leave is
+        // for (all the team's games when the host itself was cut, or no host was known).
         const Member& cut = sender_cut ? sender->second : target->second;
-        return InCutGrace(cut) &&
+        const Member& other = sender_cut ? target->second : sender->second;
+        const bool host_pair = cut.cut_host.empty() || other.name == cut.cut_host ||
+                               cut.name == cut.cut_host;
+        return host_pair && InCutGrace(cut) &&
                BloodborneCoop::NativeChannelPolicy(channel) == BloodborneCoop::ChannelPolicy::Pass &&
                channel < BloodborneCoop::NativeChannelCount;
     }
@@ -2203,6 +2208,9 @@ void Service::OnLobbyHello(Member& member, const bbcoop::LobbyHello& hello, qint
         lobby_names[member.lobby] = hello.name();
     }
     if (arrived) {
+        relations.erase(member.lobby); // read again: its game's own friend list may have changed
+    }
+    if (arrived) {
         result.log.append(
             QStringLiteral("team lobby: %1 (%2) signed in")
                 .arg(QString::fromStdString(hello.member()), QString::fromStdString(hello.name())));
@@ -2337,6 +2345,12 @@ void Service::TakeOutOfTeam(const TeamLobby::Departure& out, qint64 now_ms, Resu
         member.party.clear();
         member.cut_from = party;
         member.cut_ms = now_ms;
+        member.cut_host = world->second.session ? world->second.session->host() : std::string{};
+        for (const auto& [other_key, other] : members) {
+            if (member.cut_host.empty() && other.host && other.party == party) {
+                member.cut_host = other.name; // the session's host by its hello
+            }
+        }
         member.map = 0;
         if (world->second.session && world->second.session->host() == member.name) {
             CloseSession(world->second, now_ms, result);
@@ -2429,10 +2443,20 @@ void Service::SendLobby(qint64 now_ms) {
     }
 }
 
+const FriendRelations& Service::RelationsOf(const std::string& lobby_member) const {
+    // Kaniel 2026-10-26: the book's answer kept until a friend request changes it, or the player
+    // signs in to the lobby again (its game's own friend list may have changed it): every lobby
+    // state asks, and the book reads the accounts' database on the link's thread.
+    if (const auto found = relations.find(lobby_member); found != relations.end()) {
+        return found->second;
+    }
+    return relations[lobby_member] = friend_book->Of(lobby_member);
+}
+
 bbcoop::LobbyState Service::LobbyStateFor(const Member& member) const {
     bbcoop::LobbyState state = lobby.StateFor(member.lobby);
     if (friend_book) {
-        FriendRelations relations = friend_book->Of(member.lobby);
+        FriendRelations relations = RelationsOf(member.lobby);
         for (auto* list : {&relations.friends, &relations.received, &relations.sent}) {
             for (FriendEntry& entry : *list) {
                 if (const auto name = lobby_names.find(entry.member); name != lobby_names.end()) {
@@ -2443,6 +2467,17 @@ bbcoop::LobbyState Service::LobbyStateFor(const Member& member) const {
         AddFriendsToLobby(state, member.lobby, relations, member.search_query, member.search);
     }
     return state;
+}
+
+bool Service::Within(std::deque<qint64>& times, size_t per_minute, qint64 now_ms) {
+    while (!times.empty() && now_ms - times.front() >= 60'000) {
+        times.pop_front();
+    }
+    if (times.size() >= per_minute) {
+        return false;
+    }
+    times.push_back(now_ms);
+    return true;
 }
 
 void Service::SendLobbyTo(const std::string& lobby_member, qint64 now_ms) {
@@ -2457,6 +2492,8 @@ void Service::SendLobbyTo(const std::string& lobby_member, qint64 now_ms) {
 
 // Amanises 2026-10-25: the players whose name holds `query` (any case): the lobby's names first
 // (what players see; the account name is an id made on the player's PC), then the accounts'.
+// Kaniel 2026-10-26: on a hosted server only the players signed in now, and one not signed in by
+// its whole name: a stranger lists no one's account by two letters.
 std::vector<FriendEntry> Service::SearchPlayers(const std::string& searcher,
                                                 const std::string& query) const {
     const auto lower = [](std::string text) {
@@ -2465,10 +2502,20 @@ std::vector<FriendEntry> Service::SearchPlayers(const std::string& searcher,
         return text;
     };
     const std::string wanted = lower(query);
+    std::set<std::string> online;
+    if (hosted.enabled) {
+        for (const std::string& signed_in : lobby.SignedIn()) {
+            online.insert(signed_in);
+        }
+    }
     std::vector<FriendEntry> found;
     std::set<std::string> listed;
     for (const auto& [lobby_member, name] : lobby_names) {
-        if (found.size() < FriendSearchLimit && lower(name).find(wanted) != std::string::npos) {
+        const std::string folded = lower(name);
+        const bool match = hosted.enabled && !online.contains(lobby_member)
+                               ? folded == wanted
+                               : folded.find(wanted) != std::string::npos;
+        if (found.size() < FriendSearchLimit && match) {
             found.push_back({lobby_member, name});
             listed.insert(lobby_member);
         }
@@ -2477,7 +2524,7 @@ std::vector<FriendEntry> Service::SearchPlayers(const std::string& searcher,
     std::stable_sort(found.begin(), found.end(), [&](const FriendEntry& a, const FriendEntry& b) {
         return (lower(a.name).rfind(wanted, 0) == 0) > (lower(b.name).rfind(wanted, 0) == 0);
     });
-    if (friend_book) {
+    if (friend_book && !hosted.enabled) {
         for (FriendEntry& entry : friend_book->Search(searcher, query, FriendSearchLimit)) {
             if (found.size() < FriendSearchLimit && listed.insert(entry.member).second) {
                 found.push_back(std::move(entry));
@@ -2493,6 +2540,10 @@ void Service::OnFriendRequest(Member& member, const bbcoop::TeamRequest& request
     std::string notice;
     if (!friend_book) {
         notice = "friends are not kept on this server";
+    } else if (action == bbcoop::TeamRequest::SEARCH && !request.query().empty() &&
+               !Within(search_times[member.lobby], SearchesPerMinute, now_ms)) {
+        // Kaniel 2026-10-26: a search reads the accounts; a game that floods them is refused.
+        notice = "too many searches: try again in a minute";
     } else if (action == bbcoop::TeamRequest::SEARCH) {
         // Its own list: only the searcher sees it, until the next search (empty clears it).
         std::string query = request.query();
@@ -2512,6 +2563,18 @@ void Service::OnFriendRequest(Member& member, const bbcoop::TeamRequest& request
                               .arg(member.search.size()));
     } else if (request.member().empty() || request.member() == member.lobby) {
         notice = "no such player";
+    } else if (action == bbcoop::TeamRequest::FRIEND_ADD &&
+               !Within(friend_adds[member.lobby], FriendAddsPerMinute, now_ms)) {
+        // Kaniel 2026-10-26: no flood of friend requests (each one reaches the other's game).
+        notice = "too many friend requests: try again in a minute";
+    } else if (const auto declined = declines.find({member.lobby, request.member()});
+               action == bbcoop::TeamRequest::FRIEND_ADD && declined != declines.end() &&
+               now_ms < declined->second &&
+               std::ranges::none_of(RelationsOf(member.lobby).received, [&](const FriendEntry& e) {
+                   return e.member == request.member();
+               })) {
+        // Kaniel 2026-10-26: one who said no is not asked again at once (unless it asks now).
+        notice = "this hunter declined: try again later";
     } else {
         notice = action == bbcoop::TeamRequest::FRIEND_ADD
                      ? friend_book->Add(member.lobby, request.member())
@@ -2526,6 +2589,15 @@ void Service::OnFriendRequest(Member& member, const bbcoop::TeamRequest& request
                 .arg(notice.empty() ? QString{}
                                     : QStringLiteral(": refused, ") +
                                           QString::fromStdString(notice)));
+        if (notice.empty()) {
+            relations.erase(member.lobby);
+            relations.erase(request.member());
+            if (action == bbcoop::TeamRequest::FRIEND_DECLINE) {
+                declines[{request.member(), member.lobby}] = now_ms + DeclineCooldownMs;
+            } else if (action == bbcoop::TeamRequest::FRIEND_ADD) {
+                declines.erase({request.member(), member.lobby}); // it asks back: friends now
+            }
+        }
     }
     // The other player's lists changed too (its request, its friend).
     if (notice.empty() && action != bbcoop::TeamRequest::SEARCH) {

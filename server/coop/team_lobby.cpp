@@ -892,14 +892,16 @@ TeamLobby::Outcome TeamLobby::Request(const std::string& member, const bbcoop::T
         }
         if (!players.contains(request.member()) || TeamOf(request.member())) {
             std::erase(found->second, request.member());
+            if (found->second.empty()) {
+                asks.erase(found);
+            }
             return {.changed = true, .notice = "that hunter is not free to join now"};
         }
         if (static_cast<size_t>(mine->members_size()) >= TeamSize) {
             return refuse("the team is full");
         }
         AddMember(*mine, request.member());
-        Outcome outcome{.changed = true};
-        return outcome;
+        return {.changed = true};
     }
     case Action::START: {
         if (!mine || mine->leader() != member) {

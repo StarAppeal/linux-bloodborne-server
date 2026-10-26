@@ -2844,6 +2844,45 @@ int FriendsAreFoundAskedAndAnsweredInTheLobby() {
   Pump(service, {&a, &b, &c}, now);
   CHECK(a.lobby.notice() == "no such player");
 
+  // Kaniel 2026-10-26: one who declined is not asked again at once; it may ask itself.
+  c.Team(TeamRequest::FRIEND_ADD, now, "aa");
+  Pump(service, {&a, &b, &c}, now);
+  CHECK(c.lobby.notice() == "this hunter declined: try again later");
+  CHECK(a.lobby.friend_requests_size() == 0);
+  a.Team(TeamRequest::FRIEND_ADD, now, "cc");
+  Pump(service, {&a, &b, &c}, now);
+  CHECK(a.lobby.notice().empty() && c.lobby.friend_requests_size() == 1);
+  c.Team(TeamRequest::FRIEND_ADD, now, "aa"); // the answer to a's request
+  Pump(service, {&a, &b, &c}, now);
+  CHECK(c.lobby.notice().empty() && c.lobby.friends_size() == 1);
+  c.Team(TeamRequest::FRIEND_REMOVE, now, "aa");
+  Pump(service, {&a, &b, &c}, now);
+
+  // Kaniel 2026-10-26: at most FriendAddsPerMinute requests and SearchesPerMinute searches a
+  // minute (a made 3 requests and 3 searches above).
+  for (size_t i = 3; i < Service::FriendAddsPerMinute; ++i) {
+    a.Team(TeamRequest::FRIEND_ADD, now, "zz");
+    Pump(service, {&a, &b, &c}, now);
+    CHECK(a.lobby.notice() == "no such player");
+  }
+  a.Team(TeamRequest::FRIEND_ADD, now, "zz");
+  Pump(service, {&a, &b, &c}, now);
+  CHECK(a.lobby.notice() == "too many friend requests: try again in a minute");
+  for (size_t i = 3; i < Service::SearchesPerMinute; ++i) {
+    search(a, "Player");
+    CHECK(a.lobby.notice().empty());
+  }
+  search(a, "Player");
+  CHECK(a.lobby.notice() == "too many searches: try again in a minute");
+  search(a, ""); // clearing is no search
+  CHECK(a.lobby.notice().empty());
+  now += 60'000;
+  search(a, "Player");
+  CHECK(a.lobby.notice().empty() && a.lobby.search_size() == 3);
+  a.Team(TeamRequest::FRIEND_ADD, now, "zz");
+  Pump(service, {&a, &b, &c}, now);
+  CHECK(a.lobby.notice() == "no such player");
+
   // No book: refused, and the team lobby works as before.
   Service bare{{}};
   Game e{1003, "ee", 14};
@@ -2853,6 +2892,109 @@ int FriendsAreFoundAskedAndAnsweredInTheLobby() {
   Pump(bare, {&e}, now);
   CHECK(e.lobby.notice() == "friends are not kept on this server");
   CHECK(e.lobby.friends_size() == 0);
+  return 0;
+}
+
+// Kaniel 2026-10-26: on a hosted server a search lists the players signed in
+// now, and one not signed in only by its whole name; the accounts are not
+// searched (a stranger lists nobody's account by two letters).
+int HostedSearchListsThePlayersOnline() {
+  const auto hex = [](const char *id) {
+    return QByteArray(id).toHex().toStdString();
+  };
+  MemoryFriendBook book;
+  book.accounts = {{hex("Kaniel"), "Kaniel"}, {hex("Ada"), "Ada"},
+                   {hex("Gone"), "Gone"}, {hex("Never"), "Never"}};
+  Service service{{}};
+  BloodborneWorld::HostedRules rules;
+  rules.enabled = true;
+  service.SetHosted(rules);
+  service.SetFriendBook(&book);
+  Game kaniel{1000, hex("Kaniel"), 11};
+  kaniel.online_id = "Kaniel";
+  Game ada{1001, hex("Ada"), 12};
+  ada.online_id = "Ada";
+  Game gone{1002, hex("Gone"), 13};
+  gone.online_id = "Gone";
+  std::vector<Game *> games{&kaniel, &ada, &gone};
+  qint64 now = 1'000'000;
+  const auto step = [&] {
+    now += 300; // past the lobby's interval
+    Pump(service, games, now);
+  };
+  for (Game *game : games) {
+    game->LobbyHello(false, now);
+  }
+  step();
+  service.Forget(gone.endpoint);
+  games.pop_back();
+  step();
+  const auto search = [&](const std::string &text) {
+    bbcoop::Envelope envelope;
+    envelope.mutable_team_request()->set_action(bbcoop::TeamRequest::SEARCH);
+    envelope.mutable_team_request()->set_query(text);
+    kaniel.Send(envelope, now);
+    step();
+    return kaniel.lobby.search_size();
+  };
+  CHECK(search("Player") == 2); // Kaniel and Ada, signed in
+  CHECK(search(hex("Ada").substr(0, 4)) == 1);
+  CHECK(search("Never") == 0); // an account never in the lobby: not searched
+  CHECK(search("Player " + hex("Go")) == 0); // signed out: its whole name only
+  CHECK(search("player " + hex("Gone")) == 1);
+  CHECK(kaniel.lobby.search(0).member() == hex("Gone"));
+  return 0;
+}
+
+// Kaniel 2026-10-26: a member cut from its team says goodbye only to the
+// session's host, not to the other guests.
+int ACutMembersGoodbyeIsForTheHostOnly() {
+  Service service{{}};
+  Game host{1000, "host", 11};
+  Game b{1001, "bb", 12};
+  Game c{1002, "cc", 13};
+  const std::vector<Game *> games{&host, &b, &c};
+  qint64 now = 1'000'000;
+  for (Game *game : games) {
+    game->LobbyHello(false, now);
+  }
+  Pump(service, games, now);
+  host.Team(bbcoop::TeamRequest::CREATE, now);
+  Pump(service, games, now);
+  const std::string team = host.lobby.team().id();
+  for (Game *guest : {&b, &c}) {
+    host.Team(bbcoop::TeamRequest::INVITE, now, guest->name);
+    Pump(service, games, now);
+    guest->Team(bbcoop::TeamRequest::ACCEPT, now, {}, team);
+    Pump(service, games, now);
+  }
+  host.Team(bbcoop::TeamRequest::READY, now, {}, {}, 1);
+  b.Team(bbcoop::TeamRequest::READY, now, {}, {}, 2);
+  c.Team(bbcoop::TeamRequest::READY, now, {}, {}, 3);
+  Pump(service, games, now);
+  host.Team(bbcoop::TeamRequest::START, now);
+  Pump(service, games, now);
+  const QByteArray party = QByteArray::fromStdString(host.starts.at(0).party());
+  for (Game *game : games) {
+    game->LobbyHello(true, now);
+    game->Hello(now, party);
+    game->Map(0x18010000, now);
+  }
+  Pump(service, games, now);
+  host.Team(bbcoop::TeamRequest::REMOVE, now + 10, "cc");
+  Pump(service, games, now + 10);
+  bool any_native = false;
+  for (u32 channel = 0; channel < BloodborneCoop::NativeChannelCount; ++channel) {
+    const bool native =
+        BloodborneCoop::NativeChannelPolicy(channel) == BloodborneCoop::ChannelPolicy::Pass;
+    any_native = any_native || native;
+    CHECK(service.RoutesPacket(c.endpoint, host.endpoint, channel) == native);
+    CHECK(service.RoutesPacket(host.endpoint, c.endpoint, channel) == native);
+    CHECK(!service.RoutesPacket(c.endpoint, b.endpoint, channel));
+    CHECK(!service.RoutesPacket(b.endpoint, c.endpoint, channel));
+  }
+  CHECK(any_native);
+  CHECK(service.RoutesPacket(host.endpoint, b.endpoint, 0x06));
   return 0;
 }
 
@@ -3891,6 +4033,8 @@ int main() {
        ARemovedMembersGoodbyeEndsAfterTheGrace},
       {"PublicLobbyIdentityComesFromTheAuthenticatedAccount",
        PublicLobbyIdentityComesFromTheAuthenticatedAccount},
+      {"HostedSearchListsThePlayersOnline", HostedSearchListsThePlayersOnline},
+      {"ACutMembersGoodbyeIsForTheHostOnly", ACutMembersGoodbyeIsForTheHostOnly},
       {"OnlyTheOwnersKillsAndHpCount", OnlyTheOwnersKillsAndHpCount},
       {"ATeamFormsAndStartsThroughTheService",
        ATeamFormsAndStartsThroughTheService},

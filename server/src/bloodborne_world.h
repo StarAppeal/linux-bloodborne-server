@@ -14,6 +14,7 @@
 // share out of the log.
 #pragma once
 
+#include <deque>
 #include <map>
 #include <memory>
 #include <optional>
@@ -244,7 +245,12 @@ public:
     QString PartyOf(const ServerLink::Endpoint& link) const;
     // Amanises 2026-10-25: how long a member cut from its team still says goodbye to it (only the
     // game's own packets, see Member::cut_ms).
-    static constexpr qint64 CutGraceMs = 30'000;
+    static constexpr qint64 CutGraceMs = 10'000;
+    // Kaniel 2026-10-26: the friend requests and searches a player makes in a minute at most, and
+    // how long one who declined a player's request is not asked by it again.
+    static constexpr size_t FriendAddsPerMinute = 10;
+    static constexpr size_t SearchesPerMinute = 20;
+    static constexpr qint64 DeclineCooldownMs = 10 * 60'000;
     // Phase 9: whether a game packet on `channel` goes from one link's game to another's, by the
     // channel table, their maps and their parts in their maps' enemies (coop/packet_routes.h). A
     // link without a member here gets only the game's own channels.
@@ -390,6 +396,9 @@ private:
         // between it and that party: its game says goodbye to the session's host (the leave the
         // game waits for; dropped, the removed guest saw the host ~20 s more before it gave up).
         qint64 cut_ms = 0;
+        // Kaniel 2026-10-26: its world's session host at the cut (the grace is for their pair;
+        // empty: none known, every game of the team).
+        std::string cut_host;
         // Amanises 2026-10-25: its last player search (the text and what it found).
         std::string search_query;
         std::vector<FriendEntry> search;
@@ -510,6 +519,9 @@ private:
                          Result& result);
     void SendLobbyTo(const std::string& lobby_member, qint64 now_ms);
     std::vector<FriendEntry> SearchPlayers(const std::string& searcher, const std::string& query) const;
+    const FriendRelations& RelationsOf(const std::string& lobby_member) const;
+    // Whether one more fits in `per_minute` (then counted at `now_ms`).
+    static bool Within(std::deque<qint64>& times, size_t per_minute, qint64 now_ms);
     // Phase 5b: the team's world, read from its folder once; a host's report taken.
     const std::optional<bbcoop::TeamWorld>& TeamWorldOf(PartyWorld& world);
     void TakeTeamWorld(Member& member, PartyWorld& world, const bbcoop::TeamWorld& report,
@@ -578,6 +590,13 @@ private:
     // Amanises 2026-10-25: each lobby member's last name (its character's, as the lobby shows it)
     // since the server started: offline friends and searches go by it, the account name is an id.
     std::map<std::string, std::string> lobby_names;
+    // Kaniel 2026-10-26: the friend book's answers by lobby member (RelationsOf), each player's
+    // friend requests and searches in the last minute, and who declined whom (asker, decliner)
+    // until when.
+    mutable std::map<std::string, FriendRelations> relations;
+    std::map<std::string, std::deque<qint64>> friend_adds;
+    std::map<std::string, std::deque<qint64>> search_times;
+    std::map<std::pair<std::string, std::string>, qint64> declines;
 
     InvasionRules invasion_rules;
     std::map<QString, Invasion> invasions; // by the invaded world
