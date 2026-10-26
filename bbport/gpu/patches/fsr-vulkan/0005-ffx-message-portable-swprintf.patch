@@ -1,0 +1,30 @@
+From: bbport
+Subject: [PATCH] FidelityFX 1.1.4: use standard C++ wide printf
+
+---
+diff --git a/upstream/ffx-1.1.4/sdk/src/shared/ffx_message.cpp b/upstream/ffx-1.1.4/sdk/src/shared/ffx_message.cpp
+index 0218413..8ac3f7b 100644
+--- a/upstream/ffx-1.1.4/sdk/src/shared/ffx_message.cpp
++++ b/upstream/ffx-1.1.4/sdk/src/shared/ffx_message.cpp
+@@ -20,6 +20,8 @@
+ // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ // THE SOFTWARE.
+ 
++#include <cwchar>
++
+ #include <FidelityFX/host/ffx_message.h>
+ #include <FidelityFX/host/ffx_util.h>
+ 
+@@ -48,10 +50,10 @@ void ffxPrintMessage(uint32_t type, const wchar_t* message)
+         // Format the message string
+         wchar_t buffer[512];
+         if (type == FFX_MESSAGE_TYPE_ERROR) {
+-            swprintf_s(buffer, 512, L"FSR_API_DEBUG_ERROR: %ls\n", message);
++            std::swprintf(buffer, 512, L"FSR_API_DEBUG_ERROR: %ls\n", message);
+         }
+         else if (type == FFX_MESSAGE_TYPE_WARNING) {
+-            swprintf_s(buffer, 512, L"FSR_API_DEBUG_WARNING: %ls\n", message);
++            std::swprintf(buffer, 512, L"FSR_API_DEBUG_WARNING: %ls\n", message);
+         }
+         OutputDebugStringW(buffer);
+     } else {
