@@ -268,6 +268,15 @@ launcher updates itself from them and the website's download page offers the new
 
 ## Credits and forks
 
+**Made together by** [Yharnam Together](https://github.com/lKaniel/bloodborne-server) (Kaniel),
+[AMANISES](https://github.com/CLSAMG22/BBSC) (CLS_AMG) and
+[Supermedo](https://github.com/Supermedo/bloodborne_pc).
+
+**Testers:** fra98_ (framilano), Hardwater, Onesadeye, aboood888848, Fahad, Mob, lelial, J2mF,
+Kukar3x. **Special thanks** to framilano (fra98_) for the
+[Bloodborne Nucleus Co-op Handler](https://github.com/framilano/BloodborneNucleusCoopHandler) and
+Fahad (fhody125) for [No Dream For The Hunter](https://github.com/Mob100percent/NoDreamForTheHunterBB).
+
 This project stands on the work of many people. Each part keeps its authors' history and license.
 
 | Project | What it brings |
