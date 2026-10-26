@@ -879,8 +879,8 @@ TeamLobby::Outcome TeamLobby::Request(const std::string& member, const bbcoop::T
             return refuse("only the team's leader answers who asked to join");
         }
         const auto found = asks.find(mine->id());
-        if (found == asks.end() || std::ranges::find(found->second, request.member()) ==
-                                       found->second.end()) {
+        if (found == asks.end() ||
+            std::ranges::find(found->second, request.member()) == found->second.end()) {
             return refuse("that hunter did not ask to join");
         }
         if (request.action() == Action::ASK_DECLINE) {

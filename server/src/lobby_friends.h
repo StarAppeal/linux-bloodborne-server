@@ -4,8 +4,8 @@
 // Amanises 2026-10-25: friends in the team lobby. The friendships are shadNet's own (the
 // friendship table, the same the game's friend list and the WebAPI's friendList read); the lobby
 // only finds players by name, sends and answers requests, and shows each player its friends with
-// their lobby state. The book is what the lobby (bloodborne_world.h) asks: shadNet's database in the
-// server (link_server.cpp), a plain map in the tests.
+// their lobby state. The book is what the lobby (bloodborne_world.h) asks: shadNet's database in
+// the server (link_server.cpp), a plain map in the tests.
 #pragma once
 
 #include <string>

@@ -518,7 +518,8 @@ private:
     void OnFriendRequest(Member& member, const bbcoop::TeamRequest& request, qint64 now_ms,
                          Result& result);
     void SendLobbyTo(const std::string& lobby_member, qint64 now_ms);
-    std::vector<FriendEntry> SearchPlayers(const std::string& searcher, const std::string& query) const;
+    std::vector<FriendEntry> SearchPlayers(const std::string& searcher,
+                                           const std::string& query) const;
     const FriendRelations& RelationsOf(const std::string& lobby_member) const;
     // Whether one more fits in `per_minute` (then counted at `now_ms`).
     static bool Within(std::deque<qint64>& times, size_t per_minute, qint64 now_ms);

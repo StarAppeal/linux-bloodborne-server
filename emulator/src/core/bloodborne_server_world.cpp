@@ -176,7 +176,7 @@ struct LeaveHome {
     s64 left_ms = 0;
     s64 idle_since_ms = -1;
 };
-std::optional<LeaveHome> leave_home; // the game's thread
+std::optional<LeaveHome> leave_home;      // the game's thread
 constexpr s64 LeaveHomeSettleMs = 1'000;  // out of the session and not loading this long
 constexpr s64 LeaveHomeGiveUpMs = 30'000; // still in the session: left to the game
 // Kaniel 2026-10-16: the team screen opened over the game from its System menu (TeamMenu), and
@@ -1791,8 +1791,9 @@ void TickLeaveHome(u64 manager) {
         leave_home->idle_since_ms = -1;
         if (now - leave_home->left_ms >= LeaveHomeGiveUpMs) {
             leave_home.reset();
-            LOG_WARNING(Debug, "Co-op team menu: out of the team, but still in a session after "
-                               "{} s: no load home",
+            LOG_WARNING(Debug,
+                        "Co-op team menu: out of the team, but still in a session after "
+                        "{} s: no load home",
                         LeaveHomeGiveUpMs / 1000);
         }
         return;

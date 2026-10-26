@@ -1992,10 +1992,11 @@ bool Service::RoutesPacket(const ServerLink::Endpoint& from, const ServerLink::E
         // for (all the team's games when the host itself was cut, or no host was known).
         const Member& cut = sender_cut ? sender->second : target->second;
         const Member& other = sender_cut ? target->second : sender->second;
-        const bool host_pair = cut.cut_host.empty() || other.name == cut.cut_host ||
-                               cut.name == cut.cut_host;
+        const bool host_pair =
+            cut.cut_host.empty() || other.name == cut.cut_host || cut.name == cut.cut_host;
         return host_pair && InCutGrace(cut) &&
-               BloodborneCoop::NativeChannelPolicy(channel) == BloodborneCoop::ChannelPolicy::Pass &&
+               BloodborneCoop::NativeChannelPolicy(channel) ==
+                   BloodborneCoop::ChannelPolicy::Pass &&
                channel < BloodborneCoop::NativeChannelCount;
     }
     // Invasions: a hostile visitor and the team it visits go by the hostile table; the team
@@ -2175,17 +2176,15 @@ void Service::TakeTeamWorld(Member& member, PartyWorld& world, const bbcoop::Tea
 
 void Service::OnLobbyHello(Member& member, const bbcoop::LobbyHello& hello, qint64 now_ms,
                            Result& result) {
-    const bool wrong_identity = require_authenticated_identity &&
-                                hello.member() != AuthenticatedMember(member.online_id);
+    const bool wrong_identity =
+        require_authenticated_identity && hello.member() != AuthenticatedMember(member.online_id);
     if (hello.protocol() != CoopProtocol || hello.member().empty() || wrong_identity) {
         bbcoop::Envelope answer;
         answer.mutable_lobby_state()->set_notice(
-            hello.member().empty()
-                ? "no member name"
-                : wrong_identity
-                      ? "member identity does not match the signed-in account"
-                      : "co-op protocol " + std::to_string(hello.protocol()) +
-                            ", this server speaks " + std::to_string(CoopProtocol));
+            hello.member().empty() ? "no member name"
+            : wrong_identity       ? "member identity does not match the signed-in account"
+                                   : "co-op protocol " + std::to_string(hello.protocol()) +
+                                   ", this server speaks " + std::to_string(CoopProtocol));
         SendTo(member, answer, now_ms);
         result.log.append(QStringLiteral("team lobby: refused %1: %2")
                               .arg(QString::fromStdString(Who(member)),
@@ -2557,10 +2556,10 @@ void Service::OnFriendRequest(Member& member, const bbcoop::TeamRequest& request
         } else if (!query.empty()) {
             notice = "type at least " + std::to_string(FriendSearchMinLength) + " letters";
         }
-        result.log.append(QStringLiteral("team lobby: %1 searched \"%2\": %3 found")
-                              .arg(QString::fromStdString(member.lobby),
-                                   QString::fromStdString(query))
-                              .arg(member.search.size()));
+        result.log.append(
+            QStringLiteral("team lobby: %1 searched \"%2\": %3 found")
+                .arg(QString::fromStdString(member.lobby), QString::fromStdString(query))
+                .arg(member.search.size()));
     } else if (request.member().empty() || request.member() == member.lobby) {
         notice = "no such player";
     } else if (action == bbcoop::TeamRequest::FRIEND_ADD &&
@@ -2570,9 +2569,9 @@ void Service::OnFriendRequest(Member& member, const bbcoop::TeamRequest& request
     } else if (const auto declined = declines.find({member.lobby, request.member()});
                action == bbcoop::TeamRequest::FRIEND_ADD && declined != declines.end() &&
                now_ms < declined->second &&
-               std::ranges::none_of(RelationsOf(member.lobby).received, [&](const FriendEntry& e) {
-                   return e.member == request.member();
-               })) {
+               std::ranges::none_of(
+                   RelationsOf(member.lobby).received,
+                   [&](const FriendEntry& e) { return e.member == request.member(); })) {
         // Kaniel 2026-10-26: one who said no is not asked again at once (unless it asks now).
         notice = "this hunter declined: try again later";
     } else {
@@ -2581,14 +2580,13 @@ void Service::OnFriendRequest(Member& member, const bbcoop::TeamRequest& request
                  : action == bbcoop::TeamRequest::FRIEND_REMOVE
                      ? friend_book->Remove(member.lobby, request.member())
                      : friend_book->Decline(member.lobby, request.member());
-        result.log.append(
-            QStringLiteral("team lobby: %1 %2 %3%4")
-                .arg(QString::fromStdString(member.lobby),
-                     QString::fromStdString(bbcoop::TeamRequest::Action_Name(action)),
-                     QString::fromStdString(request.member()))
-                .arg(notice.empty() ? QString{}
-                                    : QStringLiteral(": refused, ") +
-                                          QString::fromStdString(notice)));
+        result.log.append(QStringLiteral("team lobby: %1 %2 %3%4")
+                              .arg(QString::fromStdString(member.lobby),
+                                   QString::fromStdString(bbcoop::TeamRequest::Action_Name(action)),
+                                   QString::fromStdString(request.member()))
+                              .arg(notice.empty() ? QString{}
+                                                  : QStringLiteral(": refused, ") +
+                                                        QString::fromStdString(notice)));
         if (notice.empty()) {
             relations.erase(member.lobby);
             relations.erase(request.member());

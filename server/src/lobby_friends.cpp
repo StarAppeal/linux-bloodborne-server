@@ -72,10 +72,9 @@ void AddFriendsToLobby(bbcoop::LobbyState& state, const std::string& member,
             player.set_relation(r->second);
         }
     }
-    std::stable_partition(state.mutable_players()->begin(), state.mutable_players()->end(),
-                          [](const bbcoop::LobbyPlayer& p) {
-                              return p.relation() == bbcoop::LobbyPlayer::FRIEND;
-                          });
+    std::stable_partition(
+        state.mutable_players()->begin(), state.mutable_players()->end(),
+        [](const bbcoop::LobbyPlayer& p) { return p.relation() == bbcoop::LobbyPlayer::FRIEND; });
 }
 
 } // namespace BloodborneWorld
