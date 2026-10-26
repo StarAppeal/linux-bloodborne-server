@@ -2204,7 +2204,10 @@ SCENARIOS = {
                       f"expect-map {CENTRAL_YHARNAM}"],
         },
         "expect": {
-            "guest": [r"Co-op team menu: out of the team \(world:\w+\): left its session"],
+            # Amanises 2026-10-25 (#412): then loaded into its own world where it stood, not left
+            # invisible beside the host's frozen copy.
+            "guest": [r"Co-op team menu: out of the team \(world:\w+\): left its session",
+                      r"Co-op team menu: out of the team: its own world loads where it stood"],
         },
         # The removed guest's own leave (MultiPlayStopRequest where it stands) is the point.
         "allow": [r"left the session outside a trip"],
@@ -2236,7 +2239,10 @@ SCENARIOS = {
                       "wait-solo 60", "wait 15", "snapshot", f"expect-map {CENTRAL_YHARNAM}"],
         },
         "expect": {
-            "guest": [r"Co-op team menu: out of the team \(world:\w+\): left its session"],
+            # Amanises 2026-10-25 (#412): then loaded into its own world where it stood, not left
+            # invisible beside the host's frozen copy.
+            "guest": [r"Co-op team menu: out of the team \(world:\w+\): left its session",
+                      r"Co-op team menu: out of the team: its own world loads where it stood"],
         },
         "allow": [r"left the session outside a trip"],
         "timeout": 300,
