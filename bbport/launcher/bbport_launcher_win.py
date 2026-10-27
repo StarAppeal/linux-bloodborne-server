@@ -162,9 +162,12 @@ def attach_stdio():
 def run_role(argv):
     """--run [args]: run.py; --script <file> [args]: a preparation script. Returns an exit code."""
     attach_stdio()
-    for stream in (sys.stdout, sys.stderr):  # keep messages in order with the game's output
+    # UTF-8 whatever the Windows code page, as run.py reads it: a frozen launcher ignores PYTHONIOENCODING, and
+    # on a Russian Windows mods.py's game view path reached run.py as '????' (Kaniel 2026-10-27: Cyrillic user
+    # names, "the game doesn't start at all"). Line by line, to keep messages in order with the game's output.
+    for stream in (sys.stdout, sys.stderr):
         try:
-            stream.reconfigure(line_buffering=True)
+            stream.reconfigure(encoding='utf-8', errors='replace', line_buffering=True)
         except (AttributeError, ValueError):
             pass
     if argv[0] == '--script':
@@ -179,7 +182,14 @@ def run_role(argv):
     try:
         runpy.run_path(path, run_name='__main__')
     except SystemExit as stop:
-        return stop.code if isinstance(stop.code, int) else (0 if stop.code is None else 1)
+        if stop.code is None or isinstance(stop.code, int):
+            return stop.code or 0
+        print(stop.code, file=sys.stderr)  # sys.exit('message'), as python prints it
+        return 1
+    except Exception:  # into the log: frozen, it was PyInstaller's popup and an empty log
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        return 1
     return 0
 
 
@@ -7135,6 +7145,47 @@ def restart_without_redirection_guard():
 
 
 def main():
+    """start_launcher, with any failure (Tcl that cannot start, --play, the uninstaller, an update) written to
+    user/log/launcher-errors.txt and shown: frozen and windowed, an uncaught error was only PyInstaller's popup,
+    and before the window no log was kept at all (Kaniel 2026-10-27: "writes 0 logs")."""
+    try:
+        start_launcher()
+    except SystemExit:
+        raise
+    except BaseException:
+        import traceback
+        details = traceback.format_exc()
+        log = record_startup_failure(details)
+        where = str(log) if log else _('no log could be written', 'журнал записать не удалось')
+        show_error_box(_('The launcher could not start. The details are in:\n{}\n\n{}',
+                         'Лаунчер не смог запуститься. Подробности в файле:\n{}\n\n{}').format(where, details[-1500:]))
+        sys.exit(1)
+
+
+def record_startup_failure(text):
+    """Adds TEXT to user/log/launcher-errors.txt, or to %TEMP% when that folder cannot be written (an install
+    under Program Files, a read-only drive). Returns the file written, None when neither could be."""
+    stamp = f'--- launcher failed {time.strftime("%Y-%m-%d %H:%M:%S")} (arguments: {sys.argv[1:]})\n'
+    for log in (DATA_DIR / 'user' / 'log' / 'launcher-errors.txt',
+                Path(tempfile.gettempdir()) / 'BLauncher-errors.txt'):
+        try:
+            log.parent.mkdir(parents=True, exist_ok=True)
+            with open(log, 'a', encoding='utf-8') as file:
+                file.write(stamp + text + ('' if text.endswith('\n') else '\n'))
+            return log
+        except OSError:
+            continue
+    return None
+
+
+def show_error_box(text):
+    try:
+        ctypes.windll.user32.MessageBoxW(None, text, COOP_NAME if COOP_INSTALL else 'Bloodborne', 0x10)  # MB_ICONERROR
+    except (AttributeError, OSError):
+        pass
+
+
+def start_launcher():
     global LANG
     args = sys.argv[1:]
     bbport_coop.use_system_certificates()
@@ -7166,27 +7217,42 @@ def main():
         ctypes.windll.shcore.SetProcessDpiAwareness(1)  # sharp text on scaled displays
     except (AttributeError, OSError):
         pass
-    import tkinter as tk
-    from tkinter import filedialog, messagebox, ttk
-    root = tk.Tk()
-    keep_launcher_errors(root)
-    Launcher(root, tk, ttk, filedialog, messagebox)
-    root.mainloop()
+    log = open_launcher_errors()  # before Tk: a crash while Tcl starts leaves its trace too
+    try:
+        import tkinter as tk
+        from tkinter import filedialog, messagebox, ttk
+        root = tk.Tk()
+        keep_launcher_errors(root, log)
+        Launcher(root, tk, ttk, filedialog, messagebox)
+        root.mainloop()
+    finally:
+        if log is not None:  # main() appends what went wrong to the same file
+            import faulthandler
+            faulthandler.disable()
+            log.close()
 
 
-def keep_launcher_errors(root):
-    """The windowed launcher has no console: a fault of the process and an error in a window callback go
-    to user/log/launcher-errors.txt, so a crash leaves its cause behind (Kaniel 2026-10-17)."""
+def open_launcher_errors():
+    """user/log/launcher-errors.txt, open for the window's life with faulthandler writing to it; None when it
+    cannot be opened."""
     import faulthandler
-    import traceback
     try:
         folder = DATA_DIR / 'user' / 'log'
         folder.mkdir(parents=True, exist_ok=True)
         log = open(folder / 'launcher-errors.txt', 'a', encoding='utf-8', buffering=1)
     except OSError:
-        return
+        return None
     log.write(f'--- launcher started {time.strftime("%Y-%m-%d %H:%M:%S")}\n')
     faulthandler.enable(log)
+    return log
+
+
+def keep_launcher_errors(root, log):
+    """The windowed launcher has no console: a fault of the process and an error in a window callback go
+    to user/log/launcher-errors.txt, so a crash leaves its cause behind (Kaniel 2026-10-17)."""
+    import traceback
+    if log is None:
+        return
 
     def report(kind, value, trace):
         log.write(''.join(traceback.format_exception(kind, value, trace)))
