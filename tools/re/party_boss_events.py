@@ -537,9 +537,14 @@ def let_guests_wake_ambushes(emevd: bytes, wanted: set[int],
 # 12105040 rises the shop messengers in the bath (2100211-2100213) while this player's shop menu
 # is open (12105041, their talk) and sinks them after; kept in step, another player's restart
 # of it rose them and played their tune again and again (Kaniel 2026-10-21).
+# m29 12906824 (started by the story layouts m29_20_90_00 and m29_31_90_00) sets a Bath shop flag
+# (5090 Bone Ash, 5091 Madman) once the layer 2 boss is dead; the shop flags are each player's
+# own, so kept in step the first game to run it ended it in the other's, which never set its own
+# (seixas 2026-10-27: no Bone Ash set after the Keeper of the Old Lords).
 LOCAL_EVENTS = {
     'm21_00_00_00.emevd.dcx': {12101000, 12101020, 12101021, 12101022, 12101024, 12101026,
                                12101028, 12105040, 12107100, 12107200},
+    'm29.emevd.dcx': {12906824},
 }
 for _name, _events in ACTION_PICKUP_EVENTS.items():
     LOCAL_EVENTS[_name] = LOCAL_EVENTS.get(_name, set()) | set(_events)
