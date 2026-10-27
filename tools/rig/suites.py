@@ -1199,7 +1199,7 @@ SUITES = {
             chapter("insert-while-loading", "the guest's game starts again and Insert is pressed "
                                             "on and off while the team's load screen is up: "
                                             "no crash, it joins (0.2.3: two games crashed)",
-                    {"guest": [RESTART, "team-ready", START,
+                    {"guest": [RESTART, "team-accept", "team-ready", START,
                                *["keys toggle", "wait 2"] * 8, "keys back",
                                "godmode", "wait-session 2 420", "wait 5", "expect-session 2",
                                "sync iwl-back"],

@@ -6,8 +6,10 @@
 // keeps one TeamLobby (bloodborne_world.h) and sends every signed-in player its LobbyState after a
 // change. Kaniel 2026-10-17: a team is only a session, kept in memory: a member whose game stays
 // gone for OfflineGraceMs leaves its team (Expire), and once every member's game is gone the team
-// is gone. The worlds are the server's, apart from the teams (any team plays any of them), and the
-// server keeps their list on disk (bloodborne_world.h).
+// is gone. Kaniel 2026-10-25: a member that leaves a session the others play on in (back at the
+// title, or its game gone for LeftGraceMs) is out of the team at once; the one hosting their
+// session leads, and the leaver comes back as a guest. The worlds are the server's, apart from the
+// teams (any team plays any of them), and the server keeps their list on disk (bloodborne_world.h).
 #pragma once
 
 #include <functional>
@@ -27,8 +29,14 @@ namespace BloodborneCoop {
 constexpr size_t TeamSize = 4;
 
 // Kaniel 2026-10-16: how long a member's game may stay gone (a crash and a restart) before the
-// member leaves its team; a team with nobody left is gone.
+// member leaves its team; a team with nobody left is gone. Kaniel 2026-10-25: only while nobody
+// else plays in its team (LeftGraceMs otherwise).
 constexpr s64 OfflineGraceMs = 10 * 60 * 1000;
+// Kaniel 2026-10-25: a member whose game is gone (its link quiet, about 3 s without a word, or
+// signed out) this long while another member still plays in their started team is out of it, as
+// one back at the title is at once: the others play on, led by whoever hosts their session now,
+// and it has a standing invite back as a guest.
+constexpr s64 LeftGraceMs = 2000;
 
 // Kaniel 2026-10-17: the server lists this many worlds (the last played); a new one past them puts
 // the least lately played aside.
@@ -135,15 +143,22 @@ public:
     // Names as a lookup compares them.
     static std::string Fold(std::string_view name);
 
-    // A player signed in (or said it now plays / is back at the title).
+    // A player signed in (or said it now plays / is back at the title). Kaniel 2026-10-25: back
+    // at the title while another member of its started team plays, it leaves that team (Depart).
     Outcome Arrive(const std::string& member, const std::string& name, bool playing);
     // Its game is gone. A team none of whose members is signed in any more is gone.
     Outcome Leave(const std::string& member);
-    // Members gone for OfflineGraceMs leave their teams. The clock of a member starts at the first
-    // call that finds it gone.
+    // Its game's link went quiet (or was heard again): gone, unless heard again in time.
+    void Quiet(const std::string& member, bool quiet, s64 now_ms);
+    // Members gone for LeftGraceMs while another member of their started team plays leave it
+    // (Depart); others gone (not signed in) for OfflineGraceMs leave their teams. The clock of a
+    // member not signed in starts at the first call that finds it gone.
     Outcome Expire(s64 now_ms);
     // `now_ms` counts wrong lookups (JOIN_CODE, INVITE_NAME).
     Outcome Request(const std::string& member, const bbcoop::TeamRequest& request, s64 now_ms = 0);
+    // Kaniel 2026-10-25: `member`'s game hosts its team's session now (it took the session's
+    // room): it leads its team.
+    Outcome Lead(const std::string& member);
 
     // What `member` sees.
     bbcoop::LobbyState StateFor(const std::string& member) const;
@@ -189,7 +204,17 @@ private:
     bbcoop::Team* FindTeam(const std::string& id);
     bbcoop::TeamMember* MemberIn(bbcoop::Team& team, const std::string& member);
     bbcoop::LobbyPlayer::State StateOf(const std::string& member) const;
+    // Playing, and its game not quiet.
+    bool Plays(const std::string& member) const;
+    // A member of `team` other than `member` plays.
+    bool OthersPlay(const bbcoop::Team& team, const std::string& member) const;
+    // A leader gone: the next member that plays leads, else the next one.
     void RemoveFrom(bbcoop::Team& team, const std::string& member);
+    // Kaniel 2026-10-25: out of a started team the others play on in, with a standing invite back
+    // from its leader.
+    Departure Depart(bbcoop::Team& team, const std::string& member);
+    // The invites to `team` come from its leader.
+    void InvitesFromLeader(const bbcoop::Team& team);
     void DropTeam(const std::string& id);
     bbcoop::TeamWorldInfo* FindWorld(const std::string& id);
     // The started team (not `except`) that plays `world`, if any.
@@ -234,6 +259,7 @@ private:
     std::map<std::string, std::vector<bbcoop::TeamInvite>> invites; // by invited member
     std::map<std::string, std::string> names; // every member's last known name
     std::map<std::string, s64> gone_since;    // team members not signed in, since when
+    std::map<std::string, s64> quiet_since;   // signed in, their games' links quiet since when
     // Amanises 2026-10-25: who asked to join each open team (by team id), in the order asked.
     std::map<std::string, std::vector<std::string>> asks;
     void DropAsksBy(const std::string& member);

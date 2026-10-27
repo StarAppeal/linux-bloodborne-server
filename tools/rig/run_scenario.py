@@ -300,6 +300,11 @@ def judge(spec: dict, texts: dict[str, str]) -> list[str]:
     steps, expected lines missing, forbidden lines seen, the shared enemy's HP and hits, and the
     known problems (check_party_log.py) it does not allow. Each problem starts with its role."""
     problems = []
+    # "expect_any": lines one of the roles' logs has, whichever (Kaniel 2026-10-25: the guest
+    # whose game takes the session when the host leaves is the room's pick).
+    for pattern in spec.get("expect_any", []):
+        if not any(re.search(pattern, text) for text in texts.values()):
+            problems.append(f"all: expected in one log, not seen: {pattern}")
     if handle := spec.get("same_hp"):
         for index in [*spec.get("same_hp_census", []), -1]:
             where = "last census" if index < 0 else f"census {index + 1}"
@@ -879,13 +884,17 @@ def team_prelude(role: str, roles: list[str], stage: int) -> list[str]:
     in teams, phase 6): the host makes it, invites the guests and starts it once they are in; each
     guest accepts and is ready. A game started again (a later stage) does the same: Kaniel
     2026-10-17, a team lives only while one of its games is there (the verbs pass at once when it
-    still does: team-create and team-accept are done in a team); a game alone plays alone."""
+    still does: team-create and team-accept are done in a team); a game alone plays alone. Kaniel
+    2026-10-25: a host whose game went while the others played is out of the team (a guest leads
+    it now) with an invite back: team-back takes it first (it passes in its team, and after a while
+    when the team is gone), and its team-start is then a guest's Ready."""
     if len(roles) == 1:
         return ["team-alone"]
     if role != "host":
         return ["team-accept", "team-ready"]
     invites = [f"team-invite {engines.ACCOUNTS[r]}" for r in roles if r != "host"]
-    return ["team-create", *invites, f"team-wait {len(roles)}", "team-start"]
+    again = ["team-back 20"] if stage > 0 else []
+    return [*again, "team-create", *invites, f"team-wait {len(roles)}", "team-start"]
 
 
 def with_team(script: list[str] | None, role: str, roles: list[str], stage: int,

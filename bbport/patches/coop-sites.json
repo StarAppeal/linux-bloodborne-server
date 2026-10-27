@@ -148,6 +148,8 @@
     {"name": "title load state", "feature": "team lobby", "kind": "hook", "offset": "0x0195B480", "original": "55 48 89 E5 41 57", "patched": "", "accepted": []},
     {"name": "title menu state", "feature": "team lobby", "kind": "hook", "offset": "0x0195AE80", "original": "55 48 89 E5 41 57", "patched": "", "accepted": []},
     {"name": "network banner", "feature": "no multiplayer banners", "kind": "hook", "offset": "0x01BFFE80", "original": "55 48 89 E5 41 57 41 56", "patched": "", "accepted": []},
+    {"name": "member left notice", "feature": "no multiplayer banners", "kind": "hook", "offset": "0x0178B0E0", "original": "55 48 89 E5 41 57 41 56", "patched": "", "accepted": []},
+    {"name": "session lost window", "feature": "no multiplayer banners", "kind": "hook", "offset": "0x0138A602", "original": "F6 80 05 0A 00 00 01", "patched": "", "accepted": []},
     {"name": "name by online id switch", "feature": "character names", "kind": "patch", "offset": "0x01AE8713", "original": "75 14", "patched": "90 90", "accepted": []},
     {"name": "name by online id option", "feature": "character names", "kind": "patch", "offset": "0x01AE8727", "original": "74 5C", "patched": "EB 5C", "accepted": []},
     {"name": "item get popup", "feature": "silent key items", "kind": "hook", "offset": "0x016D8850", "original": "55 48 89 E5 41 57 41 56", "patched": "", "accepted": []},

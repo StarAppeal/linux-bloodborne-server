@@ -112,6 +112,10 @@ struct AutoplayRun {
     std::optional<std::chrono::steady_clock::time_point> effects_until;
     std::optional<std::chrono::steady_clock::time_point> effects_logged;
     std::vector<s32> effects_seen;
+    // quit-title: back to the title phase; its steps wait until the title menu is up and the
+    // lobby has heard of it (title_visits: the title menu's visits when it quit).
+    bool leaving_world = false;
+    u64 title_visits = 0;
 };
 std::mutex autoplay_mutex;
 AutoplayRun autoplay_run;
@@ -1241,6 +1245,23 @@ bool AutoplayCutLink(const AutoplayStep& step) {
     const double seconds = step.Number(0, 3.0);
     Libraries::Net::CutServerLinkForTest(static_cast<u32>(seconds * 1000.0));
     LOG_INFO(Debug, "Bloodborne autoplay: connection cut for {:.0f} s", seconds);
+    return true;
+}
+
+// quit-title (Kaniel 2026-10-25): the System menu's Exit Game answered Yes, as a player quits to
+// the title: the script's next steps are the title's (team-*, title-*), then the world's again
+// after the next load (TickAutoplay moves the script to the title phase).
+bool AutoplayQuitTitle(const AutoplayStep& step) {
+    // lea rax, [rip + ...]: the function's first instruction in 1.09.
+    constexpr std::array<u8, 3> First{0x48, 0x8D, 0x05};
+    const u64 at = image_base + QuitGameConfirmedOffset;
+    if (!HasMemoryAccess(at, First.size(), MemoryProt::CpuRead) ||
+        std::memcmp(reinterpret_cast<const void*>(at), First.data(), First.size()) != 0) {
+        step.failure = "the game's quit is not where 1.09 has it";
+        return false;
+    }
+    reinterpret_cast<void PS4_SYSV_ABI (*)(u64)>(at)(0);
+    LOG_INFO(Debug, "Bloodborne autoplay: quit to the title (the System menu's Exit Game)");
     return true;
 }
 
@@ -2458,6 +2479,7 @@ constexpr auto AutoplayVerbs = std::to_array<std::pair<std::string_view, Autopla
     {"team-create", AutoplayTeamVerb},
     {"team-invite", AutoplayTeamVerb},
     {"team-accept", AutoplayTeamVerb},
+    {"team-back", AutoplayTeamVerb},
     {"team-wait", AutoplayTeamVerb},
     {"team-leave", AutoplayTeamVerb},
     {"team-screen", AutoplayTeamVerb},
@@ -2488,6 +2510,7 @@ constexpr auto AutoplayVerbs = std::to_array<std::pair<std::string_view, Autopla
     {"expect-held", AutoplayExpectHeld},
     {"wait-trade", AutoplayWaitTrade},
     {"cut-link", AutoplayCutLink},
+    {"quit-title", AutoplayQuitTitle},
 });
 
 // Runs one script command for this tick: true once it is done, `failure` set if it failed.
@@ -2617,6 +2640,11 @@ void TickAutoplay() {
         ++autoplay_run.next;
         autoplay_run.step_started = std::chrono::steady_clock::now();
         autoplay_run.step_begun = false;
+        if (command.verb == "quit-title") {
+            autoplay_run.phase = AutoplayRun::Phase::Title;
+            autoplay_run.leaving_world = true;
+            autoplay_run.title_visits = Coop::TeamTitleVisits();
+        }
     }
 }
 
@@ -2631,6 +2659,29 @@ void TickAutoplayTitle() {
         return;
     }
     const auto now = std::chrono::steady_clock::now();
+    if (autoplay_run.leaving_world) {
+        // quit-title: the world goes first, then the title menu comes up and the lobby hears of
+        // it (its team steps read the lobby's answer, not its state from the world).
+        if (AutoplayInWorld()) {
+            autoplay_buttons.store(0);
+            return;
+        }
+        if (Coop::TeamTitleVisits() == autoplay_run.title_visits) {
+            // The title's splash: Cross now and then until its menu is up.
+            const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                now - autoplay_run.step_started);
+            autoplay_buttons.store(
+                TitlePressesCross(static_cast<u64>(ms.count())) ? AutoplayButton("cross") : 0);
+            return;
+        }
+        if (Coop::TeamLobbySaysPlaying()) {
+            autoplay_buttons.store(0);
+            return;
+        }
+        autoplay_run.leaving_world = false;
+        autoplay_run.started = now; // the title's Cross times from here
+        LOG_INFO(Debug, "Bloodborne autoplay: back at the title");
+    }
     if (AutoplayInWorld()) {
         autoplay_run.phase = AutoplayRun::Phase::World;
         autoplay_run.step_started = now;

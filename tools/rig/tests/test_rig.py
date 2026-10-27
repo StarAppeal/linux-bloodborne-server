@@ -40,6 +40,8 @@ VERBS = {
     "sync", "chapter", "keep-going", "glide",  # the suites' (suites.py)
     "return-point",
     "team-create", "team-invite", "team-accept", "team-wait", "team-leave",  # the lobby's
+    "team-back",  # Kaniel 2026-10-25: a game started again back into its team (its invite back)
+    "quit-title",  # the System menu's Exit Game: back to the title in the same game
     "team-screen", "team-ready", "team-start", "team-alone",  # the team screen's buttons
     "team-worlds",  # its world list
     "title-press", "title-wait", "title-shot", "title-keys", "keys",  # the port's menu keys
@@ -402,9 +404,12 @@ class TeamTest(unittest.TestCase):
     def test_a_restarted_game_makes_or_finds_its_team(self):
         # Kaniel 2026-10-17: a team lives only while one of its games is there, so a game started
         # again does the whole prelude (team-create and team-accept pass at once in a team).
+        # Kaniel 2026-10-25: a host whose game went while the others played is out of the team
+        # (a guest leads it now) and has an invite back: team-back takes it, or passes in its team
+        # (it left last), or after a while (the team is gone) lets it make one again.
         roles = ["host", "guest"]
         self.assertEqual(run_scenario.team_prelude("host", roles, 1),
-                         run_scenario.team_prelude("host", roles, 0))
+                         ["team-back 20", *run_scenario.team_prelude("host", roles, 0)])
         self.assertEqual(run_scenario.team_prelude("guest", roles, 2), ["team-accept", "team-ready"])
 
     def test_a_game_alone_plays_alone(self):

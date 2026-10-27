@@ -1547,6 +1547,33 @@ bool PS4_SYSV_ABI SkipNetworkBanner(u64, const GuestRegisterSnapshot* registers)
     return true;
 }
 
+// See MemberLeftNoticeOffset: no notice of a member that left in a party (it held the pad).
+bool PS4_SYSV_ABI SkipMemberLeftNotice(u64, const GuestRegisterSnapshot*) {
+    static std::atomic<u32> logged{0};
+    if (logged.fetch_add(1) < 50) {
+        LOG_INFO(Debug, "Bloodborne party: a left member's notice not shown");
+    }
+    return true;
+}
+
+// See SessionLostTestOffset: FrpgNetMan as the "Session lost." window's test reads it, with the
+// bit that skips the window set.
+struct SessionLostStandIn {
+    alignas(16) std::array<u8, 0xA10> bytes{};
+    SessionLostStandIn() {
+        bytes[0xA05] = 1;
+    }
+};
+const SessionLostStandIn session_lost_stand_in;
+
+void PS4_SYSV_ABI SkipSessionLostWindow(u64, GuestRegisterSnapshot* registers) {
+    registers->rax = reinterpret_cast<u64>(session_lost_stand_in.bytes.data());
+    static std::atomic<u32> logged{0};
+    if (logged.fetch_add(1) < 20) {
+        LOG_INFO(Debug, "Bloodborne party: the session's end shows no \"Session lost.\" window");
+    }
+}
+
 // See LanCutErrorOffset: the network script's lost-connection error does nothing in a party.
 bool PS4_SYSV_ABI SkipLanCutError(u64, const GuestRegisterSnapshot*) {
     static std::atomic<u32> logged{0};
@@ -1628,7 +1655,12 @@ void InstallNoMultiplayerBanners(u64 base, u64 image_size) {
         return;
     }
     if (!InstallCoopHook(reinterpret_cast<void*>(base + ShowNetworkBannerOffset),
-                         ShowNetworkBannerPrologue, 0, GuestFunctionOverride{SkipNetworkBanner})) {
+                         ShowNetworkBannerPrologue, 0, GuestFunctionOverride{SkipNetworkBanner}) ||
+        !InstallCoopHook(reinterpret_cast<void*>(base + MemberLeftNoticeOffset),
+                         MemberLeftNoticePrologue, 0,
+                         GuestFunctionOverride{SkipMemberLeftNotice}) ||
+        !InstallCoopHook(reinterpret_cast<void*>(base + SessionLostTestOffset), SessionLostTest, 0,
+                         SkipSessionLostWindow)) {
         coop_features.Skipped("no multiplayer banners", "the hook did not go in");
         return;
     }

@@ -852,6 +852,11 @@ void LinkServer::Apply(const ServerLink::Hub::Result& result) {
         m_socket->writeDatagram(send.datagram, QHostAddress(send.to.ipv4), send.to.port);
     for (const auto& line : result.log)
         qInfo().noquote() << line;
+    // Kaniel 2026-10-25: a game gone a few seconds leaves its started team (the world's lobby).
+    for (const auto& quiet : result.quiet)
+        m_world.Quiet(quiet, true, QDateTime::currentMSecsSinceEpoch());
+    for (const auto& back : result.back)
+        m_world.Quiet(back, false, QDateTime::currentMSecsSinceEpoch());
     for (const auto& gone : result.gone) {
         Apply(m_world.Forget(gone));
         if (const auto found = m_linkAddress.constFind(gone.Key());

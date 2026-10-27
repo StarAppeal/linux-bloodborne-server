@@ -114,6 +114,9 @@ bool team_world_due = false;
 bool team_world_taken = false;
 std::set<u32> team_world_blocks;
 bool team_host = false;
+// Kaniel 2026-10-25: this game took the team's host role in play (BecomeTeamHost: the host left);
+// see TeamHostTookOver.
+std::atomic<bool> took_over{false};
 bool personal_world_due = false;
 WorldFlags team_world_reported;
 s64 team_world_reported_ms = 0;
@@ -1736,6 +1739,7 @@ void LeaveTeamInPlay(u64 manager) {
         team_load = {};
         team_gate.DropStart();
         left_team_in_play = true;
+        took_over.store(false, std::memory_order_relaxed);
     }
     {
         std::scoped_lock lock{stream_mutex};
@@ -1860,6 +1864,97 @@ void AdoptTeamInPlay(const bbcoop::TeamStart& start) {
     TeamMenu(false, false);
 }
 
+// The team's host now: this game, from the TakeHost of the session's room or the lobby's lead.
+// Its save is the team's world from here on (it took the team's at its loads): it reports it, and
+// its loads never take the server's copy back over its own.
+void BecomeTeamHost() {
+    {
+        std::scoped_lock lock{team_mutex};
+        team_host = true;
+        team_world_reported = {};
+        team_world_reported_ms = 0;
+    }
+    took_over.store(true, std::memory_order_relaxed);
+    // Its character a live player's (type 0, the host's team): a guest's game plays a white
+    // phantom (type 1, the co-op guests' team 20, bloodborne_party.h CharacterTeamOffset), and
+    // a phantom's hits on the enemies are its host's to apply (rig 2026-10-25, host-quits-title:
+    // the new host's hits never landed). SetChrType, the event binding, sets the type and the
+    // team that goes with it.
+    constexpr s32 CoopGuestTeam = 20;
+    const u64 player = GetLocalPlayer();
+    if (player < 0x10000 ||
+        !HasMemoryAccess(player, CharacterTeamOffset + 4, MemoryProt::CpuRead)) {
+        return;
+    }
+    const s32 type = ReadValue<s32>(player, 0x78);
+    const s32 team = ReadValue<s32>(player, CharacterTeamOffset);
+    if (type == 0 && team != CoopGuestTeam) {
+        return;
+    }
+    reinterpret_cast<void PS4_SYSV_ABI (*)(u64, s32, s32)>(image_base + SetChrTypeOffset)(
+        0, LocalPlayerEntity, 0);
+    LOG_INFO(Debug,
+             "Co-op team play: this host's character is a live player's now (type {} team {} "
+             "-> type {} team {})",
+             type, team, ReadValue<s32>(player, 0x78), ReadValue<s32>(player, CharacterTeamOffset));
+}
+
+// Kaniel 2026-10-25: the host left (back at the title, or its game gone) and the lobby made this
+// guest the leader. Out of any session (the others left, so it left the session alone in it, or it
+// stood apart), it takes the host's role where it stands and opens the team's session (TeamJoin's
+// host steps); in another member's session it waits: that one's game took the room (TakeHost),
+// and the lead goes to it.
+void LeadTeamInPlay(u64 manager) {
+    static bool waiting_logged = false;
+    if (ReadValue<s32>(manager, 0x124) != 0) {
+        if (!waiting_logged) {
+            waiting_logged = true;
+            LOG_INFO(Debug, "Co-op team play: this guest leads the team now; it hosts once out of "
+                            "its session");
+        }
+        return;
+    }
+    waiting_logged = false;
+    BecomeTeamHost();
+    {
+        std::scoped_lock lock{team_mutex};
+        team_join = {};
+    }
+    if (party_controller) {
+        party_controller->Assign(PartyRole::Host);
+    }
+    RequestServerHello();
+    LOG_INFO(Debug, "Co-op team play: this guest leads the team now: it hosts the team's session "
+                    "where it stands");
+}
+
+// Kaniel 2026-10-25: this game hosts a session of its own, but another member leads and the
+// server keeps that one's session as the team's (two guests took over at once when their host
+// left): a guest again, it leaves its own session and joins the leader's (TeamJoin's Join).
+void FollowLeaderInPlay(u64 manager) {
+    std::string leader;
+    {
+        std::scoped_lock lock{team_mutex};
+        team_host = false;
+        team_join = {};
+        leader = team_session ? team_session->host() : std::string{};
+    }
+    took_over.store(false, std::memory_order_relaxed);
+    if (party_controller) {
+        party_controller->Assign(PartyRole::Guest);
+    }
+    const s32 matching = ReadValue<s32>(manager, 0x124);
+    if (matching != 0) {
+        reinterpret_cast<void PS4_SYSV_ABI (*)(u64)>(image_base +
+                                                     MultiPlayStopRequestOffset)(manager);
+    }
+    RequestServerHello();
+    LOG_INFO(Debug,
+             "Co-op team play: {} leads and hosts the team's session: this game is its guest "
+             "again ({})",
+             leader, matching != 0 ? "left its own session" : "no session to leave");
+}
+
 void TickTeamPlay(u64 manager) {
     TeamPlayStep step = TeamPlayStep::None;
     std::optional<bbcoop::TeamStart> start;
@@ -1870,13 +1965,19 @@ void TickTeamPlay(u64 manager) {
         }
         const auto& lobby = team_gate.Lobby();
         start = team_gate.Start();
+        const std::string session_host =
+            team_session && !team_session->join().empty() ? team_session->host() : std::string{};
         step = TeamPlayStepOf(lobby ? &*lobby : nullptr, team_party, start ? &*start : nullptr,
-                              lobby_member);
+                              lobby_member, team_host, session_host);
     }
     if (step == TeamPlayStep::Leave) {
         LeaveTeamInPlay(manager);
     } else if (step == TeamPlayStep::Adopt) {
         AdoptTeamInPlay(*start);
+    } else if (step == TeamPlayStep::Lead) {
+        LeadTeamInPlay(manager);
+    } else if (step == TeamPlayStep::Follow) {
+        FollowLeaderInPlay(manager);
     }
 }
 
@@ -1897,11 +1998,41 @@ void TeamChoose(TeamGate::Choice choice) {
     }
 }
 
+std::atomic<u64> title_visits{0};
+
+bool TeamHostTookOver() {
+    return took_over.load(std::memory_order_relaxed);
+}
+
+u64 TeamTitleVisits() {
+    return title_visits.load(std::memory_order_relaxed);
+}
+
+bool TeamLobbySaysPlaying() {
+    std::scoped_lock lock{team_mutex};
+    const auto& lobby = team_gate.Lobby();
+    return lobby && lobby->has_team() &&
+           std::ranges::any_of(lobby->team().members(), [](const bbcoop::TeamMember& m) {
+               return m.member() == lobby_member && m.state() == bbcoop::LobbyPlayer::PLAYING;
+           });
+}
+
 void TeamBackAtTitle() {
+    title_visits.fetch_add(1, std::memory_order_relaxed);
+    took_over.store(false, std::memory_order_relaxed);
     if (!team_switch) {
         return;
     }
+    {
+        // Kaniel 2026-10-25: back at the title while its team plays, a member is out of the team
+        // and out of its world on the server (TakeOutOfTeam): its next Start, the same team's
+        // party or not, says the party's hello again (rig host-quits-title: the old host's game
+        // loaded as a guest and never joined).
+        std::scoped_lock lock{stream_mutex};
+        hello_party.clear();
+    }
     std::scoped_lock lock{team_mutex};
+    team_party.clear();
     if (lobby_playing || team_gate.Holding()) {
         team_gate.Reset();
         lobby_playing = false;
@@ -2023,6 +2154,7 @@ bool TickTeamJoin(bool ready) {
         // tick says the session to the server (Publish) for anyone joining later.
         WriteValue(manager, 0x124, s32{MatchingStateHosting});
         WriteValue(manager, 0x120, s32{4});
+        BecomeTeamHost();
         if (party_controller) {
             party_controller->Assign(PartyRole::Host);
         }
@@ -2077,7 +2209,12 @@ void EndTeamResume() {
 
 std::string TeamStartHost() {
     std::scoped_lock lock{team_mutex};
-    return team_gate.Start() ? team_gate.Start()->host() : std::string{};
+    if (!team_gate.Start()) {
+        return {};
+    }
+    // Kaniel 2026-10-25: the team's host now (the lead follows the session's host).
+    const auto& lobby = team_gate.Lobby();
+    return TeamHostOf(lobby ? &*lobby : nullptr, *team_gate.Start());
 }
 
 void RefuseServerResumePoint() {
@@ -2597,10 +2734,18 @@ bool RunTeamTitleVerb(const AutoplayCommand& command, bool begun, double elapsed
                 done = listed;
             }
         }
-    } else if (command.verb == "team-accept") {
+    } else if (command.verb == "team-accept" || command.verb == "team-back") {
+        // team-back [seconds] (Kaniel 2026-10-25): a game started again goes back into its team:
+        // still in it (it left last), or by the invite back its team's new leader holds for it;
+        // after `seconds` (20) with neither, on (the team is gone: the next steps make one).
         done = lobby && lobby->has_team();
         if (!done && lobby && lobby->invites_size() > 0) {
             request(bbcoop::TeamRequest::ACCEPT, {}, lobby->invites(0).team());
+        }
+        if (!done && command.verb == "team-back" &&
+            elapsed > (command.args.empty() ? 20.0 : std::atof(command.args[0].c_str()))) {
+            LOG_INFO(Debug, "Co-op team lobby: team-back: no team and no invite back, on");
+            return true;
         }
     } else if (IsTeamScreenVerb(command.verb)) {
         if (!TeamScreenUp()) {

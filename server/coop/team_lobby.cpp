@@ -292,6 +292,16 @@ void TeamLobby::SetWorlds(std::vector<bbcoop::TeamWorldInfo> list) {
     std::ranges::stable_sort(worlds, LaterFirst);
 }
 
+bool TeamLobby::Plays(const std::string& member) const {
+    return StateOf(member) == bbcoop::LobbyPlayer::PLAYING && !quiet_since.contains(member);
+}
+
+bool TeamLobby::OthersPlay(const bbcoop::Team& team, const std::string& member) const {
+    return std::ranges::any_of(team.members(), [&](const bbcoop::TeamMember& m) {
+        return m.member() != member && Plays(m.member());
+    });
+}
+
 void TeamLobby::RemoveFrom(bbcoop::Team& team, const std::string& member) {
     auto* members = team.mutable_members();
     members->erase(
@@ -299,11 +309,60 @@ void TeamLobby::RemoveFrom(bbcoop::Team& team, const std::string& member) {
                        [&](const bbcoop::TeamMember& m) { return m.member() == member; }),
         members->end());
     if (team.leader() == member && !members->empty()) {
-        team.set_leader(members->begin()->member());
+        const auto plays = std::ranges::find_if(
+            *members, [this](const bbcoop::TeamMember& m) { return Plays(m.member()); });
+        team.set_leader(plays != members->end() ? plays->member() : members->begin()->member());
+        InvitesFromLeader(team);
     }
     GiveSigns(team);
     if (members->empty()) {
         DropTeam(team.id());
+    }
+}
+
+TeamLobby::Departure TeamLobby::Depart(bbcoop::Team& team, const std::string& member) {
+    Departure out{member, team.id(), team.party()};
+    RemoveFrom(team, member);
+    gone_since.erase(member);
+    quiet_since.erase(member);
+    if (bbcoop::Team* still = FindTeam(out.team)) {
+        auto& list = invites[member];
+        std::erase_if(list, [&](const bbcoop::TeamInvite& i) { return i.team() == out.team; });
+        bbcoop::TeamInvite& invite = list.emplace_back();
+        invite.set_team(out.team);
+        invite.set_from(still->leader());
+        invite.set_from_name(names[still->leader()]);
+    }
+    return out;
+}
+
+void TeamLobby::InvitesFromLeader(const bbcoop::Team& team) {
+    for (auto& [to, list] : invites) {
+        for (bbcoop::TeamInvite& invite : list) {
+            if (invite.team() == team.id()) {
+                invite.set_from(team.leader());
+                invite.set_from_name(names[team.leader()]);
+            }
+        }
+    }
+}
+
+TeamLobby::Outcome TeamLobby::Lead(const std::string& member) {
+    bbcoop::Team* team = const_cast<bbcoop::Team*>(TeamOf(member));
+    if (!team || team->leader() == member) {
+        return {};
+    }
+    team->set_leader(member);
+    GiveSigns(*team);
+    InvitesFromLeader(*team);
+    return {.changed = true};
+}
+
+void TeamLobby::Quiet(const std::string& member, bool quiet, s64 now_ms) {
+    if (!quiet) {
+        quiet_since.erase(member);
+    } else if (players.contains(member)) {
+        quiet_since.try_emplace(member, now_ms);
     }
 }
 
@@ -312,6 +371,7 @@ void TeamLobby::DropTeam(const std::string& team_id) {
     if (const bbcoop::Team* team = FindTeam(id)) {
         for (const bbcoop::TeamMember& m : team->members()) {
             gone_since.erase(m.member());
+            quiet_since.erase(m.member());
         }
     }
     std::erase_if(teams, [&](const bbcoop::Team& t) { return t.id() == id; });
@@ -371,6 +431,7 @@ TeamLobby::Outcome TeamLobby::Arrive(const std::string& member, const std::strin
     Changed();
     const bool arrived = !players.contains(member);
     gone_since.erase(member);
+    quiet_since.erase(member); // heard
     Player& player = players[member];
     // Phase 11: the character's name, when the game says one (playing); else the last one said.
     std::string& known = names[member];
@@ -404,6 +465,7 @@ TeamLobby::Outcome TeamLobby::Arrive(const std::string& member, const std::strin
             worlds_changed = AddCharacter(*world, name);
         }
     }
+    std::vector<Departure> departed;
     if (was_playing && !playing) {
         // Back at the title: not ready any more (its game loads nothing now).
         for (bbcoop::Team& team : teams) {
@@ -411,9 +473,16 @@ TeamLobby::Outcome TeamLobby::Arrive(const std::string& member, const std::strin
                 m->set_ready(false);
             }
         }
+        // Kaniel 2026-10-25: and out of a started team another member still plays in.
+        if (bbcoop::Team* team = const_cast<bbcoop::Team*>(TeamOf(member));
+            team && team->started() && OthersPlay(*team, member)) {
+            departed.push_back(Depart(*team, member));
+        }
     }
     Settle();
-    return {.changed = changed || worlds_changed, .worlds_changed = worlds_changed};
+    return {.changed = changed || worlds_changed || !departed.empty(),
+            .departed = std::move(departed),
+            .worlds_changed = worlds_changed};
 }
 
 TeamLobby::Outcome TeamLobby::Leave(const std::string& member) {
@@ -445,21 +514,35 @@ TeamLobby::Outcome TeamLobby::Leave(const std::string& member) {
 
 TeamLobby::Outcome TeamLobby::Expire(s64 now_ms) {
     Changed();
-    std::vector<std::string> expired;
+    std::vector<std::string> left;    // out of a team the others play on in
+    std::vector<std::string> expired; // gone the whole grace
     for (const bbcoop::Team& team : teams) {
         for (const bbcoop::TeamMember& m : team.members()) {
-            if (players.contains(m.member())) {
+            const bool signed_in = players.contains(m.member());
+            const auto quiet = quiet_since.find(m.member());
+            if (signed_in && quiet == quiet_since.end()) {
                 continue;
             }
-            const s64 since = gone_since.try_emplace(m.member(), now_ms).first->second;
-            if (now_ms - since >= OfflineGraceMs) {
+            const s64 gone =
+                signed_in ? 0 : gone_since.try_emplace(m.member(), now_ms).first->second;
+            const s64 since = quiet != quiet_since.end() ? quiet->second : gone;
+            if (team.started() && OthersPlay(team, m.member()) && now_ms - since >= LeftGraceMs) {
+                left.push_back(m.member());
+            } else if (!signed_in && now_ms - gone >= OfflineGraceMs) {
                 expired.push_back(m.member());
             }
+        }
+    }
+    Outcome outcome;
+    for (const std::string& member : left) {
+        if (bbcoop::Team* team = const_cast<bbcoop::Team*>(TeamOf(member))) {
+            outcome.departed.push_back(Depart(*team, member));
         }
     }
     for (const std::string& member : expired) {
         gone_since.erase(member);
         if (bbcoop::Team* team = const_cast<bbcoop::Team*>(TeamOf(member))) {
+            outcome.departed.push_back({member, team->id(), team->party()});
             RemoveFrom(*team, member);
         }
     }
@@ -467,11 +550,12 @@ TeamLobby::Outcome TeamLobby::Expire(s64 now_ms) {
         return std::ranges::all_of(tries.second,
                                    [&](s64 at) { return now_ms - at >= LookupWindowMs; });
     });
-    if (expired.empty()) {
+    if (outcome.departed.empty()) {
         return {};
     }
     Settle();
-    return {.changed = true};
+    outcome.changed = true;
+    return outcome;
 }
 
 TeamLobby::Outcome TeamLobby::Request(const std::string& member, const bbcoop::TeamRequest& request,

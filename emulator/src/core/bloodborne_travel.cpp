@@ -2088,6 +2088,18 @@ bool PS4_SYSV_ABI KeepMatchingDuringTrip(u64, const GuestRegisterSnapshot* regis
         LOG_INFO(Debug, "Bloodborne party: a world reload (time of day) is a trip once it loads");
     }
     if (!PartyTripActive()) {
+        // Kaniel 2026-10-25: a game that took its team's host role in play (the host left) keeps
+        // its session when a member goes irregularly: NetSync's update ends the session then
+        // (its timer after "OnIrregularLeaveSession", the call returning here), and the old
+        // host's world this game plays in ended each session it opened again as the members that
+        // left it went (rig host-quits-title3: the new host's sessions closed 15 times, nobody
+        // joined).
+        constexpr u64 IrregularLeaveStopReturn = 0x0178A6C3;
+        if (return_address == image_base + IrregularLeaveStopReturn && TeamHostTookOver()) {
+            LOG_INFO(Debug, "Bloodborne party: kept the team's session this game hosts now (a "
+                            "member's irregular leave would end it)");
+            return true;
+        }
         if (party_controller && InPartySession()) {
             LogGameCallChainAt("CSMultiPlayMan StopRequest", registers->rsp);
         }

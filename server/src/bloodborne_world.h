@@ -241,6 +241,9 @@ public:
     // Invasions: the party a hostile visitor's link visits, empty when it visits none (the hub's
     // teams: it shares the visited party's routing).
     QString VisitingOf(const ServerLink::Endpoint& link) const;
+    // Kaniel 2026-10-25: a link went quiet, or was heard again (the hub's): a team member whose
+    // games are all quiet is gone for the lobby (TeamLobby::Quiet).
+    void Quiet(const ServerLink::Endpoint& link, bool quiet, qint64 now_ms);
     // The party a link's game said in its hello, empty before one (phase 7: the hub's teams).
     QString PartyOf(const ServerLink::Endpoint& link) const;
     // Amanises 2026-10-25: how long a member cut from its team still says goodbye to it (only the
@@ -388,6 +391,7 @@ private:
         bool enemy_owner = false;
         std::string lobby;        // its name in the team lobby, empty before its lobby hello
         bool lobby_again = false; // its game started over: its next lobby hello is a first one
+        bool quiet = false;       // its link is quiet (the hub's)
         std::uint32_t map = 0;    // the map it last said (0: loading, or none yet)
         // Kaniel 2026-10-16: the team world it was taken out of (removed from the team, or left
         // it): no game packet goes between it and that party until its next hello.
@@ -509,6 +513,11 @@ private:
                        Result& result);
     // What goes when a guest leaves its party's world (its game said so, or its team let it go).
     void ForgetMember(PartyWorld& world, const std::string& name, qint64 now_ms, Result& result);
+    // Every member an outcome took out of its team (TakeOutOfTeam).
+    void TakeOutOfTeams(const BloodborneCoop::TeamLobby::Outcome& outcome, qint64 now_ms,
+                        Result& result);
+    // Kaniel 2026-10-25: a team member whose game hosts its team's session (`world`'s) leads.
+    void LeadBySession(const PartyWorld& world, const std::string& host, Result& result);
     void SendLobby(qint64 now_ms);
     // Amanises 2026-10-25: what a signed-in member sees (the lobby's state, its friends added),
     // the friend requests and searches (TeamRequest FRIEND_* and SEARCH), and one player's state

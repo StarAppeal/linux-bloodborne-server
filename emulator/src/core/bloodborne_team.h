@@ -109,6 +109,11 @@ private:
 //    the team's session where it stands and plays on alone, in its own world (no reload).
 //  - Adopt: playing alone, the Start of the team it is ready in came (it joined the hunt from the
 //    menu): it takes the team's party, and joins the session in place (TeamJoin).
+//  - Lead (Kaniel 2026-10-25): it plays in the team as a guest (not `hosts`) and the lobby made it
+//    the leader (the host left): it takes the host's role.
+//  - Follow (Kaniel 2026-10-25): it hosts, another member leads and that leader's session is the
+//    team's (`session_host`, as the server last said; two guests took over at once): it leaves
+//    its own session and joins the leader's as a guest.
 // The team menu closed (TeamMenu): opened from the game's System page, the pad presses Circle from
 // AfterMs after for HoldMs so that page closes too; opened from the port's Insert menu, nothing.
 class TeamMenuBack {
@@ -127,9 +132,13 @@ private:
     std::optional<s64> closed_ms;
 };
 
-enum class TeamPlayStep { None, Adopt, Leave };
+enum class TeamPlayStep { None, Adopt, Leave, Lead, Follow };
 TeamPlayStep TeamPlayStepOf(const bbcoop::LobbyState* lobby, std::string_view party,
-                            const bbcoop::TeamStart* start, const std::string& me = {});
+                            const bbcoop::TeamStart* start, const std::string& me = {},
+                            bool hosts = true, std::string_view session_host = {});
+// Kaniel 2026-10-25: the team's host now: its leader (the server's lobby makes the member hosting
+// the session the leader) when the lobby speaks of the Start's team, else the Start's host.
+std::string TeamHostOf(const bbcoop::LobbyState* lobby, const bbcoop::TeamStart& start);
 // The menu's "Join the hunt" in game: the invitation to `invite_team` accepted first (when in no
 // team), then this save ready with its slot and character; the leader's starts the team too.
 // Kaniel 2026-10-16: the leader's also picks `world`, this save's world ("" a new one).
