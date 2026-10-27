@@ -303,6 +303,27 @@ class GuestsEnterChaliceDungeons(unittest.TestCase):
         self.assertEqual(count, 1)
 
 
+class ChaliceBossesUnlockEachPlayersShop(unittest.TestCase):
+    """seixas 2026-10-27: a team beat the Keeper of the Old Lords in the Central Pthumeru Chalice
+    twice, but the Bath shop never sold the Bone Ash set. The story layouts start m29 event
+    12906824 (m29_20_90_00: the layer 2 boss flag 12901801, then 5090 Bone Ash; m29_31_90_00:
+    5091 Madman), which sets the shop flag once the boss flag is on. The shop flags are each
+    player's own (5000-5299), so the other player's "set" is ignored; kept in step, the first
+    game to run the event ended it in the other's, which then never set its own flag."""
+
+    CHALICE = 'm29.emevd.dcx'
+    UNLOCK = [(3, 0, struct.pack('<BBxxi', 0, 1, 0)),
+              (2003, 2, struct.pack('<iBxxx', 0, 1))]
+
+    def test_the_shop_unlock_runs_in_each_players_own_game(self):
+        original = build_emevd({12906824: self.UNLOCK}, {12906824: [(0, 4, 0, 4), (1, 0, 4, 4)]})
+        patched, count = tool.make_events_local(original, tool.LOCAL_EVENTS[self.CHALICE])
+        self.assertEqual(count, 1)
+        self.assertEqual(read_events(patched)[12906824][0], (2000, 2, bytes(4)))
+        self.assertEqual(read_events(patched)[12906824][1:], read_events(original)[12906824])
+        self.assertEqual(parameters_of(patched, 12906824), [(1, 4, 0, 4), (2, 0, 4, 4)])
+
+
 class NoFogWallsInChaliceDungeons(unittest.TestCase):
     """Kaniel 2026-10-19: a fog wall stood at the start of a chalice dungeon in a party. The chalice
     maps' event 12907600 (m29, started per block with its wall object and fog) is the common
