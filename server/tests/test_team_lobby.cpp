@@ -1110,6 +1110,101 @@ int TheLeaderPicksTheTeamsDeathMode() {
   return 0;
 }
 
+// Amanises 2026-10-25, open teams (matchmaking): a leader lists its team, a
+// player in no team sees it and asks to join (one ask at a time), the leader
+// takes it in or says no.
+int OpenTeamsAreAskedToJoin() {
+  TeamLobby lobby = NewLobby();
+  lobby.Arrive("a", "Kaniel", false);
+  lobby.Arrive("b", "Ada", false);
+  lobby.Arrive("c", "Bo", false);
+  lobby.Request("a", Request(Action::CREATE));
+  const std::string team = lobby.TeamOf("a")->id();
+  CHECK(lobby.StateFor("b").team_size() == 4);
+  // Not open: not listed, and not asked.
+  CHECK(lobby.StateFor("b").open_teams_size() == 0);
+  CHECK(
+      !lobby.Request("b", Request(Action::ASK_JOIN, {}, team)).notice.empty());
+  // Only the leader opens it.
+  lobby.Request("a", Request(Action::INVITE, "c"));
+  lobby.Request("c", Request(Action::ACCEPT, {}, team));
+  bbcoop::TeamRequest open = Request(Action::OPEN);
+  open.set_join(bbcoop::Team::ASK);
+  CHECK(!lobby.Request("c", open).notice.empty());
+  CHECK(lobby.Request("a", open).changed);
+  CHECK(lobby.StateFor("a").team().join() == bbcoop::Team::ASK);
+  bbcoop::LobbyState b = lobby.StateFor("b");
+  CHECK(b.open_teams_size() == 1 && b.open_teams(0).team() == team);
+  CHECK(b.open_teams(0).leader_name() == "Kaniel" &&
+        b.open_teams(0).members() == 2);
+  CHECK(!b.open_teams(0).asked());
+  // Asked: the leader sees it, the asker sees it asked; a member that is no
+  // leader cannot answer.
+  CHECK(lobby.Request("b", Request(Action::ASK_JOIN, {}, team)).changed);
+  CHECK(lobby.StateFor("b").open_teams(0).asked());
+  bbcoop::LobbyState a = lobby.StateFor("a");
+  CHECK(a.asks_size() == 1 && a.asks(0).member() == "b" &&
+        a.asks(0).name() == "Ada");
+  CHECK(lobby.StateFor("c").asks_size() == 0);
+  CHECK(!lobby.Request("c", Request(Action::ASK_ACCEPT, "b")).notice.empty());
+  // Declined: gone; asked again and taken back: gone.
+  CHECK(lobby.Request("a", Request(Action::ASK_DECLINE, "b")).changed);
+  CHECK(lobby.StateFor("a").asks_size() == 0 &&
+        !lobby.StateFor("b").open_teams(0).asked());
+  lobby.Request("b", Request(Action::ASK_JOIN, {}, team));
+  lobby.Request("b", Request(Action::ASK_CANCEL));
+  CHECK(lobby.StateFor("a").asks_size() == 0);
+  CHECK(!lobby.Request("a", Request(Action::ASK_ACCEPT, "b")).notice.empty());
+  // Accepted: in the team, its ask over, the team not listed to its own member.
+  lobby.Request("b", Request(Action::ASK_JOIN, {}, team));
+  CHECK(lobby.Request("a", Request(Action::ASK_ACCEPT, "b")).changed);
+  CHECK(lobby.TeamOf("b") == lobby.TeamOf("a"));
+  CHECK(lobby.StateFor("a").asks_size() == 0 &&
+        lobby.StateFor("b").open_teams_size() == 0);
+  // Full: not listed, asks refused. Closed: not listed, waiting asks gone.
+  lobby.Arrive("d", "Dee", false);
+  lobby.Arrive("e", "Eve", false);
+  lobby.Request("d", Request(Action::ASK_JOIN, {}, team));
+  CHECK(lobby.Request("a", Request(Action::ASK_ACCEPT, "d")).changed);
+  CHECK(lobby.TeamOf("a")->members_size() == 4);
+  CHECK(lobby.StateFor("e").open_teams_size() == 0);
+  CHECK(
+      !lobby.Request("e", Request(Action::ASK_JOIN, {}, team)).notice.empty());
+  lobby.Request("d", Request(Action::LEAVE));
+  lobby.Request("e", Request(Action::ASK_JOIN, {}, team));
+  CHECK(lobby.StateFor("a").asks_size() == 1);
+  open.set_join(bbcoop::Team::INVITE_ONLY);
+  CHECK(lobby.Request("a", open).changed);
+  CHECK(lobby.StateFor("a").asks_size() == 0 &&
+        lobby.StateFor("e").open_teams_size() == 0);
+  // One ask at a time; an asker that goes is no longer asking.
+  lobby.Request("d", Request(Action::CREATE));
+  const std::string other = lobby.TeamOf("d")->id();
+  open.set_join(bbcoop::Team::ASK);
+  lobby.Request("a", open);
+  lobby.Request("d", open);
+  CHECK(lobby.StateFor("e").open_teams_size() == 2);
+  lobby.Request("e", Request(Action::ASK_JOIN, {}, team));
+  lobby.Request("e", Request(Action::ASK_JOIN, {}, other));
+  CHECK(lobby.StateFor("a").asks_size() == 0 &&
+        lobby.StateFor("d").asks_size() == 1);
+  lobby.Leave("e");
+  CHECK(lobby.StateFor("d").asks_size() == 0);
+  // Open to all: listed as open, and asking it joins it at once.
+  lobby.Arrive("f", "Fay", false);
+  open.set_join(bbcoop::Team::OPEN);
+  CHECK(lobby.Request("d", open).changed);
+  bbcoop::LobbyState f = lobby.StateFor("f");
+  CHECK(f.open_teams_size() == 2);
+  const auto &listed =
+      f.open_teams(0).team() == other ? f.open_teams(0) : f.open_teams(1);
+  CHECK(listed.join() == bbcoop::Team::OPEN);
+  CHECK(lobby.Request("f", Request(Action::ASK_JOIN, {}, other)).changed);
+  CHECK(lobby.TeamOf("f") == lobby.TeamOf("d") &&
+        lobby.StateFor("d").asks_size() == 0);
+  return 0;
+}
+
 int main() {
   int failed = 0;
   failed |= TheLeaderSetsTheTeamsRules();
@@ -1144,6 +1239,7 @@ int main() {
   failed |= TeamCodesAreUnique();
   failed |= WrongLookupsAreLimited();
   failed |= AFriendIsInvitedByName();
+  failed |= OpenTeamsAreAskedToJoin();
   if (failed == 0) {
     std::cout << "team lobby: all checks passed\n";
   }

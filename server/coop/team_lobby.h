@@ -152,6 +152,8 @@ public:
     // The team `member` is in, or none.
     const bbcoop::Team* TeamOf(const std::string& member) const;
     std::vector<std::string> SignedIn() const;
+    // Amanises 2026-10-25: the open teams listed to one player at most.
+    static constexpr size_t OpenTeamsListed = 12; // the game keeps as many (BBCOOP_LOBBY_OPEN)
 
     // Kaniel 2026-10-17: the server's worlds, the last played first (its store's, at its start).
     void SetWorlds(std::vector<bbcoop::TeamWorldInfo> list);
@@ -232,6 +234,9 @@ private:
     std::map<std::string, std::vector<bbcoop::TeamInvite>> invites; // by invited member
     std::map<std::string, std::string> names; // every member's last known name
     std::map<std::string, s64> gone_since;    // team members not signed in, since when
+    // Amanises 2026-10-25: who asked to join each open team (by team id), in the order asked.
+    std::map<std::string, std::vector<std::string>> asks;
+    void DropAsksBy(const std::string& member);
     // Kaniel 2026-10-16: the started teams one of whose games played since the Start (a team
     // whose games still load is not over: a member invited in game joins it with its Ready).
     std::set<std::string> played;

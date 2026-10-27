@@ -32,6 +32,7 @@
 #include "coop/coop_messages.h"
 #include "coop/coop_stream.h"
 #include "core/bloodborne_invasion.h"
+#include "core/bloodborne_lamp_points.h"
 #include "core/bloodborne_team.h"
 #include "core/libraries/network/server_link.h"
 #include "core/libraries/np/np_matching2/np_matching2.h"
@@ -164,6 +165,20 @@ bool team_world_default_sent = false;
 // Kaniel 2026-10-16: this save left its team while playing (removed, or left from the menu): it
 // still clears the leaving flag and its phantom (TickTeamJoin) until the title or a team again.
 bool left_team_in_play = false; // team_mutex
+// Amanises 2026-10-25: a team guest out of its session where it stands: the game sent its phantom
+// home (it fades out and waits for the load home) and nothing loaded, so the player stood
+// invisible, only its camera turning, with the host's copy frozen where it was (P2, 2026-10-25
+// 21:58, Leave and Remove alike). Where it stood, loaded again once the leave is over
+// (TickLeaveHome): its own world, as a guest's trip home gives it.
+struct LeaveHome {
+    u32 map = 0;
+    float x = 0, y = 0, z = 0, heading = 0;
+    s64 left_ms = 0;
+    s64 idle_since_ms = -1;
+};
+std::optional<LeaveHome> leave_home;      // the game's thread
+constexpr s64 LeaveHomeSettleMs = 1'000;  // out of the session and not loading this long
+constexpr s64 LeaveHomeGiveUpMs = 30'000; // still in the session: left to the game
 // Kaniel 2026-10-16: the team screen opened over the game from its System menu (TeamMenu), and
 // when it closed: the game's own page under it gets a Circle a moment later (TeamMenuBackPressed).
 std::atomic<bool> team_menu_open{false};
@@ -1705,8 +1720,10 @@ namespace {
 // load. The white phantom of a joined guest is a player again a little later (PhantomHome).
 void LeaveTeamInPlay(u64 manager) {
     std::string party;
+    bool was_host = false;
     {
         std::scoped_lock lock{team_mutex};
+        was_host = team_host;
         party = std::exchange(team_party, {});
         team_world.reset();
         team_session.reset();
@@ -1728,6 +1745,24 @@ void LeaveTeamInPlay(u64 manager) {
         party_controller->Wait();
     }
     const s32 matching = ReadValue<s32>(manager, 0x124);
+    if (matching != 0 && !was_host) {
+        // Where it stands, read while it is still the game's player (see LeaveHome).
+        const u64 player = GetLocalPlayer();
+        const u64 modules = player >= 0x10000 ? ReadValue<u64>(player, 0x3B0) : 0;
+        const u64 physics = modules >= 0x10000 ? ReadValue<u64>(modules, 0x68) : 0;
+        const u32 map = GetCurrentPackedMap();
+        if (IsUsablePackedMap(map) && physics >= 0x10000 &&
+            HasMemoryAccess(physics, 0x1EC, MemoryProt::CpuRead)) {
+            leave_home = LeaveHome{
+                .map = map,
+                .x = ReadValue<float>(physics, 0x1E0),
+                .y = ReadValue<float>(physics, 0x1E4),
+                .z = ReadValue<float>(physics, 0x1E8),
+                .heading = ReadValue<float>(physics, 0x1D4),
+                .left_ms = SteadyMilliseconds(),
+            };
+        }
+    }
     if (matching != 0) {
         reinterpret_cast<void PS4_SYSV_ABI (*)(u64)>(image_base +
                                                      MultiPlayStopRequestOffset)(manager);
@@ -1736,6 +1771,52 @@ void LeaveTeamInPlay(u64 manager) {
              "Co-op team menu: out of the team ({}): {}; the save plays on alone where it "
              "stands",
              party, matching != 0 ? "left its session" : "no session to leave");
+}
+
+// Amanises 2026-10-25: see LeaveHome. Once the game is out of its session and not loading for
+// LeaveHomeSettleMs, the guest is loaded again where it stood (the placement warp a lamp trip
+// uses). A load of the game's own (a death, a lamp) takes it home anyway.
+void TickLeaveHome(u64 manager) {
+    if (!leave_home) {
+        return;
+    }
+    const s64 now = SteadyMilliseconds();
+    const u64 global = GetGlobalState();
+    if (global < 0x10000 || ReadValue<u8>(global, 0x08) != 0) {
+        leave_home.reset();
+        LOG_INFO(Debug, "Co-op team menu: out of the team: a load of the game's own takes it home");
+        return;
+    }
+    if (ReadValue<s32>(manager, 0x124) != 0 || InPartySession()) {
+        leave_home->idle_since_ms = -1;
+        if (now - leave_home->left_ms >= LeaveHomeGiveUpMs) {
+            leave_home.reset();
+            LOG_WARNING(Debug,
+                        "Co-op team menu: out of the team, but still in a session after "
+                        "{} s: no load home",
+                        LeaveHomeGiveUpMs / 1000);
+        }
+        return;
+    }
+    if (leave_home->idle_since_ms < 0) {
+        leave_home->idle_since_ms = now;
+    }
+    if (now - leave_home->idle_since_ms < LeaveHomeSettleMs) {
+        return;
+    }
+    const LeaveHome home = *std::exchange(leave_home, std::nullopt);
+    const LampPoint point{.warp_point = -1,
+                          .packed_map = home.map,
+                          .x = home.x,
+                          .y = home.y,
+                          .z = home.z,
+                          .heading = home.heading};
+    const bool started = WarpGuestToLampPoint(point);
+    LOG_INFO(Debug,
+             "Co-op team menu: out of the team: {} where it stood (map {:#x} at {:.1f} {:.1f} "
+             "{:.1f}, {} ms after the leave)",
+             started ? "its own world loads" : "the load home did not start", home.map, home.x,
+             home.y, home.z, now - home.left_ms);
 }
 
 // Kaniel 2026-10-16: the team's Start for a save playing alone (it joined the hunt from the
@@ -1760,6 +1841,7 @@ void AdoptTeamInPlay(const bbcoop::TeamStart& start) {
         team_load.Start(SteadyMilliseconds());
         left_team_in_play = false;
     }
+    leave_home.reset(); // in a team again before the load home
     const bool host = start.host() == me;
     if (party_controller) {
         party_controller->Assign(host ? PartyRole::Host : PartyRole::Guest);
@@ -1829,6 +1911,7 @@ void TeamBackAtTitle() {
     team_load = {};
     team_load_settle = {};
     left_team_in_play = false;
+    leave_home.reset();
     team_world_default_sent = false;
     team_load_covers.store(false, std::memory_order_relaxed);
     team_menu_open.store(false, std::memory_order_relaxed);
@@ -1849,6 +1932,7 @@ bool TickTeamJoin(bool ready) {
     }
     // Kaniel 2026-10-16: the team menu in game: out of the team, or into it, where it stands.
     TickTeamPlay(manager);
+    TickLeaveHome(manager);
     std::optional<bbcoop::TeamSession> session;
     bool in_team = false;
     bool left_in_play = false;
