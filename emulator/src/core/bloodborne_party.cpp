@@ -2541,6 +2541,20 @@ std::vector<std::pair<s32, bool>> VisitKills::Observe(u64 visit,
     return changes;
 }
 
+void LocalRevives::See(u32 handle, s32 hp) {
+    if (hp <= 0) {
+        dead.insert(handle);
+        revived.erase(handle);
+    } else if (dead.erase(handle) > 0) {
+        revived.insert(handle);
+    }
+}
+
+void LocalRevives::Clear() {
+    dead.clear();
+    revived.clear();
+}
+
 void TakenBackKills::TakeBack(u32 handle, s64 now_ms) {
     since[handle] = now_ms;
 }

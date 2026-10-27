@@ -2009,6 +2009,21 @@ private:
     std::map<u32, u32> killed_on;         // this visit's kills -> the map each died on
     std::map<u32, std::vector<u32>> held; // map -> kills of an earlier visit standing there
 };
+// The copies this game's own generator brought back (seen dead, then alive again): while the
+// party still has one dead (another member's generator has not run yet), the kill step hides it
+// rather than kill it again, which would replay its death (the bell summons' blood burst).
+class LocalRevives {
+public:
+    void See(u32 handle, s32 hp);
+    bool Revived(u32 handle) const {
+        return revived.contains(handle);
+    }
+    void Clear();
+
+private:
+    std::unordered_set<u32> dead;
+    std::unordered_set<u32> revived;
+};
 // A map generator brought back one of this member's kills (VisitKills::Observe takes it back),
 // but the party's kills (the log's, the server's) still have it until this member's unkill has
 // gone round: while they do, the kill step would kill or hide the risen enemy again (Provi's

@@ -1806,6 +1806,29 @@ TEST(BloodborneSharedKills, AnEnemyBroughtBackTakesItsKillBack) {
     EXPECT_EQ(kills.Observe(1, std::vector<SeenCharacter>{{Skeleton, 398, 8, true}}), Changes{});
 }
 
+// Rig 2026-10-27 (yahargul-bell-summons on the fix): a guest's own generator brought back the
+// bell woman's summons before the host's did, while the party (the host's world, the server's
+// log) still had them dead, so its kill step put them down again where they rose ("2 near died"),
+// replaying their blood burst. A copy this game brought back itself is hidden, not killed again,
+// until the party has it alive too.
+TEST(BloodborneSharedKills, ACopyThisGameBroughtBackIsNotKilledAgain) {
+    constexpr u32 Summon = 0x1002804d;
+    constexpr u32 Crowd = 0x1002804c;
+    LocalRevives revives;
+    revives.See(Summon, 518);
+    EXPECT_FALSE(revives.Revived(Summon)) << "alive from the start";
+    revives.See(Summon, 0);
+    EXPECT_FALSE(revives.Revived(Summon));
+    revives.See(Summon, 518);
+    EXPECT_TRUE(revives.Revived(Summon)) << "dead, then alive again here";
+    EXPECT_FALSE(revives.Revived(Crowd));
+    revives.See(Summon, 0);
+    EXPECT_FALSE(revives.Revived(Summon)) << "killed again for real";
+    revives.See(Summon, 518);
+    revives.Clear();
+    EXPECT_FALSE(revives.Revived(Summon)) << "another visit";
+}
+
 // Provi's report (v1.2.0, Yahar'gul) and the rig 2026-10-27 (main): the bell woman's generator
 // brought the host's kill 0x1002804d back; the host's kill step took its kill back, but the
 // party's log still had it (its unkill a few entries later), so the same step killed the summon

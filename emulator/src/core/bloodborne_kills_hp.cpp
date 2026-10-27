@@ -2478,6 +2478,16 @@ void KeepEnemyDeathsInStep(bool sharing) {
     size_t newly_died = 0;
     const auto me = LocalPlayerPosition();
     const bool can_kill = Coop::KillCharacterCallable();
+    // Copies this game's own generator brought back are hidden, not killed again (LocalRevives).
+    static LocalRevives revives;
+    static u64 revives_visit = 0;
+    if (visit != revives_visit) {
+        revives.Clear();
+        revives_visit = visit;
+    }
+    for (const SeenCharacter& seen : characters) {
+        revives.See(seen.handle, seen.hp);
+    }
     // Copies at 0 HP without the game's death, since when (see FinishesStuckDeath).
     static std::unordered_map<u64, s64> zero_since;
     static std::unordered_set<u64> finished;
@@ -2513,7 +2523,7 @@ void KeepEnemyDeathsInStep(bool sharing) {
             AppliesMemberKill(others.contains(handle), CharacterHp(character)) &&
             ReadValue<u8>(character, 0x28) == 0 &&
             HasMemoryAccess(character, 0x29, MemoryProt::CpuWrite)) {
-            if (can_kill && !died_for_others.contains(handle) &&
+            if (can_kill && !died_for_others.contains(handle) && !revives.Revived(handle) &&
                 IsCharacter(character, "member kill") &&
                 DiesInsteadOfHiding(me, CharacterPosition(character))) {
                 // Near this player: it dies as the game kills (no echoes), not vanishing. Its
