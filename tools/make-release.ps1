@@ -266,7 +266,8 @@ $probeOut = Join-Path $probeDir "probe.txt"
 Write-Utf8 $probe (@(
     "import pathlib",
     "import hud_patch",
-    "pathlib.Path(r'$probeOut').write_text(f'{pathlib.Path(hud_patch.__file__).resolve()}|{hud_patch.HUD_ICONS.is_file()}', encoding='utf-8')"
+    "import bbport_coop",
+    "pathlib.Path(r'$probeOut').write_text(f'{pathlib.Path(hud_patch.__file__).resolve()}|{hud_patch.HUD_ICONS.is_file()}|{bbport_coop.use_system_certificates()}', encoding='utf-8')"
 ) -join "`n")
 $run = Start-Process -FilePath (Join-Path $release "BLauncher.exe") -Wait -PassThru -NoNewWindow `
     -ArgumentList @("--script", "`"$probe`"") `
@@ -274,12 +275,13 @@ $run = Start-Process -FilePath (Join-Path $release "BLauncher.exe") -Wait -PassT
 Remove-Item -Force $probe
 $answer = if (Test-Path $probeOut) { (Get-Content -Raw $probeOut).Trim() } else { "" }
 $expected = (Join-Path $release "scripts\hud_patch.py")
-if ($run.ExitCode -ne 0 -or $answer -ne "$((Resolve-Path $expected).Path)|True") {
+if ($run.ExitCode -ne 0 -or $answer -ne "$((Resolve-Path $expected).Path)|True|True") {
     Get-Content (Join-Path $probeDir "err.txt") -ErrorAction SilentlyContinue | Select-Object -Last 10
-    throw "BLauncher.exe runs the HUD patch from '$answer', not scripts\hud_patch.py with its icon strip"
+    # The last part: truststore is bundled, so HTTPS (Check for updates) trusts what Windows trusts.
+    throw "BLauncher.exe probe answered '$answer': not scripts\hud_patch.py with its icon strip, or no truststore"
 }
 Remove-Item -Recurse -Force $probeDir
-Write-Host "  BLauncher.exe --script: hud_patch from scripts\, icon strip found"
+Write-Host "  BLauncher.exe --script: hud_patch from scripts\, icon strip found, truststore bundled"
 
 Step "Check"
 $checkPython = (& (Join-Path $msys "usr\bin\cygpath.exe") -w $env:WINPYTHON).Trim()

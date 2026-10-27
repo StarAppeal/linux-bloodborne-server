@@ -147,6 +147,24 @@ def pick_shard(shards, own=None):
                                               shard.get('name', '')))
 
 
+def use_system_certificates():
+    """Every urlopen of the launcher checks HTTPS certificates through Windows itself (truststore), not only
+    through the roots Python reads from the Windows store. A friend's Check for updates failed with
+    CERTIFICATE_VERIFY_FAILED "unable to get issuer certificate" (Kaniel 2026-10-27): Windows adds a root
+    certificate to its store only when something on the PC first needs it, so Python can miss GitHub's root
+    while browsers work. Windows also trusts what antivirus HTTPS scanning or a company proxy installed.
+    Certificates are still checked. True when installed; without truststore (a source run on Linux) the
+    default stays."""
+    try:
+        import ssl
+        import truststore
+    except ImportError:
+        return False
+    context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    urllib.request.install_opener(urllib.request.build_opener(urllib.request.HTTPSHandler(context=context)))
+    return True
+
+
 def fetch_json(url, timeout=10):
     """The JSON a directory answers, None for a 404."""
     try:
