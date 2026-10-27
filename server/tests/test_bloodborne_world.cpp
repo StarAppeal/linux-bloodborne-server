@@ -3898,10 +3898,11 @@ int HostedTradesAreWithinAStartedTeam() {
   step();
   CHECK(guest.trades.Asked().size() == 1);
 
-  // Both back at the title: the team is not started, its games still linked.
-  for (Game *game : games) {
-    game->LobbyHello(false, now);
-  }
+  // Both back at the title, the guest first (back while the leader plays, it
+  // leaves the team: #403): the team is not started, its games still linked.
+  guest.LobbyHello(false, now);
+  step();
+  leader.LobbyHello(false, now);
   step();
   CHECK(service.Lobby().TeamOf(leader.name) &&
         !service.Lobby().TeamOf(leader.name)->started());
