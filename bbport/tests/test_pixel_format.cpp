@@ -25,6 +25,9 @@ int main() {
           NumberConversion::Sint8ToSnormNz);
     CHECK(MapNumberConversion(NumberFormat::SnormNz, DataFormat::Format16_16) ==
           NumberConversion::Sint16ToSnormNz);
+    // shadPS4 #5509: logs and shader dumps name Ubscaled by its own name.
+    CHECK(NameOf(NumberFormat::Ubscaled) == "Ubscaled");
+    CHECK(NameOf(NumberFormat::Ubint) == "Ubint");
     if (failures != 0) {
         std::fprintf(stderr, "pixel format: %d check(s) failed\n", failures);
         return 1;

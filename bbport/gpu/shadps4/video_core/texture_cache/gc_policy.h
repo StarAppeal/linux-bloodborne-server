@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
+#include <cstdint>
+
 namespace VideoCore {
 
 /// bbport: what the texture collector does with an image old enough to go.
@@ -30,6 +32,20 @@ constexpr GcAction GcActionFor(const GcImageState& image, bool pressured) {
         return GcAction::Keep;
     }
     return GcAction::WriteBackAndEvict;
+}
+
+/// What happens to an image that ends its mark of a buffer write (below).
+enum class ImageEvent {
+    Use,    ///< TouchImage: bound or sampled again
+    Reload, ///< RefreshImage: rebuilt from guest memory
+};
+
+/// The mark a buffer bound for writing leaves on an image it overlaps (Image::gpu_hash): guest
+/// memory's hash at that time, 0 for none. The collector writes such an image back only while
+/// guest memory still matches it. shadPS4 #5504: only a reload ends the mark. A use used to, and
+/// the collector then wrote the stale image back over what the buffer had written.
+constexpr std::uint64_t BufferWriteMarkAfter(ImageEvent event, std::uint64_t gpu_hash) {
+    return event == ImageEvent::Reload ? 0 : gpu_hash;
 }
 
 } // namespace VideoCore

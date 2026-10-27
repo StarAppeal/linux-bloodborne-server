@@ -12,7 +12,9 @@ using VideoCore::GcAction;
 using VideoCore::GcActionFor;
 using VideoCore::GcImageState;
 using VideoCore::HeapUse;
+using VideoCore::ImageEvent;
 using VideoCore::ArenaReserveBytes;
+using VideoCore::BufferWriteMarkAfter;
 using VideoCore::ArenaSpillsOutsideVram;
 using VideoCore::ObjectMotionFitsVram;
 using VideoCore::SystemMemoryTypesNearVramLimit;
@@ -84,6 +86,13 @@ int main() {
     assert(GcActionFor({.gpu_modified = true, .gpu_dirty = true, .tiled = true}, true) ==
            GcAction::Evict);
     assert(GcActionFor({.gpu_modified = true, .gpu_dirty = true}, true) == GcAction::Evict);
+
+    // shadPS4 #5504: a buffer bound for writing over an image leaves guest memory's hash on it.
+    // Using the image again keeps the mark, so the collector still checks guest memory before
+    // writing the image back over what the buffer wrote; only a reload from guest memory ends it.
+    assert(BufferWriteMarkAfter(ImageEvent::Use, 0x1234) == 0x1234);
+    assert(BufferWriteMarkAfter(ImageEvent::Use, 0) == 0);
+    assert(BufferWriteMarkAfter(ImageEvent::Reload, 0x1234) == 0);
 
     // krolebord's play test 2026-10-17 (RTX 4050 Laptop, 5920 MiB): 5834 MiB in use of a ~5150
     // MiB budget, the GPU stopped. NVIDIA: heap 0 VRAM, heap 1 system memory; types 0-1 in
