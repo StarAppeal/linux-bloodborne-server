@@ -1155,6 +1155,7 @@ void TextureCache::RefreshImage(Image& image) {
         }
         image.cpu_hash = hash;
     }
+    image.gpu_hash = BufferWriteMarkAfter(ImageEvent::Reload, image.gpu_hash);
 
     if (RefreshPortraitSlot(image)) {
         return;
@@ -1719,8 +1720,7 @@ void TextureCache::RunGarbageCollector() {
 }
 
 void TextureCache::TouchImage(Image& image) {
-    // Image is still valid (upstream: a use clears the maybe-GPU-dirty state)
-    image.gpu_hash = 0;
+    image.gpu_hash = BufferWriteMarkAfter(ImageEvent::Use, image.gpu_hash);
     // bbport: skips the LRU list (a cache miss) when already touched in this GC period.
     if (image.lru_touched_tick == gc_tick) {
         return;
