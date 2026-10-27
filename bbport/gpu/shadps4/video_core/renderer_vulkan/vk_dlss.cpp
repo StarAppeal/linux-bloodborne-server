@@ -10,6 +10,7 @@
 #include <optional>
 #include <string_view>
 
+#include "video_core/renderer_vulkan/dlss_modes.h"
 #include "video_core/renderer_vulkan/vk_dlss.h"
 
 #ifdef _WIN32
@@ -26,8 +27,7 @@
 namespace Vulkan {
 
 int Dlss::QualityForScale(float scale) {
-    // DLAA only for equal sizes: any real upscale needs at least the Quality mode.
-    return scale >= 2.9f ? 4 : scale >= 1.95f ? 3 : scale >= 1.65f ? 2 : scale > 1.01f ? 1 : 0;
+    return DlssModes::QualityForScale(scale);
 }
 
 #if defined(_WIN32) || defined(__linux__)
@@ -306,7 +306,16 @@ bool Dlss::CreateFeature(vk::CommandBuffer command, const FeatureDesc& desc) {
                                 desc.output_height, desc.quality,      0,
                                 desc.model,         desc.hdr ? 1 : 0};
     if (!impl->api->CreateFeature(command, &feature)) {
-        return false;
+        // An older NVIDIA library may not know the preset: its own default rather than no DLSS.
+        if (!desc.model) {
+            return false;
+        }
+        BbDlssFeature fallback = feature;
+        fallback.preset = DlssModes::PresetDefault;
+        std::printf("DLSS: preset %u refused, NVIDIA's default instead\n", desc.model);
+        if (!impl->api->CreateFeature(command, &fallback)) {
+            return false;
+        }
     }
     impl->feature = desc;
     return true;
