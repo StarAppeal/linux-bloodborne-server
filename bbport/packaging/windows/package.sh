@@ -25,8 +25,9 @@ if [[ ! -x out/pyenv/Scripts/python.exe ]]; then
     "$python" -m venv out/pyenv
 fi
 # Only when missing: pip asks PyPI on every call and hangs for minutes without a connection.
-out/pyenv/Scripts/python.exe -c 'import PyInstaller, PIL' 2>/dev/null ||
-    out/pyenv/Scripts/python.exe -m pip install -q --disable-pip-version-check pyinstaller pillow
+# truststore: the launcher checks HTTPS certificates through Windows (bbport_coop.use_system_certificates).
+out/pyenv/Scripts/python.exe -c 'import PyInstaller, PIL, truststore' 2>/dev/null ||
+    out/pyenv/Scripts/python.exe -m pip install -q --disable-pip-version-check pyinstaller pillow truststore
 # The scripts run inside BLauncher.exe (--script): the standard modules they import come along.
 # The co-op kit runs its backend (backend/bb_dummy_server.py) and its event patcher this way too.
 hidden=()
@@ -37,7 +38,7 @@ done
 out/pyenv/Scripts/python.exe -m PyInstaller --noconfirm --clean --log-level WARN --windowed \
     --name BLauncher --icon "$(cygpath -w "$PWD/launcher/bloodborne.ico")" --distpath out/pyi-dist \
     --workpath out/pyi-work --specpath out/pyi-work --paths "$(cygpath -w "$PWD/scripts")" \
-    --paths "$(cygpath -w "$PWD/tools")" --hidden-import fetch_fsr4vk --hidden-import bbport_icons "${hidden[@]}" \
+    --paths "$(cygpath -w "$PWD/tools")" --hidden-import fetch_fsr4vk --hidden-import bbport_icons --hidden-import truststore "${hidden[@]}" \
     "$(cygpath -w "$PWD/launcher/bbport_launcher_win.py")"
 
 # PkgTool (maxton/LibOrbisPkg v0.2, LGPL-3.0, shipped unmodified) extracts the game from the .pkg files the

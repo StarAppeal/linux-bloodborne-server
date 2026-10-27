@@ -7137,6 +7137,7 @@ def restart_without_redirection_guard():
 def main():
     global LANG
     args = sys.argv[1:]
+    bbport_coop.use_system_certificates()
     if args and args[0] in ('--run', '--script'):
         sys.exit(run_role(args))
     if FROZEN and not args and redirection_guarded() and restart_without_redirection_guard():

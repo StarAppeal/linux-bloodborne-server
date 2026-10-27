@@ -1061,3 +1061,35 @@ class SaveBackupTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SystemCertificateTests(unittest.TestCase):
+    """HTTPS through Windows' own certificate check (a friend's Check for updates: CERTIFICATE_VERIFY_FAILED)."""
+
+    def tearDown(self):
+        coop.urllib.request.install_opener(None)
+
+    def https_contexts(self):
+        opener = coop.urllib.request._opener
+        return [handler._context for handler in (opener.handlers if opener else ())
+                if isinstance(handler, coop.urllib.request.HTTPSHandler)]
+
+    def test_every_urlopen_checks_certificates_through_truststore(self):
+        import ssl
+
+        class TrustContext(ssl.SSLContext):
+            pass
+
+        fake = mock.Mock(SSLContext=TrustContext)
+        with mock.patch.dict(sys.modules, {'truststore': fake}):
+            self.assertTrue(coop.use_system_certificates())
+        [context] = self.https_contexts()
+        self.assertIsInstance(context, TrustContext)
+        # Still checked: never a context that takes any certificate.
+        self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(context.check_hostname)
+
+    def test_without_truststore_the_default_stays(self):
+        with mock.patch.dict(sys.modules, {'truststore': None}):
+            self.assertFalse(coop.use_system_certificates())
+        self.assertIsNone(coop.urllib.request._opener)
