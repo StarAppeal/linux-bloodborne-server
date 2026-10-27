@@ -1761,6 +1761,21 @@ std::vector<CharacterSwitch> SwitchedLikeTheHost(std::span<const CharacterShown>
                                                  const std::unordered_set<u32>& switched_off,
                                                  const std::unordered_set<u32>& kill_hidden,
                                                  const std::unordered_set<u32>& off_for_good = {});
+// The bell woman's summons in Yahar'gul (m28_00 12804500) are switched on by the host's event
+// with their rise (animation 6200); a guest's board had the host's switch before the guest's own
+// event got its flag, so its copies stood there with no rise (Provi's report, rig 2026-10-27).
+// Of SwitchedLikeTheHost's `changes`, the ones to make now: switching off, and back on what this
+// member switched off itself (`switched_off`), at once; switching on one its own story has off
+// only once proposed for WaitMs in a row, for its own event to do it first.
+class SwitchOnWait {
+public:
+    static constexpr s64 WaitMs = 2'000;
+    std::vector<CharacterSwitch> Due(std::span<const CharacterSwitch> changes,
+                                     const std::unordered_set<u32>& switched_off, s64 now_ms);
+
+private:
+    std::map<u32, s64> since;
+};
 // The Hemwick woods' mist ambush (m22_00 event 12204000, a slot per enemy 2200500-2200508): the
 // slot's done flag of `entity`, if it is one. With the flag on and the host's copy off, the event
 // switched it off for good (unarmed: a host under 15 Insight), so a guest follows that far from

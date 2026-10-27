@@ -2671,9 +2671,11 @@ void SwitchCharactersLikeTheHost(u32 map, std::span<const u64> characters,
             }
         }
     }
+    static SwitchOnWait switch_on_wait;
     std::string which;
-    for (const CharacterSwitch& change :
-         SwitchedLikeTheHost(host, mine, switched_off, kill_hidden, off_for_good)) {
+    for (const CharacterSwitch& change : switch_on_wait.Due(
+             SwitchedLikeTheHost(host, mine, switched_off, kill_hidden, off_for_good), switched_off,
+             SteadyMilliseconds())) {
         const auto at = std::ranges::find(mine, change.handle, &CharacterSwitch::handle);
         if (!SetCharacterDisabled(pointers[at - mine.begin()], change.disabled)) {
             continue;

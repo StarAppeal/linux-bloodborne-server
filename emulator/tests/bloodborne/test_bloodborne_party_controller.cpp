@@ -2231,6 +2231,32 @@ TEST(BloodborneHiddenCharacters, AGuestSwitchesOffWhatTheHostRemoved) {
         << "nothing from the host: nothing changes";
 }
 
+// Provi's report (v1.2.0, Yahar'gul) and the rig 2026-10-27 (main): as the bell rang, the host's
+// event switched the bell woman's summons on and they rose (m28_00 12804500: on, then animation
+// 6200). The guest's board had the host's switch a moment before the guest's flag arrived, so the
+// guest switched its copies on itself: they stood there with no rise. A copy its own story
+// switched off is switched on like the host only after SwitchOnWait::WaitMs, so its own event can
+// do it with the rise; switching off, and back on what this member switched off, is at once.
+TEST(BloodborneHiddenCharacters, AGuestWaitsBeforeSwitchingOnWhatItsStoryHasOff) {
+    constexpr u32 Summon = 0x1002804d;
+    constexpr u32 Iosefka = 0x10014005;
+    constexpr u32 Crowd = 0x1002804c;
+    SwitchOnWait wait;
+    const std::vector<CharacterSwitch> changes{{Summon, false}, {Iosefka, false}, {Crowd, true}};
+    const std::unordered_set<u32> switched_off{Iosefka};
+    EXPECT_EQ(wait.Due(changes, switched_off, 1'000),
+              (std::vector<CharacterSwitch>{{Iosefka, false}, {Crowd, true}}))
+        << "the summon waits for its own event";
+    EXPECT_EQ(wait.Due(changes, switched_off, 1'000 + SwitchOnWait::WaitMs - 1),
+              (std::vector<CharacterSwitch>{{Iosefka, false}, {Crowd, true}}));
+    EXPECT_EQ(wait.Due(changes, switched_off, 1'000 + SwitchOnWait::WaitMs),
+              (std::vector<CharacterSwitch>{{Summon, false}, {Iosefka, false}, {Crowd, true}}))
+        << "its own event never did: on like the host";
+    EXPECT_TRUE(wait.Due({}, {}, 5'000).empty()) << "its own event switched it on";
+    EXPECT_TRUE(wait.Due(std::vector<CharacterSwitch>{{Summon, false}}, {}, 5'100).empty())
+        << "proposed again later: waits again";
+}
+
 // Rig 2026-10-21 (mist-ambush-guest): with a host under 15 Insight, Hemwick's mist ambush
 // (m22_00 event 12204000) switches its nine enemies off for good and ends, its slot's done flag
 // on; the guest's copies stayed on, since the host's switch is not followed far from the host

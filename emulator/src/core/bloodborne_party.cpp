@@ -2384,6 +2384,28 @@ std::vector<CharacterSwitch> SwitchedLikeTheHost(std::span<const CharacterShown>
     return changes;
 }
 
+std::vector<CharacterSwitch> SwitchOnWait::Due(std::span<const CharacterSwitch> changes,
+                                               const std::unordered_set<u32>& switched_off,
+                                               s64 now_ms) {
+    std::map<u32, s64> waiting;
+    std::vector<CharacterSwitch> due;
+    for (const CharacterSwitch& change : changes) {
+        if (change.disabled || switched_off.contains(change.handle)) {
+            due.push_back(change);
+            continue;
+        }
+        const auto it = since.find(change.handle);
+        const s64 first = it != since.end() ? it->second : now_ms;
+        if (now_ms - first >= WaitMs) {
+            due.push_back(change);
+        } else {
+            waiting.emplace(change.handle, first);
+        }
+    }
+    since = std::move(waiting);
+    return due;
+}
+
 std::vector<CharacterHits> HitsLikeTheHost(std::span<const CharacterShown> host,
                                            std::span<const CharacterHits> mine,
                                            const std::unordered_set<u32>& kill_hidden) {
@@ -2523,8 +2545,7 @@ void TakenBackKills::TakeBack(u32 handle, s64 now_ms) {
     since[handle] = now_ms;
 }
 
-std::vector<u32> TakenBackKills::Holding(const std::unordered_set<u32>& party_kills,
-                                         s64 now_ms) {
+std::vector<u32> TakenBackKills::Holding(const std::unordered_set<u32>& party_kills, s64 now_ms) {
     std::vector<u32> holding;
     for (auto it = since.begin(); it != since.end();) {
         if (!party_kills.contains(it->first) || now_ms - it->second >= HoldMs) {
