@@ -4,6 +4,7 @@
 #include "video_core/renderer_vulkan/vk_scene_hdr.h"
 #include "video_core/renderer_vulkan/vk_gpu_profiler.h"
 #include "video_core/renderer_vulkan/motion_history.h"
+#include "video_core/renderer_vulkan/dlss_modes.h"
 #include "video_core/renderer_vulkan/vk_scene_resolution.h"
 #include "video_core/renderer_vulkan/ui_composition.h"
 
@@ -2476,10 +2477,12 @@ bool TemporalUpscaler::RecordFsr4(vk::CommandBuffer cmdbuf, Fsr4Upscaler::Image 
 }
 
 bool TemporalUpscaler::FullRangeSharpen() const {
-    // XeSS and FSR 4.1.1 through fsr4vk have no RCAS of their own: ExtraSharpen covers 0..2. Only while
-    // fsr4vk is the upscaler in use: after it failed (fsr4_failed) FSR 3.1 runs, with its own RCAS.
-    return UseXess() || (BbSettings::Get().upscaler == BbSettings::UpscalerFsr411 && UseFsr4() &&
-                         !instance.IsFsr411Supported());
+    // XeSS, DLSS (no sharpening since 2.5.1: the menu's 0..1 did nothing) and FSR 4.1.1 through
+    // fsr4vk have no RCAS of their own: ExtraSharpen covers 0..2. Only while fsr4vk is the
+    // upscaler in use: after it failed (fsr4_failed) FSR 3.1 runs, with its own RCAS.
+    return UseXess() || UseDlss() ||
+           (BbSettings::Get().upscaler == BbSettings::UpscalerFsr411 && UseFsr4() &&
+            !instance.IsFsr411Supported());
 }
 
 bool TemporalUpscaler::UseDlss() const {
@@ -2535,8 +2538,9 @@ bool TemporalUpscaler::RecordDlss(vk::CommandBuffer cmdbuf, const Dlss::Resource
                                   const Dlss::Resource& depth, u32 w, u32 h, u32 ow, u32 oh,
                                   float frame_ms, bool hdr) {
     Dlss* dlss = Dlss::Get();
-    const Dlss::FeatureDesc desc{w, h, ow, oh, Dlss::QualityForScale(float(ow) / float(w)), hdr,
-                                 u32(BbSettings::Get().dlss_model.load())};
+    const int quality = Dlss::QualityForScale(float(ow) / float(w));
+    const Dlss::FeatureDesc desc{w, h, ow, oh, quality, hdr,
+                                 DlssModes::Preset(u32(BbSettings::Get().dlss_model.load()), quality)};
     bool ok = true;
     if (!dlss->HasFeature(desc)) {
         // The previous feature may still be in use by submitted work; `cmdbuf` stays open.
@@ -2548,7 +2552,6 @@ bool TemporalUpscaler::RecordDlss(vk::CommandBuffer cmdbuf, const Dlss::Resource
     if (ok) {
         // The jitter and motion vectors FSR 3 gets: render pixels, current to previous.
         const float sign = BbToggle::Disabled(1u << 26) ? -1.0f : 1.0f;
-        const auto& settings = BbSettings::Get();
         ok = dlss->Evaluate(cmdbuf, {
             .color = color,
             .depth = depth,
@@ -2560,7 +2563,8 @@ bool TemporalUpscaler::RecordDlss(vk::CommandBuffer cmdbuf, const Dlss::Resource
             .jitter_y = sign * jitter[1],
             .reset = reset,
             .frame_ms = frame_ms,
-            .sharpness = settings.sharpen ? std::min(settings.sharpness.load(), 1.0f) : 0.0f,
+            // DLSS 2.5.1 and newer ignore it; ExtraSharpen does the menu's whole 0..2 range.
+            .sharpness = 0.0f,
         });
     }
     if (!ok) {

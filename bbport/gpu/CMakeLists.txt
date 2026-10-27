@@ -571,6 +571,11 @@ add_executable(output-sizes-test EXCLUDE_FROM_ALL ../tests/test_output_sizes.cpp
 target_compile_options(output-sizes-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
 target_include_directories(output-sizes-test PRIVATE ..)
 
+# bbport: the DLSS quality mode per render scale and the preset each mode runs (dlss_modes.h).
+add_executable(dlss-modes-test EXCLUDE_FROM_ALL ../tests/test_dlss_modes.cpp)
+target_compile_options(dlss-modes-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
+target_include_directories(dlss-modes-test PRIVATE ..)
+
 # bbport co-op: trading's Give rows run for any item, weapons too (shim/bbport_trade_rows.h).
 add_executable(trade-rows-test EXCLUDE_FROM_ALL ../tests/test_trade_rows.cpp shim/bbport_trade_rows.cpp)
 target_compile_options(trade-rows-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)

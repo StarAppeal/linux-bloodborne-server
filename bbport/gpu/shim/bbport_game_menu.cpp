@@ -374,8 +374,8 @@ void DefineTexts() {
     page("Frame rate", "Частота кадров", "Frame rate limit, DLSS model and shader math (bbport)",
          "Ограничение кадров, модель DLSS и математика шейдеров (bbport)");
     row(DlssModel, "DLSS model", "Модель DLSS",
-        "RTX, DLSS only: 0-1 default, 2-3 K best quality, 4-6 L, 7-8 M faster, 9-10 J like K",
-        "RTX, только DLSS: 0-1 по умолчанию, 2-3 K лучше всего, 4-6 L, 7-8 M быстрее, 9-10 J как K",
+        "RTX, DLSS only: 0-1 default, sharpest, 2-3 K softer, 4-6 L, 7-8 M, 9-10 J like K",
+        "RTX, только DLSS: 0-1 по умолчанию, чётче всего, 2-3 K мягче, 4-6 L, 7-8 M, 9-10 J как K",
         {AddText("Default", "По умолчанию"), AddText("K", "K"), AddText("L", "L"), AddText("M", "M"),
          AddText("J", "J")},
         Kind::Steps);

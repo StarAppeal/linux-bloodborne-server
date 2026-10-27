@@ -1847,10 +1847,10 @@ void DlssModelRow() {
                return i == 0 ? T("Default", "По умолчанию") : BbSettings::DlssModelNames[i];
            },
            [](int) { return true; },
-           T("NVIDIA's DLSS preset: K best quality, L and M faster, J like K with a little less "
-             "ghosting. Default lets NVIDIA pick per quality mode.",
-             "Пресет NVIDIA DLSS: K лучшее качество, L и M быстрее, J как K с чуть меньшими "
-             "шлейфами. По умолчанию NVIDIA выбирает сама."),
+           T("NVIDIA's DLSS preset. Default runs the sharp M from Quality to Performance and L "
+             "on Ultra Performance. K and J are softer, a little faster on RTX 20 and 30.",
+             "Пресет NVIDIA DLSS. По умолчанию чёткий M от Качества до Производительности и L на "
+             "Ультрапроизводительности. K и J мягче, на RTX 20 и 30 чуть быстрее."),
            s.upscaler == BbSettings::UpscalerDlss,
            [&](int i) { Store(s.dlss_model, BbSettings::DlssModels[i], true); });
 }
