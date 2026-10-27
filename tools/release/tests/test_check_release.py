@@ -19,7 +19,11 @@ def make_release(root: pathlib.Path, extra: tuple[str, ...] = (), leave_out: tup
             continue
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(b"x")
+        path.write_bytes(LAUNCHER if relative == "BLauncher.exe" else b"x")
+
+
+# A launcher as PyInstaller writes it with package.sh's version file: a version resource naming the product.
+LAUNCHER = b"MZ" + "VS_VERSION_INFO".encode("utf-16-le") + "Yharnam Together".encode("utf-16-le")
 
 
 class CheckReleaseTest(unittest.TestCase):
@@ -89,6 +93,24 @@ class CheckReleaseTest(unittest.TestCase):
         self.assertEqual(tool.check(self.root), [])
         (self.root / "event-reference.json").write_text("not json")
         self.assertTrue(tool.check(self.root))
+
+
+    def test_a_launcher_without_a_version_resource_is_reported(self):
+        # An unsigned exe with no version resource (who made it, what it is) is what Defender's
+        # machine learning flagged as Trojan:Win32/Bearfoos.A!ml in v1.3.0 (player report 2026-10-26).
+        make_release(self.root)
+        (self.root / "BLauncher.exe").write_bytes(b"MZ" + b"\0" * 64)
+        problems = tool.check(self.root)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("version resource", problems[0])
+
+    def test_a_upx_packed_launcher_is_reported(self):
+        # UPX (PyInstaller uses it whenever upx.exe is on PATH) is a packer malware uses too.
+        make_release(self.root)
+        (self.root / "BLauncher.exe").write_bytes(LAUNCHER + b"UPX0\0\0\0\0UPX1\0\0\0\0")
+        problems = tool.check(self.root)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("UPX", problems[0])
 
 
 if __name__ == "__main__":

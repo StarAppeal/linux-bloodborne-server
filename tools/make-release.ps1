@@ -157,7 +157,8 @@ if (-not $env:WINPYTHON) {
     if ($python) { $env:WINPYTHON = (& (Join-Path $msys "usr\bin\cygpath.exe") -u $python.FullName).Trim() }
 }
 # Only the staged package: the release needs neither dist\bbport-windows.zip nor the playable copy.
-Invoke-Clang64 "BB_PACKAGE_STAGE_ONLY=1 bash packaging/windows/package.sh"
+# BB_RELEASE_VERSION: BLauncher.exe's version resource (packaging\windows\version_info.py).
+Invoke-Clang64 "BB_PACKAGE_STAGE_ONLY=1 BB_RELEASE_VERSION=$Version bash packaging/windows/package.sh"
 $package = Join-Path $bbport "out\stage\bbport-windows"
 
 # --- 2. the server -----------------------------------------------------------------------------

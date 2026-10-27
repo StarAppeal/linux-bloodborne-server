@@ -24,9 +24,16 @@ export USERPROFILE=${USERPROFILE:-$(cygpath -w "/c/Users/$(id -un)")}
 if [[ ! -x out/pyenv/Scripts/python.exe ]]; then
     "$python" -m venv out/pyenv
 fi
-# Only when missing: pip asks PyPI on every call and hangs for minutes without a connection.
-out/pyenv/Scripts/python.exe -c 'import PyInstaller, PIL' 2>/dev/null ||
-    out/pyenv/Scripts/python.exe -m pip install -q --disable-pip-version-check pyinstaller pillow
+# PyInstaller is pinned: each version has its own bootloader (the exe's code), so a release's launcher does
+# not change under us. Only when missing or another version: pip asks PyPI on every call and hangs for
+# minutes without a connection.
+pyinstaller_version=6.22.3
+out/pyenv/Scripts/python.exe -c "import PIL, PyInstaller, sys; sys.exit(PyInstaller.__version__ != '$pyinstaller_version')" 2>/dev/null ||
+    out/pyenv/Scripts/python.exe -m pip install -q --disable-pip-version-check "pyinstaller==$pyinstaller_version" pillow
+# The launcher's version resource (who made it, what it is). Unsigned, without one, the v1.3.0 launcher was
+# flagged by Windows Defender's machine learning as Trojan:Win32/Bearfoos.A!ml (player report 2026-10-26).
+# make-release.ps1 passes the release's version in BB_RELEASE_VERSION.
+out/pyenv/Scripts/python.exe packaging/windows/version_info.py "${BB_RELEASE_VERSION:-0.0.0}" out/blauncher-version.txt
 # The scripts run inside BLauncher.exe (--script): the standard modules they import come along.
 # The co-op kit runs its backend (backend/bb_dummy_server.py) and its event patcher this way too.
 hidden=()
@@ -34,8 +41,10 @@ for module in argparse base64 bisect collections contextlib hashlib json re shut
               urllib.request ctypes.wintypes binascii datetime http.server secrets sqlite3 uuid zlib; do
     hidden+=(--hidden-import "$module")
 done
-out/pyenv/Scripts/python.exe -m PyInstaller --noconfirm --clean --log-level WARN --windowed \
+# --noupx: PyInstaller packs with UPX whenever upx.exe is on PATH, and malware uses that packer too.
+out/pyenv/Scripts/python.exe -m PyInstaller --noconfirm --clean --log-level WARN --windowed --noupx \
     --name BLauncher --icon "$(cygpath -w "$PWD/launcher/bloodborne.ico")" --distpath out/pyi-dist \
+    --version-file "$(cygpath -w "$PWD/out/blauncher-version.txt")" \
     --workpath out/pyi-work --specpath out/pyi-work --paths "$(cygpath -w "$PWD/scripts")" \
     --paths "$(cygpath -w "$PWD/tools")" --hidden-import fetch_fsr4vk --hidden-import bbport_icons "${hidden[@]}" \
     "$(cygpath -w "$PWD/launcher/bbport_launcher_win.py")"
