@@ -77,5 +77,7 @@ PROBLEMS
     start before), the host's user\log\shadnet.txt and backend.txt.
   - Report issues at https://github.com/lKaniel/bloodborne-server/issues
 
+Made together by Yharnam Together, AMANISES and Supermedo.
+
 This project is not affiliated with Sony Interactive Entertainment or FromSoftware. CREDITS.txt
 lists the projects it is built on and their licenses (licenses folder).

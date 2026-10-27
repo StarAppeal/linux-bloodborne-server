@@ -6,6 +6,18 @@ the GNU General Public License, version 2 or later (licenses\GPL-2.0-or-later.tx
 on the work of the projects below; each keeps its own license. No game files are included, and
 this project is not affiliated with Sony Interactive Entertainment or FromSoftware.
 
+MADE TOGETHER BY
+  Yharnam Together (Kaniel)    https://github.com/lKaniel/bloodborne-server
+  AMANISES (CLS_AMG)           https://github.com/CLSAMG22/BBSC
+  Supermedo                    https://github.com/Supermedo/bloodborne_pc
+
+TESTERS
+  fra98_ (framilano), Hardwater, Onesadeye, aboood888848, Fahad, Mob, lelial, J2mF, Kukar3x
+
+SPECIAL THANKS
+  framilano (fra98_) for the Bloodborne Nucleus Co-op Handler, and Fahad (fhody125) for
+  No Dream For The Hunter.
+
 THE PROJECTS THIS IS FORKED FROM
   shadPS4                  https://github.com/shadps4-emu/shadPS4 (GPL-2.0-or-later)
                            The PS4 emulator. Its renderer and shader recompiler draw the game in
