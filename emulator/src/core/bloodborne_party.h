@@ -3809,6 +3809,15 @@ bool SkipsHitReaction(bool down, u64 victim, u64 local_player);
 constexpr u64 EnemyBarDamageOffset = 0x016F9A50;
 constexpr std::array<u8, 8> EnemyBarDamageStart{0x45, 0x31, 0xC0, 0x48, 0x89, 0xF8, 0x31, 0xC9};
 bool SkipsEnemyBarDamage(u32 handle, std::span<const u32> downed_bodies);
+// Provi's report (v1.2.0): the shaft of the Yahar'gul lamp's lift put a fallen player down at its
+// foot, where the lift's first-use event (m28_00 12800607) saw it inside its area (3:2) and
+// unlocked the call lever; a fall that kills never gets there. Event condition 3:2 asks
+// EntityInArea (0x013189A0: event manager rdi, entity esi, area edx; true when inside). A downed
+// local player (LocalPlayerEntity) is in no area, unless its body is in the void (a pit's kill
+// area still takes it).
+constexpr u64 EntityInAreaOffset = 0x013189A0;
+constexpr std::array<u8, 8> EntityInAreaStart{0x55, 0x48, 0x89, 0xE5, 0x41, 0x57, 0x41, 0x56};
+bool AreaMissesDownedPlayer(s32 entity, bool down, bool in_void);
 // The boss bars: BossGaugeSlots at [0x05562878] +0x1658 (BossGaugesOffset), BossGaugeSize bytes
 // each: name id, the boss's handle (-1 for none), two numbers and a shown byte (+0x10). The game's
 // ClearBossGauge (0x01336D00, also inlined in Failed_BossAreaMission 0x0138B2D0) puts them back

@@ -1102,6 +1102,14 @@ bool PS4_SYSV_ABI SkipBossFightKill(u64, const GuestRegisterSnapshot* registers)
     return true;
 }
 
+// A downed local player is in no event's area (AreaMissesDownedPlayer): EntityInArea answers
+// false for it.
+bool PS4_SYSV_ABI SkipDownedPlayerInArea(u64, const GuestRegisterSnapshot* registers) {
+    const bool down = party_death_down.load(std::memory_order_relaxed);
+    return AreaMissesDownedPlayer(static_cast<s32>(registers->rsi), down,
+                                  down && CharacterInTheVoid(GetLocalPlayer()));
+}
+
 // The animation a downed player plays (DownedAnimation): none. Getting up from the kneel plays its
 // stand-up (DownedStandAnimation), from another pose resets.
 const s32 downed_animation = DownedAnimation(std::getenv("SHADPS4_BLOODBORNE_DOWNED_ANIMATION"));
@@ -2604,6 +2612,14 @@ void InstallPartyDeath(u64 base, u64 image_size) {
     } else {
         coop_features.Skipped("boss fight deaths",
                               SiteFailure(base, image_size, KillCharacterOffset));
+    }
+    if (EntityInAreaOffset + EntityInAreaStart.size() <= image_size &&
+        InstallCoopHook(reinterpret_cast<void*>(base + EntityInAreaOffset), EntityInAreaStart, 0,
+                        GuestFunctionOverride{SkipDownedPlayerInArea})) {
+        coop_features.On("no area events while down");
+    } else {
+        coop_features.Skipped("no area events while down",
+                              SiteFailure(base, image_size, EntityInAreaOffset));
     }
     if (EnemyBarDamageOffset + EnemyBarDamageStart.size() <= image_size &&
         InstallCoopHook(reinterpret_cast<void*>(base + EnemyBarDamageOffset), EnemyBarDamageStart,

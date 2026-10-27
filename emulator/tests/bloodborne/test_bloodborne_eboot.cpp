@@ -476,6 +476,15 @@ TEST_F(BloodborneEboot, TheNoDeadCallersCallIsNoDead) {
     }
 }
 
+// A downed player is in no event's area: event condition 3:2 (the condition bank 3 handler
+// 0x017BD1D0, case 2, makes an evaluator whose update 0x017B6FE0 asks EntityInArea with its entity
+// and area) and the hook finds the function's prologue.
+TEST_F(BloodborneEboot, TheAreaConditionAsksEntityInArea) {
+    EXPECT_EQ(CallTarget(0x017B7023), EntityInAreaOffset);
+    EXPECT_EQ(Bytes(EntityInAreaOffset, EntityInAreaStart.size()),
+              std::vector<u8>(EntityInAreaStart.begin(), EntityInAreaStart.end()));
+}
+
 // Shared enemy damage counts this player's own hits at the game's hit function: its entry, and the
 // return from the IsNoDead check that follows the applied hit (the AfterHit caller).
 TEST_F(BloodborneEboot, TheHitHooksFindTheGamesHit) {

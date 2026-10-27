@@ -6143,6 +6143,10 @@ bool SkipsEnemyBarDamage(u32 handle, std::span<const u32> downed_bodies) {
     return std::ranges::find(downed_bodies, handle) != downed_bodies.end();
 }
 
+bool AreaMissesDownedPlayer(s32 entity, bool down, bool in_void) {
+    return entity == LocalPlayerEntity && down && !in_void;
+}
+
 bool SomeoneElseStands(std::span<const MemberVitals> board, std::string_view self, u32 map) {
     return map != 0 && std::ranges::any_of(board, [&](const MemberVitals& member) {
                return member.member != self && member.map == map && member.vital == Vital::Up;
