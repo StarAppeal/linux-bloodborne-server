@@ -45,6 +45,21 @@ GAME_FOLDERS = {"dvdroot_ps4", "sce_sys", "sce_module", "uroot", "event-patch"}
 PLAYER_NAMES = {"settings.bat", "host_overrides.custom.json", "mods.json", "patches.json", "bbport.ini"}
 PLAYER_SUFFIXES = (".db", ".log", ".pyc", ".bak", ".old", ".dmp")
 PLAYER_FOLDERS = {"user", "savedata", "__pycache__", "db", "out", "game", "coop-game"}
+# BLauncher.exe's version resource (package.sh's version_info.py). Unsigned, without one and packed with
+# UPX it was flagged by Defender's machine learning as Trojan:Win32/Bearfoos.A!ml (v1.3.0, 2026-10-26).
+LAUNCHER_PRODUCT = "Yharnam Together"
+UPX_SECTIONS = (b"UPX0\0", b"UPX1\0")
+
+
+def launcher_problems(launcher: pathlib.Path) -> list[str]:
+    data = launcher.read_bytes()
+    problems = []
+    if ("VS_VERSION_INFO".encode("utf-16-le") not in data
+            or LAUNCHER_PRODUCT.encode("utf-16-le") not in data):
+        problems.append(f"BLauncher.exe has no version resource naming {LAUNCHER_PRODUCT} (package.sh --version-file)")
+    if any(section in data for section in UPX_SECTIONS):
+        problems.append("BLauncher.exe is packed with UPX (package.sh must freeze it with --noupx)")
+    return problems
 
 
 def check(root: pathlib.Path) -> list[str]:
@@ -63,6 +78,8 @@ def check(root: pathlib.Path) -> list[str]:
             problems.append(f"game file in the release: {relative}")
         elif name in PLAYER_NAMES or name.endswith(PLAYER_SUFFIXES) or folders & PLAYER_FOLDERS:
             problems.append(f"player or test data in the release: {relative}")
+    if (root / "BLauncher.exe").is_file():
+        problems += launcher_problems(root / "BLauncher.exe")
     reference = root / "event-reference.json"
     if reference.is_file():
         try:
