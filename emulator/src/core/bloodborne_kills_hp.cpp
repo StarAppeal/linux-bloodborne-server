@@ -2426,6 +2426,18 @@ void KeepEnemyDeathsInStep(bool sharing) {
     // and with this member's own and held ones (see GatherPartyKills).
     PartyKillsNow party =
         GatherPartyKills(visit_kills, map, changes, forget_kills, died_for_others);
+    // A kill of this member's taken back (a generator brought it back) is no party kill, though
+    // the party's log has it until this member's unkill has gone round (see TakenBackKills).
+    static TakenBackKills taken_back;
+    for (const auto& [handle, killed] : changes) {
+        if (!killed) {
+            taken_back.TakeBack(static_cast<u32>(handle), now_ms);
+        }
+    }
+    for (const u32 handle : taken_back.Holding(party.all, now_ms)) {
+        party.all.erase(handle);
+        party.members.erase(handle);
+    }
     std::unordered_set<u32>& others = party.all;
     const std::unordered_set<u32>& member_kills = party.members;
     // And what is dead in the host's world, killed before the session too (its save): a guest

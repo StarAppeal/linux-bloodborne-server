@@ -2519,6 +2519,24 @@ std::vector<std::pair<s32, bool>> VisitKills::Observe(u64 visit,
     return changes;
 }
 
+void TakenBackKills::TakeBack(u32 handle, s64 now_ms) {
+    since[handle] = now_ms;
+}
+
+std::vector<u32> TakenBackKills::Holding(const std::unordered_set<u32>& party_kills,
+                                         s64 now_ms) {
+    std::vector<u32> holding;
+    for (auto it = since.begin(); it != since.end();) {
+        if (!party_kills.contains(it->first) || now_ms - it->second >= HoldMs) {
+            it = since.erase(it);
+            continue;
+        }
+        holding.push_back(it->first);
+        ++it;
+    }
+    return holding;
+}
+
 std::vector<u32> VisitKills::Held(u32 map) const {
     const auto it = held.find(map);
     return it != held.end() ? it->second : std::vector<u32>{};

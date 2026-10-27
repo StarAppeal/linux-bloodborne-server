@@ -1994,6 +1994,22 @@ private:
     std::map<u32, u32> killed_on;         // this visit's kills -> the map each died on
     std::map<u32, std::vector<u32>> held; // map -> kills of an earlier visit standing there
 };
+// A map generator brought back one of this member's kills (VisitKills::Observe takes it back),
+// but the party's kills (the log's, the server's) still have it until this member's unkill has
+// gone round: while they do, the kill step would kill or hide the risen enemy again (Provi's
+// report, Yahar'gul's bell summons). Its handle stays out of the party's kills until they drop it,
+// at most HoldMs.
+class TakenBackKills {
+public:
+    static constexpr s64 HoldMs = 10'000;
+    void TakeBack(u32 handle, s64 now_ms);
+    // The handles to leave out of `party_kills` now, sorted; forgets the ones the party's kills
+    // dropped and the ones held HoldMs.
+    std::vector<u32> Holding(const std::unordered_set<u32>& party_kills, s64 now_ms);
+
+private:
+    std::map<u32, s64> since;
+};
 std::string EncodeEchoUpdate(std::string_view member, s64 since,
                              std::span<const KillEchoes> echoes);
 std::optional<EchoBoardAnswer> ParseEchoBoard(std::string_view body);

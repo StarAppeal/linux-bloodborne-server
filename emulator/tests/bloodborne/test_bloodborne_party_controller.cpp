@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include <fmt/format.h>
@@ -1803,6 +1804,30 @@ TEST(BloodborneSharedKills, AnEnemyBroughtBackTakesItsKillBack) {
     EXPECT_EQ(kills.Observe(1, std::vector<SeenCharacter>{{Skeleton, 0, 8}}), Changes{})
         << "already this visit's kill";
     EXPECT_EQ(kills.Observe(1, std::vector<SeenCharacter>{{Skeleton, 398, 8, true}}), Changes{});
+}
+
+// Provi's report (v1.2.0, Yahar'gul) and the rig 2026-10-27 (main): the bell woman's generator
+// brought the host's kill 0x1002804d back; the host's kill step took its kill back, but the
+// party's log still had it (its unkill a few entries later), so the same step killed the summon
+// again where it rose ("1 near died"): every respawn died at once and each death replayed its
+// blood burst (m28_00 12804000, SpEffect 5560). A member's own kill taken back stays out of the
+// party's kills until the log drops it, at most TakenBackKills::HoldMs.
+TEST(BloodborneSharedKills, AKillTakenBackStaysOutUntilTheLogDropsIt) {
+    constexpr u32 Summon = 0x1002804d;
+    constexpr u32 Other = 0x1002804c;
+    TakenBackKills taken_back;
+    const std::unordered_set<u32> log_still_has{Summon, Other};
+    EXPECT_TRUE(taken_back.Holding(log_still_has, 1'000).empty()) << "nothing taken back yet";
+    taken_back.TakeBack(Summon, 1'000);
+    EXPECT_EQ(taken_back.Holding(log_still_has, 1'000), std::vector<u32>{Summon});
+    EXPECT_EQ(taken_back.Holding(log_still_has, 5'000), std::vector<u32>{Summon})
+        << "the log's unkill is still on its way";
+    EXPECT_TRUE(taken_back.Holding({Other}, 6'000).empty()) << "the log dropped it";
+    EXPECT_TRUE(taken_back.Holding(log_still_has, 7'000).empty())
+        << "a kill the log has again is a new kill";
+    taken_back.TakeBack(Summon, 10'000);
+    EXPECT_TRUE(taken_back.Holding(log_still_has, 10'000 + TakenBackKills::HoldMs).empty())
+        << "never longer than HoldMs";
 }
 
 // Rig smoke 2026-10-12 (run 143240): Father Gascoigne (0x1001409c/0x1001409e), dead in the
