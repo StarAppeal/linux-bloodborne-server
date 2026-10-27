@@ -181,6 +181,22 @@ GILBERT_SEEN = r"watched 0x1001400c drawn"
 OTHER_MAP_FLAG = 12700999  # no door's (DoorFlags are shared with the party)
 OLD_YHARNAM_GATE = 12800201  # the object act flag of Old Yharnam's gate (m28 event 12800480)
 OLD_YHARNAM_GATE_DONE = 12800480  # that gate's event done: a load sets the gate open
+YAHARGUL_LAMP = 2802950  # Yahar'gul, Unseen Village (257.4 -51.41 69.9)
+YAHARGUL_LAMP_LIT = 12807810
+# The first bell (m28_00 event 12805030 slot 0): a player inside area 2802500 (a box 14 by 12, 23
+# high, at 260.2 -39.2 118.2) sets 12805030 within a second, and the summons waiting for it
+# (12804500: 2800302 at 256.9 -39.1 115.3 and 2800303 at 267.4 -38.9 115.4) rise (animation 6200)
+# and their generators (2803002, 2803003) start; each one's death plays SpEffect 5560 (12804000) a
+# second later.
+YAHARGUL_BELL_RUNG = 12805030
+# The blood moon: without it Yahar'gul's story (12800400 on 9800/9801/9802) hides the crowd,
+# the summons too (2004:29 on 2800302).
+BLOOD_MOON = 9802
+YAHARGUL_BELL_AREA = "260.2 -38.5 118.2"
+YAHARGUL_BELL_GUEST = "258.5 -38.5 116.5"  # (at 256.0 -38.5 112.0 a guest died, godmode on)
+# Open ground 30 m from the bell's area, on the street from the lamp (where crowd 2800301 walks):
+# a rise from 10.7 m off its middle (254.8 -38.5 127.4) was still inside it (it is 23 m high).
+YAHARGUL_BY_THE_BELL = "268.0 -46.5 89.0"
 THIS_MAP_FLAG = 12410999
 FORBIDDEN_WOODS_LAMP_LIT = 12707810  # a lamp neither rig character has lit (see LampOfActiveFlag)
 START = f"ensure-map {CENTRAL_YHARNAM} {CENTRAL_YHARNAM_LAMP}"
@@ -3437,6 +3453,64 @@ SCENARIOS = {
                             r"and its member \w+ is up again: faded back in"]},
         "forbid": {"host": SESSION_HOLDS, "guest": SESSION_HOLDS},
         "settings": PARTY_DEATH,
+        "timeout": 300,
+    },
+    # Provi's report (v1.2.0): in Yahar'gul a fall down the lift's shaft put a party member down at
+    # its foot, and the lift's first-use event (m28_00 12800607: 3:2, the local player inside area
+    # 2802100, a box at 243.71 -97.97 3.56) set 12800612 and unlocked its call lever. On the rig that
+    # event set nothing even for an up host teleported into its area (2026-10-27), so the same down
+    # is checked at an area the rig's characters do trigger with the same condition: under the
+    # blood moon the first bell (12805030) rings within a second of a player entering area 2802500.
+    # The guest goes down outside it and its body is put into it: no bell on either game. The host,
+    # up, then steps in and the bell rings.
+    "yahargul-downed-bell-area": {
+        "about": "in a session in Yahar'gul under the blood moon the guest lies down inside the "
+                 "first bell's area: the bell stays silent; the host standing there rings it",
+        "roles": {
+            "host": [START, "godmode", f"set-flag {YAHARGUL_LAMP_LIT} 1",
+                     f"set-flag {BLOOD_MOON} 1", "wait-session 2 300",
+                     f"travel {YAHARGUL_LAMP}", "wait-members 2 120", "wait 10",
+                     f"expect-flag {YAHARGUL_BELL_RUNG} 0", "wait-member-vital down 120",
+                     "wait 20", f"expect-flag {YAHARGUL_BELL_RUNG} 0",
+                     f"teleport {YAHARGUL_BELL_AREA} 0", "wait 5", "snapshot",
+                     f"expect-flag {YAHARGUL_BELL_RUNG} 1", "expect-session 2"],
+            "guest": [START, f"set-flag {YAHARGUL_LAMP_LIT} 1", f"set-flag {BLOOD_MOON} 1",
+                      "wait-session 2 300", f"travel {YAHARGUL_LAMP}", "wait-members 2 120",
+                      "wait 10", f"expect-flag {YAHARGUL_BELL_RUNG} 0",
+                      f"teleport {YAHARGUL_BY_THE_BELL} 0", "wait 3", "hurt self 1", "rise 15",
+                      "wait-vital down 30", f"teleport {YAHARGUL_BELL_AREA} 0", "wait 2",
+                      "snapshot", "wait 10", f"expect-flag {YAHARGUL_BELL_RUNG} 0", "wait 30",
+                      "expect-session 2"],
+        },
+        "forbid": {"host": SESSION_HOLDS, "guest": SESSION_HOLDS},
+        "settings": PARTY_DEATH,
+        "timeout": 300,
+    },
+    # Provi's report (v1.2.0): in Yahar'gul the bell-ringing woman's summons made a really loud
+    # blood sound when they died, and some appeared without rising. Under the blood moon the host
+    # rings the first bell (YAHARGUL_BELL_RUNG, within a second in its area) with the guest beside
+    # it, kills two summons near the guest, and the guest kills one; both games' census shows each
+    # copy's HP, death flags and switch.
+    "yahargul-bell-summons": {
+        "about": "in a session in Yahar'gul the host rings the first bell; its summons rise for "
+                 "both, the host kills two near the guest and the guest one",
+        "roles": {
+            "host": [START, "godmode", f"set-flag {YAHARGUL_LAMP_LIT} 1",
+                     f"set-flag {BLOOD_MOON} 1", "wait-session 2 300",
+                     f"travel {YAHARGUL_LAMP}", "wait-members 2 120", "wait 10",
+                     f"teleport {YAHARGUL_BELL_AREA} 0", "census 40", "wait 25",
+                     f"set-flag {YAHARGUL_BELL_RUNG} 1", "wait 2", "census 40", "wait 8",
+                     "census 40", "attack nearest 40", "wait 3", "census 40", "wait 20",
+                     "census 40", "attack nearest 40", "wait 3", "census 40", "wait 30",
+                     "census 40", "expect-session 2"],
+            "guest": [START, "godmode", f"set-flag {YAHARGUL_LAMP_LIT} 1",
+                      f"set-flag {BLOOD_MOON} 1", "wait-session 2 300",
+                      f"travel {YAHARGUL_LAMP}", "wait-members 2 120", "wait 12",
+                      f"teleport {YAHARGUL_BELL_GUEST} 0", "census 40", "wait 30", "census 40",
+                      "wait 10", "census 40", "wait 25", "census 40", "attack nearest 40",
+                      "wait 3", "census 40", "wait 30", "census 40", "expect-session 2"],
+        },
+        "forbid": {"host": SESSION_HOLDS, "guest": SESSION_HOLDS},
         "timeout": 300,
     },
     # Kaniel 2026-10-17: the map screen in a session: the other hunter at its spot on the

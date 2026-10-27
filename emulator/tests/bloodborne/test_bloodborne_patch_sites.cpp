@@ -212,6 +212,7 @@ TEST(CoopSites, ThePartyHeaderHooksAreRegistered) {
     EXPECT_TRUE(IsRegisteredCoopHook(HudConstructOffset, HudConstructPrologue));
     EXPECT_TRUE(IsRegisteredCoopHook(HitDamageStoredOffset, HitDamageStored));
     EXPECT_TRUE(IsRegisteredCoopHook(HitReactionOffset, HitReactionPrologue));
+    EXPECT_TRUE(IsRegisteredCoopHook(EntityInAreaOffset, EntityInAreaStart));
     EXPECT_TRUE(IsRegisteredCoopHook(PartyGhostDeathMenuBranchOffset - 5,
                                      std::vector<u8>{0x41, 0x80, 0x7E, 0x0C, 0x00}));
     // The game's packets, traced at its send and at its receive queues (phase 0).

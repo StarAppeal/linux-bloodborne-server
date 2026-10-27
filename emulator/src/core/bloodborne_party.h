@@ -1761,6 +1761,21 @@ std::vector<CharacterSwitch> SwitchedLikeTheHost(std::span<const CharacterShown>
                                                  const std::unordered_set<u32>& switched_off,
                                                  const std::unordered_set<u32>& kill_hidden,
                                                  const std::unordered_set<u32>& off_for_good = {});
+// The bell woman's summons in Yahar'gul (m28_00 12804500) are switched on by the host's event
+// with their rise (animation 6200); a guest's board had the host's switch before the guest's own
+// event got its flag, so its copies stood there with no rise (Provi's report, rig 2026-10-27).
+// Of SwitchedLikeTheHost's `changes`, the ones to make now: switching off, and back on what this
+// member switched off itself (`switched_off`), at once; switching on one its own story has off
+// only once proposed for WaitMs in a row, for its own event to do it first.
+class SwitchOnWait {
+public:
+    static constexpr s64 WaitMs = 2'000;
+    std::vector<CharacterSwitch> Due(std::span<const CharacterSwitch> changes,
+                                     const std::unordered_set<u32>& switched_off, s64 now_ms);
+
+private:
+    std::map<u32, s64> since;
+};
 // The Hemwick woods' mist ambush (m22_00 event 12204000, a slot per enemy 2200500-2200508): the
 // slot's done flag of `entity`, if it is one. With the flag on and the host's copy off, the event
 // switched it off for good (unarmed: a host under 15 Insight), so a guest follows that far from
@@ -1993,6 +2008,37 @@ private:
     std::vector<u32> killed;
     std::map<u32, u32> killed_on;         // this visit's kills -> the map each died on
     std::map<u32, std::vector<u32>> held; // map -> kills of an earlier visit standing there
+};
+// The copies this game's own generator brought back (seen dead, then alive again): while the
+// party still has one dead (another member's generator has not run yet), the kill step hides it
+// rather than kill it again, which would replay its death (the bell summons' blood burst).
+class LocalRevives {
+public:
+    void See(u32 handle, s32 hp);
+    bool Revived(u32 handle) const {
+        return revived.contains(handle);
+    }
+    void Clear();
+
+private:
+    std::unordered_set<u32> dead;
+    std::unordered_set<u32> revived;
+};
+// A map generator brought back one of this member's kills (VisitKills::Observe takes it back),
+// but the party's kills (the log's, the server's) still have it until this member's unkill has
+// gone round: while they do, the kill step would kill or hide the risen enemy again (Provi's
+// report, Yahar'gul's bell summons). Its handle stays out of the party's kills until they drop it,
+// at most HoldMs.
+class TakenBackKills {
+public:
+    static constexpr s64 HoldMs = 10'000;
+    void TakeBack(u32 handle, s64 now_ms);
+    // The handles to leave out of `party_kills` now, sorted; forgets the ones the party's kills
+    // dropped and the ones held HoldMs.
+    std::vector<u32> Holding(const std::unordered_set<u32>& party_kills, s64 now_ms);
+
+private:
+    std::map<u32, s64> since;
 };
 std::string EncodeEchoUpdate(std::string_view member, s64 since,
                              std::span<const KillEchoes> echoes);
@@ -3809,6 +3855,15 @@ bool SkipsHitReaction(bool down, u64 victim, u64 local_player);
 constexpr u64 EnemyBarDamageOffset = 0x016F9A50;
 constexpr std::array<u8, 8> EnemyBarDamageStart{0x45, 0x31, 0xC0, 0x48, 0x89, 0xF8, 0x31, 0xC9};
 bool SkipsEnemyBarDamage(u32 handle, std::span<const u32> downed_bodies);
+// Provi's report (v1.2.0): the shaft of the Yahar'gul lamp's lift put a fallen player down at its
+// foot, where the lift's first-use event (m28_00 12800607) saw it inside its area (3:2) and
+// unlocked the call lever; a fall that kills never gets there. Event condition 3:2 asks
+// EntityInArea (0x013189A0: event manager rdi, entity esi, area edx; true when inside). A downed
+// local player (LocalPlayerEntity) is in no area, unless its body is in the void (a pit's kill
+// area still takes it).
+constexpr u64 EntityInAreaOffset = 0x013189A0;
+constexpr std::array<u8, 8> EntityInAreaStart{0x55, 0x48, 0x89, 0xE5, 0x41, 0x57, 0x41, 0x56};
+bool AreaMissesDownedPlayer(s32 entity, bool down, bool in_void);
 // The boss bars: BossGaugeSlots at [0x05562878] +0x1658 (BossGaugesOffset), BossGaugeSize bytes
 // each: name id, the boss's handle (-1 for none), two numbers and a shown byte (+0x10). The game's
 // ClearBossGauge (0x01336D00, also inlined in Failed_BossAreaMission 0x0138B2D0) puts them back

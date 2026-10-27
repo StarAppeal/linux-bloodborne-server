@@ -2426,6 +2426,18 @@ void KeepEnemyDeathsInStep(bool sharing) {
     // and with this member's own and held ones (see GatherPartyKills).
     PartyKillsNow party =
         GatherPartyKills(visit_kills, map, changes, forget_kills, died_for_others);
+    // A kill of this member's taken back (a generator brought it back) is no party kill, though
+    // the party's log has it until this member's unkill has gone round (see TakenBackKills).
+    static TakenBackKills taken_back;
+    for (const auto& [handle, killed] : changes) {
+        if (!killed) {
+            taken_back.TakeBack(static_cast<u32>(handle), now_ms);
+        }
+    }
+    for (const u32 handle : taken_back.Holding(party.all, now_ms)) {
+        party.all.erase(handle);
+        party.members.erase(handle);
+    }
     std::unordered_set<u32>& others = party.all;
     const std::unordered_set<u32>& member_kills = party.members;
     // And what is dead in the host's world, killed before the session too (its save): a guest
@@ -2466,6 +2478,16 @@ void KeepEnemyDeathsInStep(bool sharing) {
     size_t newly_died = 0;
     const auto me = LocalPlayerPosition();
     const bool can_kill = Coop::KillCharacterCallable();
+    // Copies this game's own generator brought back are hidden, not killed again (LocalRevives).
+    static LocalRevives revives;
+    static u64 revives_visit = 0;
+    if (visit != revives_visit) {
+        revives.Clear();
+        revives_visit = visit;
+    }
+    for (const SeenCharacter& seen : characters) {
+        revives.See(seen.handle, seen.hp);
+    }
     // Copies at 0 HP without the game's death, since when (see FinishesStuckDeath).
     static std::unordered_map<u64, s64> zero_since;
     static std::unordered_set<u64> finished;
@@ -2501,7 +2523,7 @@ void KeepEnemyDeathsInStep(bool sharing) {
             AppliesMemberKill(others.contains(handle), CharacterHp(character)) &&
             ReadValue<u8>(character, 0x28) == 0 &&
             HasMemoryAccess(character, 0x29, MemoryProt::CpuWrite)) {
-            if (can_kill && !died_for_others.contains(handle) &&
+            if (can_kill && !died_for_others.contains(handle) && !revives.Revived(handle) &&
                 IsCharacter(character, "member kill") &&
                 DiesInsteadOfHiding(me, CharacterPosition(character))) {
                 // Near this player: it dies as the game kills (no echoes), not vanishing. Its
@@ -2659,9 +2681,11 @@ void SwitchCharactersLikeTheHost(u32 map, std::span<const u64> characters,
             }
         }
     }
+    static SwitchOnWait switch_on_wait;
     std::string which;
-    for (const CharacterSwitch& change :
-         SwitchedLikeTheHost(host, mine, switched_off, kill_hidden, off_for_good)) {
+    for (const CharacterSwitch& change : switch_on_wait.Due(
+             SwitchedLikeTheHost(host, mine, switched_off, kill_hidden, off_for_good), switched_off,
+             SteadyMilliseconds())) {
         const auto at = std::ranges::find(mine, change.handle, &CharacterSwitch::handle);
         if (!SetCharacterDisabled(pointers[at - mine.begin()], change.disabled)) {
             continue;

@@ -866,6 +866,18 @@ TEST(BloodbornePartyDeath, ADownedBodyGetsNoEnemyBarDamage) {
     EXPECT_FALSE(SkipsEnemyBarDamage(0x10044001, {}));
 }
 
+// Provi's report (v1.2.0, 2026-10-26): falling down the shaft of the Yahar'gul lamp's lift put
+// the player down at its foot, alive enough for the lift's first-use event (m28_00 12800607: 3:2,
+// the local player inside the area at the shaft's foot) to unlock the lift's call lever. A fall
+// that kills never gets there. A downed player is in no event's area; once up, or a body fallen
+// into the void (whose pit areas still kill it), it is.
+TEST(BloodbornePartyDeath, ADownedPlayerIsInNoEventArea) {
+    EXPECT_TRUE(AreaMissesDownedPlayer(LocalPlayerEntity, true, false));
+    EXPECT_FALSE(AreaMissesDownedPlayer(LocalPlayerEntity, false, false)) << "up again";
+    EXPECT_FALSE(AreaMissesDownedPlayer(LocalPlayerEntity, true, true)) << "a pit's kill area";
+    EXPECT_FALSE(AreaMissesDownedPlayer(2800400, true, false)) << "an enemy or object";
+}
+
 // Kaniel's playtest 2026-10-16: Lisara started Gascoigne alone; the host's game, far away, ran
 // him, so her copy only followed (lag) and his AI went for nobody. The member in the arena runs a
 // boss and keeps it for the whole fight (her game claims it on the board).

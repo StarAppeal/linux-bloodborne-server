@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include <fmt/format.h>
@@ -1805,6 +1806,53 @@ TEST(BloodborneSharedKills, AnEnemyBroughtBackTakesItsKillBack) {
     EXPECT_EQ(kills.Observe(1, std::vector<SeenCharacter>{{Skeleton, 398, 8, true}}), Changes{});
 }
 
+// Rig 2026-10-27 (yahargul-bell-summons on the fix): a guest's own generator brought back the
+// bell woman's summons before the host's did, while the party (the host's world, the server's
+// log) still had them dead, so its kill step put them down again where they rose ("2 near died"),
+// replaying their blood burst. A copy this game brought back itself is hidden, not killed again,
+// until the party has it alive too.
+TEST(BloodborneSharedKills, ACopyThisGameBroughtBackIsNotKilledAgain) {
+    constexpr u32 Summon = 0x1002804d;
+    constexpr u32 Crowd = 0x1002804c;
+    LocalRevives revives;
+    revives.See(Summon, 518);
+    EXPECT_FALSE(revives.Revived(Summon)) << "alive from the start";
+    revives.See(Summon, 0);
+    EXPECT_FALSE(revives.Revived(Summon));
+    revives.See(Summon, 518);
+    EXPECT_TRUE(revives.Revived(Summon)) << "dead, then alive again here";
+    EXPECT_FALSE(revives.Revived(Crowd));
+    revives.See(Summon, 0);
+    EXPECT_FALSE(revives.Revived(Summon)) << "killed again for real";
+    revives.See(Summon, 518);
+    revives.Clear();
+    EXPECT_FALSE(revives.Revived(Summon)) << "another visit";
+}
+
+// Provi's report (v1.2.0, Yahar'gul) and the rig 2026-10-27 (main): the bell woman's generator
+// brought the host's kill 0x1002804d back; the host's kill step took its kill back, but the
+// party's log still had it (its unkill a few entries later), so the same step killed the summon
+// again where it rose ("1 near died"): every respawn died at once and each death replayed its
+// blood burst (m28_00 12804000, SpEffect 5560). A member's own kill taken back stays out of the
+// party's kills until the log drops it, at most TakenBackKills::HoldMs.
+TEST(BloodborneSharedKills, AKillTakenBackStaysOutUntilTheLogDropsIt) {
+    constexpr u32 Summon = 0x1002804d;
+    constexpr u32 Other = 0x1002804c;
+    TakenBackKills taken_back;
+    const std::unordered_set<u32> log_still_has{Summon, Other};
+    EXPECT_TRUE(taken_back.Holding(log_still_has, 1'000).empty()) << "nothing taken back yet";
+    taken_back.TakeBack(Summon, 1'000);
+    EXPECT_EQ(taken_back.Holding(log_still_has, 1'000), std::vector<u32>{Summon});
+    EXPECT_EQ(taken_back.Holding(log_still_has, 5'000), std::vector<u32>{Summon})
+        << "the log's unkill is still on its way";
+    EXPECT_TRUE(taken_back.Holding({Other}, 6'000).empty()) << "the log dropped it";
+    EXPECT_TRUE(taken_back.Holding(log_still_has, 7'000).empty())
+        << "a kill the log has again is a new kill";
+    taken_back.TakeBack(Summon, 10'000);
+    EXPECT_TRUE(taken_back.Holding(log_still_has, 10'000 + TakenBackKills::HoldMs).empty())
+        << "never longer than HoldMs";
+}
+
 // Rig smoke 2026-10-12 (run 143240): Father Gascoigne (0x1001409c/0x1001409e), dead in the
 // guests' saves, was put down by their worlds 5.7 s after the join's load, past the settling
 // time, and both guests posted him; every other game then hid his body, and the second guest
@@ -2204,6 +2252,32 @@ TEST(BloodborneHiddenCharacters, AGuestSwitchesOffWhatTheHostRemoved) {
         << "turned on again by the guest's world: off again";
     EXPECT_EQ(SwitchedLikeTheHost({}, guest, switched_off, {}), std::vector<CharacterSwitch>{})
         << "nothing from the host: nothing changes";
+}
+
+// Provi's report (v1.2.0, Yahar'gul) and the rig 2026-10-27 (main): as the bell rang, the host's
+// event switched the bell woman's summons on and they rose (m28_00 12804500: on, then animation
+// 6200). The guest's board had the host's switch a moment before the guest's flag arrived, so the
+// guest switched its copies on itself: they stood there with no rise. A copy its own story
+// switched off is switched on like the host only after SwitchOnWait::WaitMs, so its own event can
+// do it with the rise; switching off, and back on what this member switched off, is at once.
+TEST(BloodborneHiddenCharacters, AGuestWaitsBeforeSwitchingOnWhatItsStoryHasOff) {
+    constexpr u32 Summon = 0x1002804d;
+    constexpr u32 Iosefka = 0x10014005;
+    constexpr u32 Crowd = 0x1002804c;
+    SwitchOnWait wait;
+    const std::vector<CharacterSwitch> changes{{Summon, false}, {Iosefka, false}, {Crowd, true}};
+    const std::unordered_set<u32> switched_off{Iosefka};
+    EXPECT_EQ(wait.Due(changes, switched_off, 1'000),
+              (std::vector<CharacterSwitch>{{Iosefka, false}, {Crowd, true}}))
+        << "the summon waits for its own event";
+    EXPECT_EQ(wait.Due(changes, switched_off, 1'000 + SwitchOnWait::WaitMs - 1),
+              (std::vector<CharacterSwitch>{{Iosefka, false}, {Crowd, true}}));
+    EXPECT_EQ(wait.Due(changes, switched_off, 1'000 + SwitchOnWait::WaitMs),
+              (std::vector<CharacterSwitch>{{Summon, false}, {Iosefka, false}, {Crowd, true}}))
+        << "its own event never did: on like the host";
+    EXPECT_TRUE(wait.Due({}, {}, 5'000).empty()) << "its own event switched it on";
+    EXPECT_TRUE(wait.Due(std::vector<CharacterSwitch>{{Summon, false}}, {}, 5'100).empty())
+        << "proposed again later: waits again";
 }
 
 // Rig 2026-10-21 (mist-ambush-guest): with a host under 15 Insight, Hemwick's mist ambush
