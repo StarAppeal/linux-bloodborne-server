@@ -588,6 +588,30 @@ std::mutex hand_out_mutex;
 std::map<std::string, HandOut> handed_by_me;
 HandOut handed_to_me;
 
+// Kaniel 2026-10-28 (passive bosses): the bosses BossRunnerOf saw lately, by +0x90 index, with
+// their pick's runner and when; the game's hand-out names a boss only to that runner
+// (BossesKeptFrom).
+constexpr s64 BossIndexKeepMs = 10'000;
+std::mutex boss_indices_mutex;
+std::map<u32, std::pair<std::string, s64>> boss_indices;
+
+void NoteBossIndex(u32 index, const std::string& runner, s64 now_ms) {
+    std::scoped_lock lock{boss_indices_mutex};
+    boss_indices[index] = {runner, now_ms};
+}
+
+std::vector<BossHand> RecentBosses(s64 now_ms) {
+    std::scoped_lock lock{boss_indices_mutex};
+    std::erase_if(boss_indices, [&](const auto& entry) {
+        return now_ms - entry.second.second > BossIndexKeepMs;
+    });
+    std::vector<BossHand> bosses;
+    for (const auto& [index, seen] : boss_indices) {
+        bosses.push_back(BossHand{.index = index, .runner = seen.first});
+    }
+    return bosses;
+}
+
 // The enemies this game handed out (owner) or was handed (follower), from fresh hand-outs only.
 std::vector<u32> FreshHandOut(EnemyRole role, s64 now_ms) {
     std::scoped_lock lock{hand_out_mutex};
@@ -660,7 +684,35 @@ void NoteHandOutSent(const std::string& member, std::span<u8> payload, bool writ
         std::vector<u32> entries(count);
         std::memcpy(entries.data(), payload.data() + 4, size_t{count} * 4);
         static HandOutSettle settle;
-        const std::vector<u32> settled = settle.Filter(member, entries, now_ms);
+        const std::vector<BossHand> picks = RecentBosses(now_ms);
+        const std::string board_member = BoardMemberOfOnlineId(member);
+        const std::vector<u32> bosses = BossesKeptFrom(picks, board_member);
+        const std::vector<u32> given = BossesGivenTo(picks, board_member);
+        const std::vector<u32> settled =
+            GiveBosses(settle.Filter(member, entries, now_ms, bosses), given);
+        // The bosses the game would hand to another member than the pick's (kept here), and
+        // those the pick gives this one (each change).
+        const auto indices = [](std::span<const u32> from, std::span<const u32> among) {
+            std::string which;
+            for (const u32 entry : from) {
+                if (entry != HandOutHeldEntry && std::ranges::contains(among, entry & 0xFFFF)) {
+                    which += fmt::format(" {:x}", entry & 0xFFFF);
+                }
+            }
+            return which.empty() ? std::string{" none"} : which;
+        };
+        const std::string bosses_text =
+            fmt::format("kept{}, given{}", indices(entries, bosses), indices(settled, given));
+        static std::map<std::string, std::string> bosses_last;
+        static u32 bosses_logged = 0;
+        if (bosses_last[member] != bosses_text && bosses_logged < 200) {
+            bosses_last[member] = bosses_text;
+            ++bosses_logged;
+            LOG_INFO(Debug,
+                     "Bloodborne enemy owner: bosses in the hand-out to {} by the boss "
+                     "pick: {} (t={:.1f})",
+                     member, bosses_text, now_ms / 1000.0);
+        }
         std::memcpy(payload.data() + 4, settled.data(), size_t{count} * 4);
         const auto held = static_cast<u32>(std::ranges::count(settled, HandOutHeldEntry));
         static std::map<std::string, u32> held_last;
@@ -869,7 +921,9 @@ std::string BossRunnerOf(u64 character) {
     const auto at = CharacterPosition(character);
     const VitalsView view = ReadVitalsBoard();
     const u32 handle = ReadValue<u32>(character, 0x08);
+    const u32 index = ReadValue<u32>(character, 0x90);
     if (!at || !view.Fresh()) {
+        NoteBossIndex(index, boss_runners[handle].Last(), SteadyMilliseconds());
         return boss_runners[handle].Last(); // as last decided, not back and forth
     }
     std::string owner;
@@ -881,6 +935,7 @@ std::string BossRunnerOf(u64 character) {
     }
     const std::string runner =
         boss_runners[handle].Tick(PlayingMap(), handle, *at, view.board.members, owner);
+    NoteBossIndex(index, runner, SteadyMilliseconds());
     // Ours to run, awake and alive: claimed on the board (see ClaimsBoss).
     const u64 control = ReadValue<u64>(character, 0x18);
     const auto mine = std::ranges::find(view.board.members, view.member, &MemberVitals::member);
@@ -1393,8 +1448,18 @@ void TickEnemyOwner(bool in_session, u32 map) {
     const u64 doll = DollCharacter();
     ForEachWorldCharacter(world, [&](u64 character) {
         if (character == player || character == doll || players.contains(character) ||
-            CharacterHp(character) <= 0 ||
-            HandedOut(handed_to_this, ReadValue<u32>(character, 0x90))) {
+            CharacterHp(character) <= 0) {
+            return;
+        }
+        if (HandedOut(handed_to_this, ReadValue<u32>(character, 0x90))) {
+            // The rig 2026-10-28 (passive bosses): a boss the hand-out gives this game (the pick
+            // put it there, GiveBosses) is still asked about, so this game claims it on the board
+            // (ClaimsBoss); unclaimed, the host walking up took it back and restarted its AI.
+            const u64 control = ReadValue<u64>(character, 0x18);
+            if (role == EnemyRole::Follower && control >= 0x10000 &&
+                ReadValue<s32>(control, 0x14) == EnemyAwake) {
+                BossRunnerOf(character);
+            }
             return;
         }
         const u64 word = OwnershipWordAddress(world, character);

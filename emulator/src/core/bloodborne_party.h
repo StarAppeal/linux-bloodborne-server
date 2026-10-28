@@ -2996,10 +2996,30 @@ constexpr s64 HandOutFreshMs = 1'000;
 // guest ran the enemies by that guest a second more, two changes of hands instead of none).
 constexpr s64 HandOverSettleMs = 1'000;
 constexpr u32 HandOutHeldEntry = 0xFFFF;
+// Kaniel 2026-10-28 (passive bosses): the owner's game handed a boss to the member nearest it and
+// took it back every few seconds, against the boss pick (BossRunnerPick), and each change of hands
+// restarted its AI with no target. A boss (by +0x90 index) goes by the pick: held from every member
+// but the pick's runner (`runner`, "" for the game's own). The runner's game keeps it only while
+// the hand-out names it (a follower's game sets every enemy word to 0xFFFF on each hand-out and 1
+// for those it names, 0x018ED0ED and 0x018ED146, reading the low 16 bits only), so the runner gets
+// it in its hand-out even when the game names it to nobody (GiveBosses).
+struct BossHand {
+    u32 index = 0;
+    std::string runner;
+};
+// The bosses a hand-out to `member` holds (HandOutSettle::Filter's `bosses`).
+std::vector<u32> BossesKeptFrom(std::span<const BossHand> bosses, std::string_view member);
+// The bosses the pick gives `member`.
+std::vector<u32> BossesGivenTo(std::span<const BossHand> bosses, std::string_view member);
+// `entries` (a hand-out, settled) with each `given` boss that is not in it put in place of a held
+// entry, else of the last enemy that is not a given boss; as many as there is room for.
+std::vector<u32> GiveBosses(std::vector<u32> entries, std::span<const u32> given);
 class HandOutSettle {
 public:
-    // The game's hand-out to `member` (the payload's entries): the entries to send.
-    std::vector<u32> Filter(const std::string& member, std::span<const u32> entries, s64 now_ms);
+    // The game's hand-out to `member` (the payload's entries): the entries to send. `bosses` (by
+    // +0x90 index, see BossesKeptFrom) are held always.
+    std::vector<u32> Filter(const std::string& member, std::span<const u32> entries, s64 now_ms,
+                            std::span<const u32> bosses = {});
 
 private:
     struct Member {

@@ -5199,3 +5199,107 @@ for _name, _steps, _syncs, _about in (
         "forbid": {"host": SESSION_HOLDS, "guest": SESSION_HOLDS},
         "timeout": 600,
     }
+
+
+# Kaniel 2026-10-28: bosses stood passive in co-op, picking no target. Host and guest (godmode on,
+# so they last) stand by Father Gascoigne; his runner's game (the one that started his fight)
+# must log him holding a player as a target (LogEnemyTargets: "[enemy <boss>: <targets>]", the
+# players' handles are 0x1004400x). Its lines come on a change only, so a check holds the last one
+# before a log marker (the one still true then) to it. Baseline 2026-10-28 (4b35e2d2): after a
+# death or a revive by him the game handed him back and forth every few seconds and he held none.
+def _boss_target(before: str, who: str = "0x1004400[0-9a-f]") -> str:
+    return (rf"(?s)Bloodborne enemy targets [^\n]*\[enemy {GASCOIGNE}:(?: 0x[0-9a-f]+)* "
+            rf"{who}\b[^\n]*\n(?:(?!Bloodborne enemy targets ).)*{before}")
+
+
+def _boss_targets_steps(role: str, runner: str, *, runner_dies: bool = False,
+                        other_downed: bool = False) -> list[str]:
+    other = "guest" if runner == "host" else "host"
+    steps = [START, f"set-flag {GASCOIGNE_DEFEATED} 0", f"travel {CENTRAL_YHARNAM_LAMP}",
+             "godmode", "wait-session 2 300", "wait 20"]
+    if role == runner:  # starts his fight, the other joins it
+        steps += [f"approach {GASCOIGNE} 4 0", "wait 3", f"hit {GASCOIGNE} 30", "sync bt-in"]
+    else:
+        steps += ["sync bt-in", f"approach {GASCOIGNE} -4 0"]
+    steps += ["log bt: both by the boss", "wait 25", "wait 20", "log bt: fight checked",
+              "census 40"]
+    if runner_dies:
+        # The runner dies for real (goes down and gives up) and wakes at its lamp on the same map;
+        # then it walks back to him.
+        if role == runner:
+            steps += ["godmode off", *GIVE_UP, "wait-vital up 120",
+                      "wait 3", "log bt: up again", f"approach {GASCOIGNE} 4 0", "godmode",
+                      "log bt: back at the boss", "wait 20", "log bt: back checked", "sync bt-back"]
+        else:
+            steps += ["wait-member-vital dead 60", "wait-member-vital up 120", "sync bt-back",
+                      "log bt: back checked"]
+    if other_downed:
+        # The other one goes down by him (1 HP and a fall) and the runner strikes it up again.
+        if role == other:
+            steps += ["godmode off", *LETHAL_FALL, "wait-vital down 30", "wait-vital up 180",
+                      "godmode", f"approach {GASCOIGNE} -4 0", "log bt: revived at the boss",
+                      "wait 20", "log bt: revived checked", "sync bt-revived"]
+        else:
+            steps += ["wait-member-vital down 60", "approach-downed", "wait 2", *REVIVE_HITS,
+                      "wait-member-vital up 30", f"approach {GASCOIGNE} 4 0",
+                      "log bt: revived at the boss", "wait 20", "log bt: revived checked",
+                      "sync bt-revived"]
+    return steps + ["census 40", "snapshot", "expect-session 2"]
+
+
+for _name, _runner, _dies, _downed, _about in (
+        ("boss-targets-host", "host", False, False,
+         "the host starts Father Gascoigne's fight, the guest joins: he takes a player as a "
+         "target in the host's game (his runner)"),
+        ("boss-targets-guest", "guest", False, False,
+         "the guest starts Father Gascoigne's fight, the host joins: he takes a player as a target "
+         "in the guest's game (his runner)"),
+        ("boss-targets-runner-dies", "host", True, False,
+         "boss-targets-host, then the host dies for real and wakes at its lamp on the same map (no "
+         "load): the guest's game takes Gascoigne over and keeps him once the host walks back "
+         "(#292), he holds a target there, and the host's game has no death mark left on its own "
+         "player"),
+        ("boss-targets-teammate-revived", "host", False, True,
+         "boss-targets-host, then the guest goes down by Gascoigne and the host strikes it up: "
+         "he takes the guest as a target again in the host's game")):
+    _syncs = ("bt-in",) + (("bt-back",) if _dies else ()) + (("bt-revived",) if _downed else ())
+    # The host's game runs the map's enemies (the game's own runner: no pick line); a guest that
+    # starts the fight, or stands by him when the host dies, is picked (the host's log says so),
+    # and keeps him (#292): he never goes back to the game's own runner.
+    _guest_runs = _runner == "guest" or _dies
+    _expect = {_runner: [_boss_target("bt: fight checked")]}
+    if _guest_runs:
+        _expect["host"] = _expect.get("host", []) + [
+            rf"boss {GASCOIGNE} is run by {RIG_GUEST_ID}\b"]
+    if _dies:
+        _expect["host"].append(  # its own player is a target again, no death mark left
+            r"(?s)Bloodborne enemy targets [^\n]*\[player 0x10044000 type 0 team 19 info18 0x0: "
+            r"a target\][^\n]*\n(?:(?!Bloodborne enemy targets ).)*bt: back checked")
+        _expect["guest"] = [_boss_target("bt: back checked")]
+    if _downed:
+        _expect[_runner].append(_boss_target("bt: revived checked"))
+    _keeps = (rf"(?s)boss {GASCOIGNE} is run by {RIG_GUEST_ID}\b.*boss {GASCOIGNE} is run by "
+              r"the game's own runner" if _guest_runs
+              else rf"boss {GASCOIGNE} is run by {RIG_GUEST_ID}\b")
+    SCENARIOS[_name] = {
+        "about": _about,
+        "settings": PARTY_DEATH if _dies or _downed else {},
+        "roles": {role: _boss_targets_steps(role, _runner, runner_dies=_dies,
+                                            other_downed=_downed) for role in ("host", "guest")},
+        "syncs": {sync: {"chapter": _name, "roles": ["host", "guest"]} for sync in _syncs},
+        "expect": _expect,
+        # He goes back and forth between the games (each change restarts his AI): six changes of
+        # hands in one game once both stand by him is the baseline's ping-pong, not a death's or a
+        # revive's one or two.
+        "forbid": {role: SESSION_HOLDS + [rf"(?s)bt: both by the boss(?:.*?enemy {GASCOIGNE[2:]} "
+                                          rf"\(\w+\) changes hands){{6}}", _keeps]
+                   for role in ("host", "guest")},
+        "timeout": 900,
+    }
+    if _dies:
+        # Rig 2026-10-28: the guest's game takes him over cleanly (one change of hands), but his AI
+        # starts there with no target and stays so until a player hits him (a hit in this spot
+        # brings one at once).
+        SCENARIOS[_name]["known_bug"] = ("a boss taken over by another game holds no target "
+                                         "until a player hits him")
+        SCENARIOS[_name]["known_problems"] = [r"guest: expected, not seen: .*bt: back checked"]
