@@ -5397,3 +5397,34 @@ for _name, _runner, _dies, _downed, _about in (
         SCENARIOS[_name]["known_bug"] = ("a boss taken over by another game holds no target "
                                          "until a player hits him")
         SCENARIOS[_name]["known_problems"] = [r"guest: expected, not seen: .*bt: back checked"]
+
+
+# Player report 2026-10-27 (v1.3.0, AMD integrated GPU, 60 FPS): the joining guest, its game the
+# enemy follower on Central Yharnam, stalled ~500 ms once a second (party death avg 22-28 ms, max
+# 500-600 ms). The guest stands by the enemies for three minutes as the follower; every co-op tick
+# part or step over 4 ms gets a "Co-op tick spike" line (BB_COOP_SPIKE_MS), naming what a slower
+# PC stalls in. Run with BB_RIG_FPS=60, as the player played.
+def _follower_stutter(about, role_settings=None):
+    return {
+        "about": about,
+        "settings": {"BB_COOP_SPIKE_MS": "4"},
+        "role_settings": role_settings or {},
+        "roles": {
+            "host": [START, "godmode", "wait-session 2 300", "wait 200", "expect-session 2"],
+            "guest": [START, "godmode", "wait-session 2 300", "wait 10",
+                      f"teleport {GUEST_ALONE_SPOT}", "wait 3", "census 40", "wait 90",
+                      "census 40", "wait 90", "census 40", "expect-session 2"],
+        },
+        "expect": {"host": [r"Co-op tick slowest parts: "],
+                   "guest": [r"enemy owner: this game follows", r"Co-op tick slowest parts: "]},
+        "forbid": {"host": SESSION_HOLDS, "guest": SESSION_HOLDS},
+        "timeout": 600,
+    }
+
+
+SCENARIOS["guest-follower-stutter"] = _follower_stutter(
+    "player report 2026-10-27: the guest, the enemy follower, by the enemies for three minutes "
+    "at 60 FPS; spike lines over 4 ms name the co-op steps that stalled a slow PC once a second")
+SCENARIOS["guest-follower-stutter-harder"] = _follower_stutter(
+    "guest-follower-stutter with harder enemies on the guest only (its once-a-second param "
+    "scans)", {"guest": HARDER})

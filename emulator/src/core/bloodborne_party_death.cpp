@@ -1208,6 +1208,7 @@ std::optional<std::vector<std::string>> SessionNames(std::span<const MemberVital
     if (!InPartySession()) {
         return names;
     }
+    const TickStepTimer step{"SessionNames"};
     std::vector<std::string> online_ids;
     for (const auto* lines : {&board, &hostile}) {
         for (const MemberVitals& member : *lines) {
@@ -2004,7 +2005,10 @@ void TickPartyDeath() {
     tick.now = SteadyMilliseconds();
     tick.in_session = InPartyHere();
     tick.map = PlayingMap();
-    tick.view = ReadVitalsBoard();
+    {
+        const TickStepTimer step{"TickPartyDeath: ReadVitalsBoard"};
+        tick.view = ReadVitalsBoard();
+    }
     party_death_others_stand.store(
         tick.view.Fresh() && SomeoneElseStandsAnywhere(tick.view.board.members, tick.view.member));
     tick.board = tick.view.Fresh() ? std::span<const MemberVitals>{tick.view.board.members}
@@ -2016,6 +2020,7 @@ void TickPartyDeath() {
                                                                                     : 0);
     // Kaniel 2026-10-25: a boss fight with a teammate in it (its deaths spectate).
     {
+        const TickStepTimer step{"TickPartyDeath: boss fight"};
         const u64 holder = ReadValue<u64>(image_base + BossGaugesPointerOffset, 0);
         constexpr std::size_t Size = BossGaugeSlots * BossGaugeSize;
         const bool bars_up =
@@ -2075,15 +2080,21 @@ void TickPartyDeath() {
     }
     switch (run.downed.Current()) {
     case Vital::Off:
-    case Vital::Up:
+    case Vital::Up: {
+        const TickStepTimer step{"TickPartyDeath: TickStanding"};
         TickStanding(run, tick);
         break;
-    case Vital::Down:
+    }
+    case Vital::Down: {
+        const TickStepTimer step{"TickPartyDeath: TickDown"};
         TickDown(run, tick);
         break;
-    case Vital::Spectate:
+    }
+    case Vital::Spectate: {
+        const TickStepTimer step{"TickPartyDeath: TickSpectating"};
         TickSpectating(run, tick, lamp_used);
         break;
+    }
     case Vital::Dead:
         if (!tick.alive && tick.in_session && tick.map != 0 && tick.view.Fresh() &&
             !tick.view.member.empty() &&
@@ -2110,8 +2121,15 @@ void TickPartyDeath() {
         own_point_before_death.Sample(ReadValue<s32>(global, 0x1528), tick.now);
     }
 
-    ForgetTargetsOnDowned(run, tick);
-    StrikeDownedBodies(run, tick.board, tick.view.member, tick.map, tick.in_session);
+    {
+        const TickStepTimer step{"TickPartyDeath: ForgetTargetsOnDowned"};
+        ForgetTargetsOnDowned(run, tick);
+    }
+    {
+        const TickStepTimer step{"TickPartyDeath: StrikeDownedBodies"};
+        StrikeDownedBodies(run, tick.board, tick.view.member, tick.map, tick.in_session);
+    }
+    const TickStepTimer step{"TickPartyDeath: PostVitalsAndPanel"};
     PostVitalsAndPanel(run, tick);
 }
 

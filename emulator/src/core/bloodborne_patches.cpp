@@ -946,13 +946,6 @@ void PS4_SYSV_ABI NoteTitleMenu(u64, const GuestRegisterSnapshot*) {
     TeamBackAtTitle();
 }
 
-// SprjRemoMan's step methods, Init .. EpilogWait (its step table, filled at 0x01CFBA91), and
-// their first instructions.
-constexpr std::array<u64, 7> SprjRemoManStepOffsets{0x01CFA050, 0x01CFA310, 0x01CFA4C0, 0x01CFA670,
-                                                    0x01CFB060, 0x01CFB350, 0x01CFB5F0};
-constexpr std::array<u8, 8> RemoStepEntry{0x55, 0x48, 0x89, 0xE5, 0x41, 0x57, 0x41, 0x56};
-constexpr std::array<u8, 7> RemoEpilogWaitEntry{0x55, 0x48, 0x89, 0xE5, 0x41, 0x56, 0x53};
-
 void InstallTeamLobby(u64 base, u64 image_size) {
     if (!TeamModeOn()) {
         return;
@@ -978,6 +971,9 @@ void InstallTeamLobby(u64 base, u64 image_size) {
     }
     // Kaniel 2026-10-15: a cutscene under the team's loading screen is skipped (Options pressed
     // for it while the cutscene player is in its playing step).
+    if (!CoopSitesMatch(base, image_size, "cutscene skip", "cutscenes under a load play")) {
+        return;
+    }
     struct RemoStep {
         u64 offset;
         std::span<const u8> bytes;

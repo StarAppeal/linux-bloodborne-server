@@ -527,6 +527,69 @@ std::optional<std::string> FindOnlineIdIn(std::span<const u8> bytes,
     return found;
 }
 
+SessionNameCache::Look SessionNameCache::Lookup(u64 identity,
+                                                std::span<const std::string> online_ids,
+                                                s64 now_ms) const {
+    const auto entry = std::ranges::find(entries, identity, &Entry::identity);
+    if (entry == entries.end() || !std::ranges::equal(entry->online_ids, online_ids)) {
+        return {};
+    }
+    if (entry->where) {
+        return {Plan::Recheck, *entry->where};
+    }
+    const s64 wait = std::min(MissRetryMs << std::min(entry->misses - 1, 3), MissRetryMaxMs);
+    return {now_ms - entry->missed_at < wait ? Plan::StillMissing : Plan::Scan};
+}
+
+void SessionNameCache::Found(u64 identity, std::span<const std::string> online_ids, Block where) {
+    Keep({identity, {online_ids.begin(), online_ids.end()}, where});
+}
+
+void SessionNameCache::Missed(u64 identity, std::span<const std::string> online_ids, s64 now_ms) {
+    const auto known = std::ranges::find(entries, identity, &Entry::identity);
+    const int misses =
+        known != entries.end() && !known->where && std::ranges::equal(known->online_ids, online_ids)
+            ? known->misses + 1
+            : 1;
+    Keep({identity, {online_ids.begin(), online_ids.end()}, std::nullopt, now_ms, misses});
+}
+
+void SessionNameCache::Forget(u64 identity) {
+    std::erase_if(entries, [identity](const Entry& entry) { return entry.identity == identity; });
+}
+
+void SessionNameCache::Keep(Entry entry) {
+    Forget(entry.identity);
+    if (entries.size() >= Members) {
+        entries.erase(entries.begin());
+    }
+    entries.push_back(std::move(entry));
+}
+
+u64 ParamTableSize(std::span<const u8> param, u16 rows, u64 row_size) {
+    u64 size = 0x40 + u64{rows} * 24;
+    for (u64 row = 0; row < rows; ++row) {
+        u64 offset = 0;
+        std::memcpy(&offset, param.data() + 0x40 + row * 24 + 8, sizeof(offset));
+        size = std::max(size, offset + row_size);
+    }
+    return size;
+}
+
+std::optional<u64> LoadedParamSlots::Slot(std::string_view type) const {
+    const auto slot = std::ranges::find(slots, type, &std::pair<std::string, u64>::first);
+    return slot != slots.end() ? std::optional<u64>{slot->second} : std::nullopt;
+}
+
+void LoadedParamSlots::Found(std::string_view type, u64 slot) {
+    if (const auto known = std::ranges::find(slots, type, &std::pair<std::string, u64>::first);
+        known != slots.end()) {
+        known->second = slot;
+        return;
+    }
+    slots.emplace_back(std::string{type}, slot);
+}
+
 RecreatePlan PlanRecreate(std::span<const std::optional<std::string>> found,
                           std::span<const MemberMap> board, std::string_view self, u32 map,
                           const std::set<std::string>& handled) {
@@ -856,6 +919,21 @@ std::optional<std::string> CoopTimeMeter::Report(s64 now_ms, size_t slowest) {
     since_ms.reset();
     sections.clear();
     return line;
+}
+
+std::optional<std::string> TickSpikeLog::Note(std::string_view part, s64 ns, s64 now_ms,
+                                              std::string_view role, u64 memory_checks) {
+    if (ns <= threshold_ns) {
+        return std::nullopt;
+    }
+    std::scoped_lock lock{mutex};
+    if (lines >= cap) {
+        return std::nullopt;
+    }
+    ++lines;
+    return fmt::format("Co-op tick spike: {} {:.2f} ms t={}.{:03} s role {}, {} memory checks{}",
+                       part, static_cast<double>(ns) / 1e6, now_ms / 1000, now_ms % 1000, role,
+                       memory_checks, lines == cap ? " (the last spike line)" : "");
 }
 
 OwnRestore RestoresOwnCharacters(std::span<const u32> own,

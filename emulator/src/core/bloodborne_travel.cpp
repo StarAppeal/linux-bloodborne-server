@@ -1851,19 +1851,20 @@ void KeepOwnedWeaponFlagsOwn() {
 namespace Coop {
 
 void TickPlayersOnThisMap() {
-    LogItemModuleChecks();
-    LogItemButtonAndMapItems();
-    KeepGuestFullHp();
-    PolishMultiplayerUi();
+    TimeTickStep("LogItemModuleChecks", LogItemModuleChecks);
+    TimeTickStep("LogItemButtonAndMapItems", LogItemButtonAndMapItems);
+    TimeTickStep("KeepGuestFullHp", KeepGuestFullHp);
+    TimeTickStep("PolishMultiplayerUi", PolishMultiplayerUi);
     const bool in_session = InPartySession();
     // The boards go both ways in and out of a session (a guest on its own trip is out of one).
     const bool sharing = SharesWithParty(party_controller.has_value(), GetLocalPlayer() >= 0x10000);
-    UnlockPartyTrophies(sharing);
-    KeepRitualAltarsWhole();
-    SetPartyWorldChanges(sharing);
-    KeepGuestProgress(in_session);
-    LogFlagChangesInSession(sharing);
+    TimeTickStep("UnlockPartyTrophies", [&] { UnlockPartyTrophies(sharing); });
+    TimeTickStep("KeepRitualAltarsWhole", KeepRitualAltarsWhole);
+    TimeTickStep("SetPartyWorldChanges", [&] { SetPartyWorldChanges(sharing); });
+    TimeTickStep("KeepGuestProgress", [&] { KeepGuestProgress(in_session); });
+    TimeTickStep("LogFlagChangesInSession", [&] { LogFlagChangesInSession(sharing); });
     {
+        const TickStepTimer step{"KeepEnemyDeathsInStep"};
         const auto started = std::chrono::steady_clock::now();
         KeepEnemyDeathsInStep(sharing);
         coop_time.Add("enemy step",
@@ -1872,32 +1873,34 @@ void TickPlayersOnThisMap() {
                           .count(),
                       SteadyMilliseconds());
     }
-    SnapshotHostMapState(sharing);
-    ResumeWhereTheGuestLeft(in_session);
-    LogWatchedWrites();
-    GiveDeferredBossItems();
-    TurnOffMultiplayerWalls(in_session);
-    PlayGuestAsHost(in_session);
-    TickGuestLampTrip();
+    TimeTickStep("SnapshotHostMapState", [&] { SnapshotHostMapState(sharing); });
+    TimeTickStep("ResumeWhereTheGuestLeft", [&] { ResumeWhereTheGuestLeft(in_session); });
+    TimeTickStep("LogWatchedWrites", LogWatchedWrites);
+    TimeTickStep("GiveDeferredBossItems", GiveDeferredBossItems);
+    TimeTickStep("TurnOffMultiplayerWalls", [&] { TurnOffMultiplayerWalls(in_session); });
+    TimeTickStep("PlayGuestAsHost", [&] { PlayGuestAsHost(in_session); });
+    TimeTickStep("TickGuestLampTrip", TickGuestLampTrip);
     // SHADPS4_BLOODBORNE_ESD_LOG=1: every member's talk answers, not only a guest's.
     static const bool esd_log_all = std::getenv("SHADPS4_BLOODBORNE_ESD_LOG") != nullptr;
     LogEsdAnswers(in_session && party_controller &&
                   (esd_log_all || party_controller->SearchEffectId() == SmallResonantBellEffect));
-    RestoreSearchAfterTrip(in_session);
+    TimeTickStep("RestoreSearchAfterTrip", [&] { RestoreSearchAfterTrip(in_session); });
     const u32 map = PlayingMap();
     party_map_now.store(party_controller && IsUsablePackedMap(map) ? map : 0);
-    if (EnemyOwnerOn()) {
-        TickEnemyOwner(in_session, IsUsablePackedMap(map) ? map : 0);
-    } else {
-        ClaimEnemiesWhenAlone(in_session, IsUsablePackedMap(map) ? map : 0);
-    }
-    GrantPartyEchoes();
-    TickTrades();
-    FinishWaitingJoins(in_session);
-    ResendOwnDataOnChange(in_session);
-    LogMemberDataChanges(in_session);
-    GiveEncounterInsight(in_session);
-    KeepImpurityBonus(in_session);
+    TimeTickStep("TickEnemyOwner", [&] {
+        if (EnemyOwnerOn()) {
+            TickEnemyOwner(in_session, IsUsablePackedMap(map) ? map : 0);
+        } else {
+            ClaimEnemiesWhenAlone(in_session, IsUsablePackedMap(map) ? map : 0);
+        }
+    });
+    TimeTickStep("GrantPartyEchoes", GrantPartyEchoes);
+    TimeTickStep("TickTrades", TickTrades);
+    TimeTickStep("FinishWaitingJoins", [&] { FinishWaitingJoins(in_session); });
+    TimeTickStep("ResendOwnDataOnChange", [&] { ResendOwnDataOnChange(in_session); });
+    TimeTickStep("LogMemberDataChanges", [&] { LogMemberDataChanges(in_session); });
+    TimeTickStep("GiveEncounterInsight", [&] { GiveEncounterInsight(in_session); });
+    TimeTickStep("KeepImpurityBonus", [&] { KeepImpurityBonus(in_session); });
     // Whether this character has been to the Hunter's Dream: its own world has the first visit's
     // flag, or it is there (the first visit's event runs for a guest too).
     static int dream_slot = -2;

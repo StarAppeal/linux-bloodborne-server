@@ -1851,3 +1851,80 @@ TEST(BloodbornePartyDeath, TheHookLeavesADyingBodyToTheGame) {
     EXPECT_FALSE(PartyDeathWatches(false, Vital::Dead));
     EXPECT_TRUE(PartyDeathWatches(true, Vital::Off));
 }
+
+// Guest stutter 2026-10-27 (v1.3.0, AMD integrated GPU): the session members' board names were
+// looked for every second with a full scan of each member's identity, two pointer levels deep
+// (about a thousand memory checks a member), and the guest's game stalled ~500 ms each time. The
+// block an online id was found in is read again instead; a member whose id was not found waits a
+// while before the next full scan, unless the board's online ids change.
+TEST(SessionNameCache, AnUnknownMemberIsScanned) {
+    const SessionNameCache cache;
+    const std::vector<std::string> ids{"Hunter-1"};
+    EXPECT_EQ(cache.Lookup(0x1000, ids, 0).plan, SessionNameCache::Plan::Scan);
+}
+
+TEST(SessionNameCache, AFoundMemberHasOnlyItsBlockReadAgain) {
+    SessionNameCache cache;
+    const std::vector<std::string> ids{"Hunter-1", "Hunter-2"};
+    cache.Found(0x1000, ids, {0x2000, 0x80});
+    const SessionNameCache::Look look = cache.Lookup(0x1000, ids, 60'000);
+    EXPECT_EQ(look.plan, SessionNameCache::Plan::Recheck);
+    EXPECT_EQ(look.block.address, 0x2000u);
+    EXPECT_EQ(look.block.size, 0x80u);
+    EXPECT_EQ(cache.Lookup(0x3000, ids, 60'000).plan, SessionNameCache::Plan::Scan)
+        << "another identity";
+}
+
+TEST(SessionNameCache, NewOnlineIdsMeanAFullScan) {
+    SessionNameCache cache;
+    cache.Found(0x1000, std::vector<std::string>{"Hunter-1"}, {0x2000, 0x80});
+    EXPECT_EQ(cache.Lookup(0x1000, std::vector<std::string>{"Hunter-1", "Hunter-3"}, 0).plan,
+              SessionNameCache::Plan::Scan);
+}
+
+TEST(SessionNameCache, AMissIsScannedAgainOnlyAfterAWhile) {
+    SessionNameCache cache;
+    const std::vector<std::string> ids{"Hunter-1"};
+    cache.Missed(0x1000, ids, 5'000);
+    EXPECT_EQ(cache.Lookup(0x1000, ids, 5'000 + SessionNameCache::MissRetryMs - 1).plan,
+              SessionNameCache::Plan::StillMissing);
+    EXPECT_EQ(cache.Lookup(0x1000, ids, 5'000 + SessionNameCache::MissRetryMs).plan,
+              SessionNameCache::Plan::Scan);
+    EXPECT_EQ(cache.Lookup(0x1000, std::vector<std::string>{"Hunter-2"}, 6'000).plan,
+              SessionNameCache::Plan::Scan)
+        << "the board's ids changed";
+}
+
+TEST(SessionNameCache, AMemberNeverFoundWaitsLongerEachTime) {
+    SessionNameCache cache;
+    const std::vector<std::string> ids{"Hunter-1"};
+    cache.Missed(0x1000, ids, 0);
+    cache.Missed(0x1000, ids, 10'000);
+    EXPECT_EQ(cache.Lookup(0x1000, ids, 29'999).plan, SessionNameCache::Plan::StillMissing);
+    EXPECT_EQ(cache.Lookup(0x1000, ids, 30'000).plan, SessionNameCache::Plan::Scan);
+    for (s64 at = 30'000; at < 600'000; at += 1'000) {
+        cache.Missed(0x1000, ids, at);
+    }
+    EXPECT_EQ(cache.Lookup(0x1000, ids, 599'000 + SessionNameCache::MissRetryMaxMs).plan,
+              SessionNameCache::Plan::Scan)
+        << "never longer than a minute";
+}
+
+TEST(SessionNameCache, AFoundBlockThatNoLongerHoldsTheIdIsForgotten) {
+    SessionNameCache cache;
+    const std::vector<std::string> ids{"Hunter-1"};
+    cache.Found(0x1000, ids, {0x2000, 0x80});
+    cache.Forget(0x1000);
+    EXPECT_EQ(cache.Lookup(0x1000, ids, 0).plan, SessionNameCache::Plan::Scan);
+}
+
+TEST(SessionNameCache, KeepsOnlyTheLatestMembers) {
+    SessionNameCache cache;
+    const std::vector<std::string> ids{"Hunter-1"};
+    for (u64 member = 0; member <= SessionNameCache::Members; ++member) {
+        cache.Found(0x1000 + member * 0x100, ids, {0x9000, 0x80});
+    }
+    EXPECT_EQ(cache.Lookup(0x1000, ids, 0).plan, SessionNameCache::Plan::Scan) << "the oldest";
+    EXPECT_EQ(cache.Lookup(0x1000 + SessionNameCache::Members * 0x100, ids, 0).plan,
+              SessionNameCache::Plan::Recheck);
+}

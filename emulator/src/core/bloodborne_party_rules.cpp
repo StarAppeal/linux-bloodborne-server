@@ -107,27 +107,48 @@ namespace {
 constexpr u64 SoloParamRepositoryPointerOffset = 0x05540340;
 
 // Calls `found` with each loaded PARAM file of `type` (AtkParam_Pc and AtkParam_Npc share one)
-// until it returns true; returns that file, or 0.
+// until it returns true; returns that file, or 0. The slot it was in last time first
+// (LoadedParamSlots), the whole repository only when that slot no longer holds it.
 template <typename Found>
 u64 FindLoadedParamWhere(std::string_view type, Found&& found) {
+    const TickStepTimer step{"FindLoadedParam"};
     const u64 repository = ReadValue<u64>(image_base + SoloParamRepositoryPointerOffset, 0);
     if (repository < 0x10000 || !HasMemoryAccess(repository, 0x2000, MemoryProt::CpuRead)) {
         return 0;
     }
-    for (u64 slot = 0; slot < 0x2000; slot += 8) {
+    const auto param_in = [&](u64 slot) -> u64 {
         const u64 holder = ReadValue<u64>(repository, slot);
         if (holder < 0x10000 || !HasMemoryAccess(holder, 0x78, MemoryProt::CpuRead)) {
-            continue;
+            return 0;
         }
         const u64 inner = ReadValue<u64>(holder, 0x70);
         if (inner < 0x10000 || !HasMemoryAccess(inner, 0x78, MemoryProt::CpuRead)) {
-            continue;
+            return 0;
         }
         const u64 param = ReadValue<u64>(inner, 0x70);
         if (param < 0x10000 || !HasMemoryAccess(param, 0x40, MemoryProt::CpuRead)) {
-            continue;
+            return 0;
         }
-        if (IsParamOfType({reinterpret_cast<const u8*>(param), 0x40}, type) && found(param)) {
+        return IsParamOfType({reinterpret_cast<const u8*>(param), 0x40}, type) && found(param)
+                   ? param
+                   : 0;
+    };
+    static std::mutex slots_mutex;
+    static LoadedParamSlots slots;
+    std::optional<u64> last;
+    {
+        std::scoped_lock lock{slots_mutex};
+        last = slots.Slot(type);
+    }
+    if (last) {
+        if (const u64 param = param_in(*last); param != 0) {
+            return param;
+        }
+    }
+    for (u64 slot = 0; slot < 0x2000; slot += 8) {
+        if (const u64 param = param_in(slot); param != 0) {
+            std::scoped_lock lock{slots_mutex};
+            slots.Found(type, slot);
             return param;
         }
     }
@@ -201,10 +222,8 @@ std::optional<std::span<u8>> WritableParam(u64 param, u64 row_size) {
     if (rows == 0 || !HasMemoryAccess(param, entries, MemoryProt::CpuRead)) {
         return std::nullopt;
     }
-    u64 size = entries;
-    for (u64 row = 0; row < rows; ++row) {
-        size = std::max(size, ReadValue<u64>(param, 0x40 + row * 24 + 8) + row_size);
-    }
+    // The entries in one span: a ReadValue each was a memory check a row (21 000 a second).
+    const u64 size = ParamTableSize({reinterpret_cast<const u8*>(param), entries}, rows, row_size);
     if (size > 0x1000000 || !HasMemoryAccess(param, size, MemoryProt::CpuWrite)) {
         return std::nullopt;
     }
@@ -335,6 +354,7 @@ void MakeEnemiesHarder() {
         return;
     }
     last = now;
+    const TickStepTimer step{"MakeEnemiesHarder"};
     if (!SameRate(wanted, last_wanted) && rules.enemy_scaling) {
         LOG_INFO(Debug, "Bloodborne enemy scaling: {} hunter(s) on this map: {}", hunters,
                  RateText(wanted));
@@ -468,6 +488,7 @@ void PolishMultiplayerUi() {
         return;
     }
     last = now;
+    const TickStepTimer step{"PolishMultiplayerUi"};
     if (const std::size_t messages = PolishMessages(); messages != 0) {
         LOG_INFO(Debug, "Bloodborne party UI: {} messages now say Host and Guest", messages);
     }

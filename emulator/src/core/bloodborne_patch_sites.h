@@ -66,6 +66,7 @@ inline constexpr auto CoopFeatures = std::to_array<CoopFeature>({
     {"enemy owner", false},
     {"team lobby", false},
     {"team join", false},
+    {"cutscene skip", false},
     {"no multiplayer banners", false},
     {"silent key items", false},
     {"character names", false},
@@ -312,6 +313,17 @@ inline constexpr auto CoopSites = std::to_array<CoopSite>({
     // Phase 5: the title's save load held for the team, and the title menu seen again.
     {"title load state", "team lobby", CoopSiteKind::Hook, 0x0195B480, "55 48 89 E5 41 57"},
     {"title menu state", "team lobby", CoopSiteKind::Hook, 0x0195AE80, "55 48 89 E5 41 57"},
+    // Kaniel 2026-10-15: the cutscene player's (SprjRemoMan) steps, Init .. EpilogWait
+    // (SprjRemoManStepOffsets): a cutscene under the team's loading screen is skipped.
+    {"cutscene step init", "cutscene skip", CoopSiteKind::Hook, 0x01CFA050,
+     "55 48 89 E5 41 57 41 56"},
+    {"cutscene step 2", "cutscene skip", CoopSiteKind::Hook, 0x01CFA310, "55 48 89 E5 41 57 41 56"},
+    {"cutscene step 3", "cutscene skip", CoopSiteKind::Hook, 0x01CFA4C0, "55 48 89 E5 41 57 41 56"},
+    {"cutscene step 4", "cutscene skip", CoopSiteKind::Hook, 0x01CFA670, "55 48 89 E5 41 57 41 56"},
+    {"cutscene step 5", "cutscene skip", CoopSiteKind::Hook, 0x01CFB060, "55 48 89 E5 41 57 41 56"},
+    {"cutscene step 6", "cutscene skip", CoopSiteKind::Hook, 0x01CFB350, "55 48 89 E5 41 57 41 56"},
+    {"cutscene step epilog wait", "cutscene skip", CoopSiteKind::Hook, 0x01CFB5F0,
+     "55 48 89 E5 41 56 53"},
     // Kaniel 2026-10-16: the network banner, none in a party (ShowNetworkBannerPrologue).
     {"network banner", "no multiplayer banners", CoopSiteKind::Hook, 0x01BFFE80,
      "55 48 89 E5 41 57 41 56"},
