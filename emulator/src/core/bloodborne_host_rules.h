@@ -247,6 +247,12 @@ constexpr u64 AddSubGoalOffset = 0x0124CC60;
 constexpr u64 AddSubGoalLifeHookOffset = 0x0124CCAC;
 constexpr std::array<u8, 5> AddSubGoalLifeHook{0x49, 0x89, 0xFE, 0x31, 0xC9};
 constexpr s64 AddSubGoalLifeFrameOffset = -0xBC;
+// AddSubGoal_Front's (0x0124D4F0: the same arguments, the sub-goal goes first): the same hook
+// over the same two instructions, its life at [rbp - 0xB8]. The hooks' tags say which.
+constexpr u64 AddSubGoalFrontOffset = 0x0124D4F0;
+constexpr u64 AddSubGoalFrontLifeHookOffset = 0x0124D53C;
+constexpr s64 AddSubGoalFrontLifeFrameOffset = -0xB8;
+constexpr u64 AddSubGoalFrontTag = 1;
 constexpr u64 AiCharacterOffset = 0x558;
 constexpr u64 AiTakesItsCharacterOffset = 0x0128EDC3;
 

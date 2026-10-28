@@ -347,6 +347,7 @@ inline constexpr auto CoopSites = std::to_array<CoopSite>({
     // Kaniel 2026-10-28: a boss's breathers shorten with the boss tempo rule
     // (AddSubGoalLifeHookOffset).
     {"AddSubGoal life", "boss tempo", CoopSiteKind::Hook, 0x0124CCAC, "49 89 FE 31 C9"},
+    {"AddSubGoal_Front life", "boss tempo", CoopSiteKind::Hook, 0x0124D53C, "49 89 FE 31 C9"},
     // Kaniel 2026-10-18: no "Lost connection to the network" popup in a party (LanCutError...).
     {"lan cut error", "no lost-connection popup", CoopSiteKind::Hook, 0x01387130,
      "55 48 89 E5 41 56"},

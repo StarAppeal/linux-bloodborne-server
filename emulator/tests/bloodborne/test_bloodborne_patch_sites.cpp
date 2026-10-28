@@ -234,6 +234,7 @@ TEST(CoopSites, ThePartyHeaderHooksAreRegistered) {
     EXPECT_TRUE(IsRegisteredCoopHook(SprjRemoManStepOffsets.back(), RemoEpilogWaitEntry));
     // Boss tempo: AddSubGoal after its prologue.
     EXPECT_TRUE(IsRegisteredCoopHook(AddSubGoalLifeHookOffset, AddSubGoalLifeHook));
+    EXPECT_TRUE(IsRegisteredCoopHook(AddSubGoalFrontLifeHookOffset, AddSubGoalLifeHook));
     // Other bytes, another length or an offset that is no hook are not.
     EXPECT_FALSE(IsRegisteredCoopHook(HitOffset, std::span{HitPrologue}.first(6)));
     EXPECT_FALSE(IsRegisteredCoopHook(HitOffset + 1, HitPrologue));
