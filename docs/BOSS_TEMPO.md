@@ -43,6 +43,8 @@ Every sub-goal goes through one native function:
   zeroes the parameters it lacks and calls **AddSubGoal 0x0124CC60**: `(goal rdi, id esi, life
   xmm0, seven float parameters xmm1-xmm7, more on the stack)`. 42 places call it, the Lua
   wrappers and the native goals (combos, approach).
+- `AddSubGoal_Front`'s core is **0x0124D4F0**, the same shape (its life at `[rbp - 0xB8]`); it
+  gets the same hook at 0x0124D53C.
 - Its prologue stores the life at `[rbp - 0xBC]` (0x0124CCA4); the hook goes right after, over
   `mov r14, rdi; xor ecx, ecx` (0x0124CCAC), and rewrites that float before the function copies
   it into the new sub-goal (`[slot + 0x28]`, 0x0124CD29). The new goal's id lands at
@@ -85,7 +87,15 @@ yet).
 
 ## Rig
 
-`boss-tempo-vanilla`, `boss-tempo-aggressive`, `boss-tempo-relentless` (Gascoigne fights the
-host alone for 90 s; each breather is logged as `goal 2000 Wait life 1.20 -> 0.60 (Aggressive)`)
-and `boss-tempo-party` (only the leader picks Relentless; the guest's game turns the bosses
-faster too).
+A boss's AI only runs once its fight's event starts it: Father Gascoigne by the first lamp, hit
+and standing by the player for 90 s, set up exactly one goal (his top goal, at his AI's start)
+and never called AddSubGoal (a rig probe on every goal's init, 0x0124B8D0, 2026-10-28). So the
+scenarios fight **Paarl** (teleported into his arena, as the boss-death scenarios do). His
+Waits are 5 s each; at Aggressive one run went 8 Waits, 40 s -> 10.2 s (4 halved, 4 cut); at
+Vanilla they stay 5 s. Some npcType-1 characters with think id 1 (a do-nothing AI) near his lamp
+are cut the same way; they do nothing anyway.
+
+`boss-tempo-vanilla`, `boss-tempo-aggressive`, `boss-tempo-relentless` (Paarl fights the host
+alone for 90 s; each breather is logged as `goal 2000 Wait life 5.00 -> 2.50 (Aggressive)`) and
+`boss-tempo-party` (only the leader picks Relentless; the guest's game turns the bosses faster
+too).

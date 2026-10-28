@@ -439,6 +439,14 @@ TEST_F(BloodborneEboot, TheBossTempoHookIsAddSubGoalAfterItsPrologue) {
     static_assert(AddSubGoalLifeFrameOffset == -0xBC);
     EXPECT_EQ(Bytes(AddSubGoalLifeHookOffset, AddSubGoalLifeHook.size()),
               std::vector<u8>(AddSubGoalLifeHook.begin(), AddSubGoalLifeHook.end()));
+    // AddSubGoal_Front: its Lua wrapper calls it, its prologue keeps the life at [rbp - 0xB8].
+    EXPECT_EQ(CallTarget(0x0127F25B), AddSubGoalFrontOffset);
+    EXPECT_EQ(Bytes(AddSubGoalFrontOffset, FunctionPrologue.size()), FunctionPrologue);
+    EXPECT_EQ(Bytes(AddSubGoalFrontLifeHookOffset - 8, 8),
+              (std::vector<u8>{0xC5, 0xFA, 0x11, 0x85, 0x48, 0xFF, 0xFF, 0xFF}));
+    static_assert(AddSubGoalFrontLifeFrameOffset == -0xB8);
+    EXPECT_EQ(Bytes(AddSubGoalFrontLifeHookOffset, AddSubGoalLifeHook.size()),
+              std::vector<u8>(AddSubGoalLifeHook.begin(), AddSubGoalLifeHook.end()));
     // The AI's character: `mov rdi, [rbx]; mov rax, [rdi]; call [rax + 0x30];
     // mov [rbx + 0x558], rax` (its manipulator's character).
     static_assert(AiCharacterOffset == 0x558);

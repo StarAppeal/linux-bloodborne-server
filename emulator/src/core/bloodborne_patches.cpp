@@ -1609,7 +1609,9 @@ void InstallBossTempo(u64 base, u64 image_size) {
         return;
     }
     if (!InstallCoopHook(reinterpret_cast<void*>(base + AddSubGoalLifeHookOffset),
-                         AddSubGoalLifeHook, 0, GuestCodeHook{BossTempoGoal})) {
+                         AddSubGoalLifeHook, 0, GuestCodeHook{BossTempoGoal}) ||
+        !InstallCoopHook(reinterpret_cast<void*>(base + AddSubGoalFrontLifeHookOffset),
+                         AddSubGoalLifeHook, AddSubGoalFrontTag, GuestCodeHook{BossTempoGoal})) {
         coop_features.Skipped("boss tempo", "the hook did not go in");
         return;
     }

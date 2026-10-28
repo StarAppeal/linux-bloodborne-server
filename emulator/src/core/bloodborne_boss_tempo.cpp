@@ -79,7 +79,7 @@ std::optional<u8> TempoNpcType(u64 character);
 
 namespace Coop {
 
-void PS4_SYSV_ABI BossTempoGoal(u64, const GuestRegisterSnapshot* registers) {
+void PS4_SYSV_ABI BossTempoGoal(u64 tag, const GuestRegisterSnapshot* registers) {
     const s32 goal = static_cast<s32>(static_cast<u32>(registers->rsi));
     if (!IsBossTempoGoal(goal)) {
         return;
@@ -90,7 +90,9 @@ void PS4_SYSV_ABI BossTempoGoal(u64, const GuestRegisterSnapshot* registers) {
     if (!IsTempoBoss(character)) {
         return;
     }
-    const u64 at = registers->rbp + static_cast<u64>(AddSubGoalLifeFrameOffset);
+    const u64 at =
+        registers->rbp + static_cast<u64>(tag == AddSubGoalFrontTag ? AddSubGoalFrontLifeFrameOffset
+                                                                    : AddSubGoalLifeFrameOffset);
     const auto life = TryRead<float>(at, 0);
     if (!life) {
         return;
