@@ -428,6 +428,65 @@ TEST(EnemyOwner, AnEnemyGoesToAFollowerOnlyOnceTheHandOutSettles) {
     EXPECT_EQ(HandOutIds(payload), std::vector<u32>{0x2809});
 }
 
+// Kaniel 2026-10-28: bosses stood passive in co-op. The owner's game handed Father Gascoigne
+// (+0x90 index 0x289c) to the guest beside him and took him back every few seconds, against the
+// boss pick (BossRunnerPick: the game's own runner), and each change of hands restarted his AI
+// with no target. A boss goes where the pick says, never by the game's hand-out alone: held from
+// every member but the pick's runner, on the first hand-out too and past the settle time. Its
+// runner's game keeps it only while the hand-out names it (the follower's game drops an enemy a
+// hand-out leaves out), so to the runner it goes as the game wrote it.
+TEST(EnemyOwner, ABossGoesOnlyToTheMemberThePickNames) {
+    const std::vector<BossHand> picks{{0x289c, ""}, {0x289e, "rig_guest"}, {0x2900, "krolebord"}};
+    EXPECT_EQ(BossesKeptFrom(picks, "rig_guest"), (std::vector<u32>{0x289c, 0x2900}));
+    EXPECT_EQ(BossesKeptFrom(picks, "krolebord"), (std::vector<u32>{0x289c, 0x289e}));
+    EXPECT_EQ(BossesKeptFrom({}, "rig_guest"), std::vector<u32>{});
+
+    HandOutSettle settle;
+    const u32 held = HandOutHeldEntry;
+    const u32 gascoigne = 0x0711289c;
+    const u32 dog = 0x2809;
+    const std::vector<u32> bosses{0x289c, 0x289e};
+    EXPECT_EQ(settle.Filter("rig_guest", std::vector<u32>{dog, gascoigne}, 0, bosses),
+              (std::vector<u32>{dog, held}));
+    EXPECT_EQ(settle.Filter("rig_guest", std::vector<u32>{dog, gascoigne}, 500, bosses),
+              (std::vector<u32>{dog, held}));
+    EXPECT_EQ(settle.Filter("rig_guest", std::vector<u32>{dog, gascoigne}, 5000, bosses),
+              (std::vector<u32>{dog, held}));
+    // Without the boss list it settles as any enemy (the other enemies' rule is unchanged).
+    EXPECT_EQ(settle.Filter("rig_guest", std::vector<u32>{dog, gascoigne}, 6000),
+              (std::vector<u32>{dog, held}));
+    EXPECT_EQ(settle.Filter("rig_guest", std::vector<u32>{dog, gascoigne}, 7000),
+              (std::vector<u32>{dog, gascoigne}));
+}
+
+// The rig 2026-10-28 (boss-targets-runner-dies): the host died, the pick gave Gascoigne to the
+// guest, but the host's game handed him to nobody. A follower's game sets every enemy word to
+// 0xFFFF on each hand-out and 1 for those it names (0x018ED0ED, 0x018ED146, by the low 16 bits),
+// so the guest's game let go of him every 0.25 s and took him again on its next tick. The pick's
+// runner gets its bosses in the hand-out: in place of a held entry, else of another enemy (the
+// owner runs what it did not hand out); a hand-out with no entries has no room.
+TEST(EnemyOwner, ABossThePickGivesAMemberIsInItsHandOut) {
+    const std::vector<BossHand> picks{{0x289c, "7269675f6775657374"}, {0x289e, ""}};
+    EXPECT_EQ(BossesGivenTo(picks, "7269675f6775657374"), std::vector<u32>{0x289c});
+    EXPECT_EQ(BossesGivenTo(picks, "6b726f6c65626f7264"), std::vector<u32>{});
+    const u32 held = HandOutHeldEntry;
+    const std::vector<u32> given{0x289c};
+    // Already there (the game wrote it, high half and all): as it is.
+    EXPECT_EQ(GiveBosses(std::vector<u32>{0x2809, 0x0711289c}, given),
+              (std::vector<u32>{0x2809, 0x0711289c}));
+    // A held entry makes room first, else the last other enemy.
+    EXPECT_EQ(GiveBosses(std::vector<u32>{0x2809, held, 0x2871}, given),
+              (std::vector<u32>{0x2809, 0x289c, 0x2871}));
+    EXPECT_EQ(GiveBosses(std::vector<u32>{0x2809, 0x2871}, given),
+              (std::vector<u32>{0x2809, 0x289c}));
+    EXPECT_EQ(GiveBosses(std::vector<u32>{}, given), std::vector<u32>{});
+    // Two bosses given, room for one: the first; never in place of another given boss.
+    EXPECT_EQ(GiveBosses(std::vector<u32>{0x2809}, std::vector<u32>{0x289c, 0x2900}),
+              std::vector<u32>{0x289c});
+    EXPECT_EQ(GiveBosses(std::vector<u32>{0x2900}, std::vector<u32>{0x289c, 0x2900}),
+              std::vector<u32>{0x2900});
+}
+
 // A follower's measure: the positions it took for the enemies by its player, per second.
 TEST(EnemyOwner, AFollowerCountsThePositionsOfTheEnemiesByIt) {
     // The packets name an enemy by its +0x90 index (map index << 11 | slot), the log by chr id.

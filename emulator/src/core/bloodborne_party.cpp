@@ -4207,8 +4207,49 @@ std::vector<u32> HandOutIds(std::span<const u8> payload) {
     return ids;
 }
 
+std::vector<u32> BossesKeptFrom(std::span<const BossHand> bosses, std::string_view member) {
+    std::vector<u32> kept;
+    for (const BossHand& boss : bosses) {
+        if (boss.runner.empty() || boss.runner != member) {
+            kept.push_back(boss.index);
+        }
+    }
+    return kept;
+}
+
+std::vector<u32> BossesGivenTo(std::span<const BossHand> bosses, std::string_view member) {
+    std::vector<u32> given;
+    for (const BossHand& boss : bosses) {
+        if (!boss.runner.empty() && boss.runner == member) {
+            given.push_back(boss.index);
+        }
+    }
+    return given;
+}
+
+std::vector<u32> GiveBosses(std::vector<u32> entries, std::span<const u32> given) {
+    const auto is_given = [&](u32 entry) {
+        return entry != HandOutHeldEntry && std::ranges::contains(given, entry & 0xFFFF);
+    };
+    for (const u32 boss : given) {
+        if (std::ranges::any_of(entries, [&](u32 entry) { return (entry & 0xFFFF) == boss; })) {
+            continue;
+        }
+        auto room = std::ranges::find(entries, HandOutHeldEntry);
+        if (room == entries.end()) {
+            const auto other = std::ranges::find_if(entries.rbegin(), entries.rend(),
+                                                    [&](u32 entry) { return !is_given(entry); });
+            room = other == entries.rend() ? entries.end() : std::prev(other.base());
+        }
+        if (room != entries.end()) {
+            *room = boss;
+        }
+    }
+    return entries;
+}
+
 std::vector<u32> HandOutSettle::Filter(const std::string& member, std::span<const u32> entries,
-                                       s64 now_ms) {
+                                       s64 now_ms, std::span<const u32> bosses) {
     Member& state = members[member];
     if (now_ms - state.last_ms > HandOutFreshMs) {
         state = {}; // a load, a trip away: what it was handed before means nothing now
@@ -4221,6 +4262,10 @@ std::vector<u32> HandOutSettle::Filter(const std::string& member, std::span<cons
     std::set<u32> wanted;
     for (const u32 entry : entries) {
         const u32 index = entry & 0xFFFF;
+        if (std::ranges::contains(bosses, index)) {
+            out.push_back(HandOutHeldEntry); // the boss pick's, not the game's
+            continue;
+        }
         wanted.insert(index);
         const s64 since = state.wanted_since.try_emplace(index, now_ms).first->second;
         if (first || state.handed.contains(index) || now_ms - since >= HandOverSettleMs) {
