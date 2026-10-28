@@ -224,6 +224,12 @@ TEST(CoopSites, ThePartyHeaderHooksAreRegistered) {
     EXPECT_TRUE(IsRegisteredCoopHook(UnreliableChannelCheckOffset, UnreliableChannelCheck));
     // The item-received popup's queue push, skipped for silent grants (SilentItemGets).
     EXPECT_TRUE(IsRegisteredCoopHook(ItemGetQueuedOffset, ItemGetQueuedPrologue));
+    // The cutscene player's steps (the 2026-10-27 guest stutter log: seven "not in the co-op
+    // site table" errors at every start).
+    for (size_t step = 0; step + 1 < SprjRemoManStepOffsets.size(); ++step) {
+        EXPECT_TRUE(IsRegisteredCoopHook(SprjRemoManStepOffsets[step], RemoStepEntry)) << step;
+    }
+    EXPECT_TRUE(IsRegisteredCoopHook(SprjRemoManStepOffsets.back(), RemoEpilogWaitEntry));
     // Other bytes, another length or an offset that is no hook are not.
     EXPECT_FALSE(IsRegisteredCoopHook(HitOffset, std::span{HitPrologue}.first(6)));
     EXPECT_FALSE(IsRegisteredCoopHook(HitOffset + 1, HitPrologue));

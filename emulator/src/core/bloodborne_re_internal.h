@@ -1181,8 +1181,14 @@ extern PartyDeathRun party_death_run;
 extern CoopTimeMeter coop_time;
 // The co-op tick's parts, the slowest few logged after the Co-op time line.
 extern CoopTimeMeter coop_tick_parts;
+// HasMemoryAccess calls made on this thread so far (the spike lines' memory checks).
+u64 MemoryChecksOnThisThread();
+// A part or a step that took `ns`: a "Co-op tick spike" warning when it is over the threshold
+// (TickSpikeLog; BB_COOP_SPIKE_MS lowers it, for the rig on a fast PC).
+void NoteTickSpike(std::string_view name, s64 ns, u64 memory_checks);
 // One part of the co-op tick, into coop_tick_parts (AtiniirSpectre 2026-10-23: the tick grew
-// after a death and the log could not say which part), until the end of the scope.
+// after a death and the log could not say which part), until the end of the scope. A spike line
+// too when it is slow.
 class TickPartTimer {
 public:
     explicit TickPartTimer(std::string_view name) : name{name} {}
@@ -1192,8 +1198,28 @@ public:
 
 private:
     std::string_view name;
+    u64 checks = MemoryChecksOnThisThread();
     std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
 };
+// A step inside a part (TickPartyDeath's, a once-a-second scan), only for the spike lines: a
+// stalled part's line is followed by the step that stalled it.
+class TickStepTimer {
+public:
+    explicit TickStepTimer(std::string_view name) : name{name} {}
+    TickStepTimer(const TickStepTimer&) = delete;
+    TickStepTimer& operator=(const TickStepTimer&) = delete;
+    ~TickStepTimer();
+
+private:
+    std::string_view name;
+    u64 checks = MemoryChecksOnThisThread();
+    std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
+};
+template <typename Step>
+void TimeTickStep(std::string_view name, Step&& step) {
+    const TickStepTimer timer{name};
+    step();
+}
 void ReportCoopTime(s64 now_ms);
 void InstallPartyDeath(u64 base, u64 image_size);
 void ApplyHealingFountainHostAvailability(const GuestRegisterSnapshot& registers);

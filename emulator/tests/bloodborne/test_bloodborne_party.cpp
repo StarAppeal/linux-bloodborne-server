@@ -10,6 +10,7 @@
 
 using Core::Bloodborne::CoopTimeMeter;
 using Core::Bloodborne::ParsePartySetting;
+using Core::Bloodborne::TickSpikeLog;
 
 // SHADPS4_BLOODBORNE_PARTY=<name>:<secret> becomes the X-ShadPS4-Bloodborne-Party header value.
 // The server applies the same rules (NormalizePartyKey), so anything rejected here would be
@@ -74,6 +75,38 @@ TEST(BloodborneCoopTime, NamesOnlyTheSlowestSectionsWhenAsked) {
               std::optional<std::string>{
                   "map screen avg 9.00 ms max 9.00 ms (1 calls), trip avg 2.00 ms max 2.00 ms "
                   "(2 calls) over 30 s"});
+}
+
+// Guest stutter 2026-10-27 (v1.3.0, an enemy follower): about one 500 ms stall a second, and the
+// period's maxima could not say when nor in which step. A part over 8 ms is logged on its own line
+// with its time, the enemy role and how many memory checks it made (many checks or slow ones); only
+// so many lines, then one that says the rest are left out.
+TEST(BloodborneCoopTime, LogsOnlyPartsOverTheSpikeThreshold) {
+    TickSpikeLog log{200};
+    EXPECT_EQ(log.Note("TickDuel", 8'000'000, 1'000, "follower", 0), std::nullopt)
+        << "8 ms is fine";
+    EXPECT_EQ(log.Note("TickDuel", 513'200'000, 61'250, "follower", 26'112),
+              std::optional<std::string>{"Co-op tick spike: TickDuel 513.20 ms t=61.250 s "
+                                         "role follower, 26112 memory checks"});
+}
+
+// The rig (a fast PC) lowers the threshold to see the same steps that stall a slow one.
+TEST(BloodborneCoopTime, SpikeThresholdCanBeLowered) {
+    TickSpikeLog log{200, 1'000'000};
+    EXPECT_EQ(log.Note("SessionNames", 1'000'000, 5, "owner", 3), std::nullopt);
+    EXPECT_EQ(log.Note("SessionNames", 1'500'000, 5, "owner", 3),
+              std::optional<std::string>{
+                  "Co-op tick spike: SessionNames 1.50 ms t=0.005 s role owner, 3 memory checks"});
+}
+
+TEST(BloodborneCoopTime, SpikeLinesStopAtTheCap) {
+    TickSpikeLog log{2};
+    EXPECT_TRUE(log.Note("a", 9'000'000, 0, "owner", 0));
+    EXPECT_EQ(log.Note("b", 9'000'000, 0, "owner", 0),
+              std::optional<std::string>{
+                  "Co-op tick spike: b 9.00 ms t=0.000 s role owner, 0 memory checks (the "
+                  "last spike line)"});
+    EXPECT_EQ(log.Note("c", 900'000'000, 0, "owner", 0), std::nullopt) << "over the cap";
 }
 
 using namespace Core::Bloodborne;

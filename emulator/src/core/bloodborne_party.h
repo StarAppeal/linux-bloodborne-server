@@ -156,6 +156,26 @@ private:
     std::vector<Section> sections;
 };
 
+// One warning line for each co-op tick part slower than the threshold (guest stutter 2026-10-27,
+// v1.3.0: about one 500 ms stall a second on an enemy follower; CoopTimeMeter's maxima could not
+// say when nor in which step): its name, its time, the time since boot, the enemy role and the
+// memory checks (HasMemoryAccess) it made, to tell many checks from slow ones. At most `cap` lines
+// a game, the last one saying so. Thread-safe.
+class TickSpikeLog {
+public:
+    static constexpr s64 DefaultThresholdNs = 8'000'000;
+    explicit TickSpikeLog(size_t cap, s64 threshold_ns = DefaultThresholdNs)
+        : cap{cap}, threshold_ns{threshold_ns} {}
+    std::optional<std::string> Note(std::string_view part, s64 ns, s64 now_ms,
+                                    std::string_view role, u64 memory_checks);
+
+private:
+    std::mutex mutex;
+    size_t cap;
+    s64 threshold_ns;
+    size_t lines = 0;
+};
+
 class CoopFeatureReport {
 public:
     void On(std::string_view feature);
@@ -740,6 +760,42 @@ bool NoOneElseOnMap(std::span<const MemberMap> board, std::string_view self, u32
 // A party of three: the boards know a member by its online id, hex-encoded (board member names
 // are letters and digits only), and a session member's identity object holds its online id.
 std::string BoardMemberOfOnlineId(std::string_view online_id);
+// Where SessionMemberBoardName found each member's online id (guest stutter 2026-10-27, v1.3.0:
+// the full scan, two pointer levels under a member's identity and about a thousand memory checks a
+// member, ran every second and stalled a slow PC ~500 ms each time). A found member has only that
+// block read again; one whose id was not found is scanned again after MissRetryMs, twice as long
+// after each miss in a row up to MissRetryMaxMs, or at once when the board's online ids change.
+// Keyed by the identity object; the latest `Members` are kept.
+class SessionNameCache {
+public:
+    static constexpr s64 MissRetryMs = 10'000;
+    static constexpr s64 MissRetryMaxMs = 60'000;
+    static constexpr std::size_t Members = 16;
+    struct Block {
+        u64 address = 0;
+        u64 size = 0;
+    };
+    enum class Plan : u8 { Scan, Recheck, StillMissing };
+    struct Look {
+        Plan plan = Plan::Scan;
+        Block block;
+    };
+    Look Lookup(u64 identity, std::span<const std::string> online_ids, s64 now_ms) const;
+    void Found(u64 identity, std::span<const std::string> online_ids, Block where);
+    void Missed(u64 identity, std::span<const std::string> online_ids, s64 now_ms);
+    void Forget(u64 identity);
+
+private:
+    struct Entry {
+        u64 identity = 0;
+        std::vector<std::string> online_ids;
+        std::optional<Block> where;
+        s64 missed_at = 0;
+        int misses = 0;
+    };
+    void Keep(Entry entry);
+    std::vector<Entry> entries;
+};
 std::string OnlineIdOfBoardMember(std::string_view member); // "" if it is not one
 // The one candidate found in `bytes` as a whole NUL-terminated name, or nothing.
 std::optional<std::string> FindOnlineIdIn(std::span<const u8> bytes,
@@ -2178,6 +2234,22 @@ constexpr float PartySummonSlotHoldSeconds = 15.0f;
 // A loaded PARAM file: the type name at +0x0C, the row count (u16) at +0x0A and sorted 24-byte
 // row entries (id, padding, data offset) at +0x40.
 bool IsParamOfType(std::span<const u8> param, std::string_view type);
+// The param repository's slot each PARAM type was last found in (FindLoadedParam), looked at
+// before the whole repository (guest stutter 2026-10-27, v1.3.0: 1024 slots, three memory checks
+// each, several scans a second for harder enemies, Rot and the party UI, up to 60 ms each on a
+// slow PC). The caller checks that the slot still holds the type.
+// A loaded PARAM file's size: its header and row entries (`rows` of 24 bytes from +0x40, each
+// with its row's data offset at +8), up to the furthest row's data plus `row_size`. `param` holds
+// at least the header and the entries.
+u64 ParamTableSize(std::span<const u8> param, u16 rows, u64 row_size);
+class LoadedParamSlots {
+public:
+    std::optional<u64> Slot(std::string_view type) const;
+    void Found(std::string_view type, u64 slot);
+
+private:
+    std::vector<std::pair<std::string, u64>> slots;
+};
 std::optional<u64> FindParamRow(std::span<const u8> param, s32 id);
 // An enemy's one-time drop: NpcParam +0x2C is its item lot, ItemLotParam +0x80 the flag a lot
 // that drops once sets (0: a random drop). A member's kill gives the others that lot while their
@@ -2309,6 +2381,13 @@ constexpr std::array<u8, 8> ShowNetworkBannerPrologue{0x55, 0x48, 0x89, 0xE5,
 // popup's queue. Its result is never read. Skipped while SilentItemGets lives (see there).
 constexpr u64 ItemGetQueuedOffset = 0x016D8850;
 constexpr std::array<u8, 8> ItemGetQueuedPrologue{0x55, 0x48, 0x89, 0xE5, 0x41, 0x57, 0x41, 0x56};
+// Kaniel 2026-10-15: a cutscene under the team's loading screen is skipped (NoteRemoStep).
+// SprjRemoMan's step methods, Init .. EpilogWait (its step table, filled at 0x01CFBA91), and
+// their first instructions.
+constexpr std::array<u64, 7> SprjRemoManStepOffsets{0x01CFA050, 0x01CFA310, 0x01CFA4C0, 0x01CFA670,
+                                                    0x01CFB060, 0x01CFB350, 0x01CFB5F0};
+constexpr std::array<u8, 8> RemoStepEntry{0x55, 0x48, 0x89, 0xE5, 0x41, 0x57, 0x41, 0x56};
+constexpr std::array<u8, 7> RemoEpilogWaitEntry{0x55, 0x48, 0x89, 0xE5, 0x41, 0x56, 0x53};
 // The game's bullet creation (CreateBullet: rdi the bullet manager, rsi the request: +0x00 the
 // owner's handle, +0x04 the bullet's BulletParam id). No enemy bullet is ever sent: an enemy's
 // (EnemyIns vtable +0x1A8 returns 0, so the request's network bit 0x10 stays off) and an event's

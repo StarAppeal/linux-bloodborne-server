@@ -88,6 +88,8 @@ LONG = {
     "kill-reaches-arrival": "the 10-19 playtest case #278: three games, two trips",
     "soak": "a long session by design",
     "solo-death-tick": "70 s and 100 s waits: the co-op time lines come every 30 s",
+    "guest-follower-stutter": "three minutes as the enemy follower: the co-op time lines come every 30 s",
+    "guest-follower-stutter-harder": "three minutes as the enemy follower: the co-op time lines come every 30 s",
     "chalice-team": "two rituals and two dungeon loads, measured 313 s",
     "chalice-load-inside-guest": "Kaniel 2026-10-24: a ritual, two dungeon loads, a restart",
     "chalice-load-inside-host": "Kaniel 2026-10-24: a ritual, two dungeon loads, a restart",

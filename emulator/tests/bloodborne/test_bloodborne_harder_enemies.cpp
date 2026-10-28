@@ -191,3 +191,36 @@ TEST(BloodborneHarderEnemies, TheCoopBossBonusComesBack) {
     SetCoopBossHpRates(param, own);
     EXPECT_EQ(CoopBossHpRates(param), own);
 }
+
+// Guest stutter 2026-10-27 (v1.3.0): the loaded PARAM files were looked for in the whole param
+// repository (1024 slots, three memory checks each) several times a second (harder enemies, Rot,
+// the party UI), up to 60 ms a scan on a slow PC. The slot a type was found in is looked at first.
+TEST(LoadedParamSlots, RemembersTheSlotOfEachType) {
+    LoadedParamSlots slots;
+    EXPECT_EQ(slots.Slot("NPC_PARAM_ST"), std::nullopt);
+    slots.Found("NPC_PARAM_ST", 0x40);
+    slots.Found("SP_EFFECT_PARAM_ST", 0x1F8);
+    EXPECT_EQ(slots.Slot("NPC_PARAM_ST"), std::optional<u64>{0x40});
+    EXPECT_EQ(slots.Slot("SP_EFFECT_PARAM_ST"), std::optional<u64>{0x1F8});
+    slots.Found("NPC_PARAM_ST", 0x48);
+    EXPECT_EQ(slots.Slot("NPC_PARAM_ST"), std::optional<u64>{0x48}) << "a reload moved it";
+}
+
+// The rig's harder-enemies guest (2026-10-28): MakeEnemiesHarder made 21 000 memory checks a
+// second, one for each row's data offset read through ReadValue. The table's size comes from its
+// row entries, read in one span: the furthest row's data offset plus a row.
+TEST(LoadedParamSlots, ATablesSizeReachesItsFurthestRow) {
+    std::vector<u8> param(0x40 + 3 * 24);
+    const auto entry = [&](std::size_t row, u64 offset) {
+        std::memcpy(param.data() + 0x40 + row * 24 + 8, &offset, sizeof(offset));
+    };
+    entry(0, 0x100);
+    entry(1, 0x400);
+    entry(2, 0x200);
+    EXPECT_EQ(ParamTableSize(param, 3, 0x184), 0x400u + 0x184);
+    EXPECT_EQ(ParamTableSize(param, 0, 0x184), 0x40u) << "no rows: just the header";
+    entry(1, 0x10);
+    entry(2, 0x20);
+    entry(0, 0x30);
+    EXPECT_EQ(ParamTableSize(param, 3, 0x10), 0x40u + 3 * 24) << "never less than its entries";
+}
