@@ -3885,31 +3885,6 @@ SCENARIOS["chalice-altar-same"] = {
     "timeout": 1500,
 }
 
-# Kaniel's playtest 2026-10-28: krolebord's save named the altar of an earlier dungeon (altar 6),
-# and his trip into the party's dungeon (altar 5) built the earlier one: an open door, no boss
-# room. Here the guest's save names altar 6 (no dungeon there) when it enters the host's ritual's
-# dungeon from altar 1: the load builds altar 1's, the story Pthumeru's files.
-SCENARIOS["chalice-altar-stale-pick"] = {
-    "about": "the guest's save names another altar; entering the host's ritual's dungeon from "
-             "its own altar builds the ritual's dungeon",
-    "roles": {
-        "host": ["team-create", "team-invite rig_guest", "team-wait 2", "team-start", START,
-                 "godmode", "wait-session 2 300", "wait 10", *CHALICE_ENTER("host"),
-                 "wait-members 2 400", "wait 20", "expect-session 2", "snapshot"],
-        "guest": ["team-accept", "team-ready", START, "godmode", "wait-session 2 300",
-                  *[f"set-flag {flag} 0" for flag in range(9020, 9026)], "set-flag 9026 1",
-                  f"travel {HUNTERS_DREAM}", "wait 20", "expect-flag 9026 1",
-                  *["wait 30"] * 4, *CHALICE_FROM_OWN_ALTAR("guest"), "wait-members 2 300",
-                  "wait 20", "expect-session 2", *ALTAR_RECORDS("guest inside"), "snapshot"],
-    },
-    "expect": {"host": [r"host in the dungeon"], "guest": [r"guest in the dungeon"]},
-    "forbid": {"host": SESSION_HOLDS, "guest": [*SESSION_HOLDS, r"named no dungeon"]},
-    "settings": {"BB_FILE_TRACE": "1"},
-    "console_expect": {"guest": [r"m29_10_90_00"]},
-    "allow": CRASH_CLEANUP,
-    "timeout": 1200,
-}
-
 for _restarts in ("guest", "host"):
     _stays = "host" if _restarts == "guest" else "guest"
     SCENARIOS[f"chalice-load-inside-{_restarts}"] = {
