@@ -1361,29 +1361,35 @@ TEST(BloodbornePartyDeath, AnEnemyThatDiesAgainAtOnceIsNotBroughtBackAgain) {
     BringBackGuard guard;
     // First time: both come back.
     EXPECT_EQ(guard.Filter(1, back, alive,
-                           std::vector<DeadCopy>{{Hunter, Now - 3'000}, {Skeleton, Now - 3'000}}), back);
+                           std::vector<DeadCopy>{{Hunter, Now - 3'000}, {Skeleton, Now - 3'000}}),
+              back);
     guard.Brought(back, Now);
     // Both die again 1 s later; the host's skeleton died and came back meanwhile.
     const std::vector<CharacterShown> skeleton_died{{.handle = Hunter},
-                                                     {.handle = Skeleton, .dead = true}};
-    EXPECT_TRUE(guard.Filter(1, std::vector<u32>{}, skeleton_died, std::vector<DeadCopy>{}).empty());
+                                                    {.handle = Skeleton, .dead = true}};
+    EXPECT_TRUE(
+        guard.Filter(1, std::vector<u32>{}, skeleton_died, std::vector<DeadCopy>{}).empty());
     const std::vector<DeadCopy> dead_again{{Hunter, Now + 1'000}, {Skeleton, Now + 1'000}};
     EXPECT_EQ(guard.Filter(1, back, alive, dead_again), std::vector<u32>{Skeleton});
     // Refused for the rest of the visit, even later on.
-    EXPECT_TRUE(guard.Filter(1, std::vector<u32>{Hunter}, alive,
-                             std::vector<DeadCopy>{{Hunter, Now + 60'000}}).empty());
+    EXPECT_TRUE(guard
+                    .Filter(1, std::vector<u32>{Hunter}, alive,
+                            std::vector<DeadCopy>{{Hunter, Now + 60'000}})
+                    .empty());
     // One that stayed back past StaysBackMs and died later (a player's kill) comes back again.
     guard.Brought(std::vector<u32>{Skeleton}, Now + 4'000);
-    EXPECT_EQ(guard.Filter(1, std::vector<u32>{Skeleton}, alive,
-                           std::vector<DeadCopy>{{Skeleton, Now + 4'000 + BringBackGuard::StaysBackMs}}),
-              std::vector<u32>{Skeleton});
+    EXPECT_EQ(
+        guard.Filter(1, std::vector<u32>{Skeleton}, alive,
+                     std::vector<DeadCopy>{{Skeleton, Now + 4'000 + BringBackGuard::StaysBackMs}}),
+        std::vector<u32>{Skeleton});
     // A new visit forgets it all.
     EXPECT_EQ(guard.Filter(2, std::vector<u32>{Hunter}, alive,
                            std::vector<DeadCopy>{{Hunter, Now + 70'000}}),
               std::vector<u32>{Hunter});
 }
 
-// For HostMovedHoldMs after the session host moved (#403), no bring-backs from the new host's board.
+// For HostMovedHoldMs after the session host moved (#403), no bring-backs from the new host's
+// board.
 TEST(BloodbornePartyDeath, BringBacksWaitAfterTheSessionHostMoved) {
     EXPECT_FALSE(HoldsBringBacks(100'000, std::nullopt));
     EXPECT_TRUE(HoldsBringBacks(100'000, 100'000 - HostMovedHoldMs + 1));

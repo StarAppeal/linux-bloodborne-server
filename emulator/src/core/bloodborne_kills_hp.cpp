@@ -2541,8 +2541,8 @@ void KeepEnemyDeathsInStep(bool sharing) {
             visit, BroughtBackByTheHost(*hosts_now, dead_here, others, now_ms), *hosts_now,
             dead_here);
         static u32 held_logged = 0;
-        if (!back.empty() && HoldsBringBacks(now_ms, host_moved != 0 ? std::optional{host_moved}
-                                                                     : std::nullopt)) {
+        if (!back.empty() &&
+            HoldsBringBacks(now_ms, host_moved != 0 ? std::optional{host_moved} : std::nullopt)) {
             if (++held_logged <= 20) {
                 LOG_INFO(Debug,
                          "Bloodborne party: {} bring-backs held, the session host moved {} ms ago",

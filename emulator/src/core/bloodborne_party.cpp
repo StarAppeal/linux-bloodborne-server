@@ -4693,8 +4693,8 @@ std::vector<u32> BroughtBackByTheHost(std::span<const CharacterShown> host,
 }
 
 std::vector<u32> BringBackGuard::Filter(u64 now_visit, std::span<const u32> back,
-                                       std::span<const CharacterShown> host,
-                                       std::span<const DeadCopy> dead_here) {
+                                        std::span<const CharacterShown> host,
+                                        std::span<const DeadCopy> dead_here) {
     if (now_visit != visit) {
         visit = now_visit;
         brought_at.clear();
