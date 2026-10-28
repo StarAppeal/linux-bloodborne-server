@@ -641,6 +641,10 @@ target_include_directories(screen-lighting-test PRIVATE shadps4/video_core/host_
 add_executable(flip-label-test EXCLUDE_FROM_ALL ../tests/test_flip_label.cpp)
 target_compile_options(flip-label-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
 target_include_directories(flip-label-test PRIVATE shim)
+# A flip DCB without its prepareFlip packet (Lisara's exit 23 entering the Old Hunters DLC).
+add_executable(flip-marker-test EXCLUDE_FROM_ALL ../tests/test_flip_marker.cpp)
+target_compile_options(flip-marker-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
+target_include_directories(flip-marker-test PRIVATE shim)
 
 add_executable(scene-resolution-test EXCLUDE_FROM_ALL ../tests/test_scene_resolution.cpp ../tests/test_gpu_runtime_stubs.cpp)
 target_include_directories(scene-resolution-test PRIVATE shim shadps4 third_party/gcn/include)

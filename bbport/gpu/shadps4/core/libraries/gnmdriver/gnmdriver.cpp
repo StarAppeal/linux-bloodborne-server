@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
+
 #include "gnm_error.h"
 #include "gnmdriver.h"
 
@@ -25,6 +27,7 @@
 #include "bbport_timeline.h"
 #include "bbport_heap_sites.h"
 #include "bbport_gnm_hooks.h"
+#include "bbport_flip_marker.h"
 #include "video_core/amdgpu/pm4_cmds.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
@@ -2572,6 +2575,37 @@ s32 PS4_SYSV_ABI sceGnmSubmitAndFlipCommandBuffersForWorkload(
     std::scoped_lock lk{m_submit_lock};
     if (!SubmitLockOnDecode()) {
         WaitGpuIdle();
+    }
+
+    // bbport: a flip DCB without its prepareFlip packet stopped the game (exit 23, the frame
+    // after the Old Hunters grab cutscene). Submit it as it is and flip from the CPU instead.
+    if (!BbFlipMarker::HasPrepareFlip(cmdbuf, size_dw)) {
+        static std::atomic<u32> missing{0};
+        const u32 n = ++missing;
+        if (n <= 5 || n % 600 == 0) {
+            LOG_ERROR(Lib_GnmDriver,
+                      "Flip DCB without its prepareFlip packet ({} so far): {} DCB(s), last {} "
+                      "dwords, dword at end-64 {:#x}, a prepareFlip at dword {} of the tail; "
+                      "flipping buffer {} from the CPU",
+                      n, count, size_dw,
+                      size_dw >= BbFlipMarker::kPrepareFlipDwords
+                          ? cmdbuf[size_dw - BbFlipMarker::kPrepareFlipDwords]
+                          : 0u,
+                      BbFlipMarker::FindPrepareFlip(cmdbuf, size_dw, 256), buf_idx);
+        }
+        const s32 result =
+            PerformSubmit(count, const_cast<const u32**>(dcb_gpu_addrs), dcb_sizes_in_bytes,
+                          const_cast<const u32**>(ccb_gpu_addrs), ccb_sizes_in_bytes);
+        const s32 flip_result = VideoOut::sceVideoOutSubmitFlip(
+            vo_handle, static_cast<s32>(buf_idx), static_cast<s32>(flip_mode), flip_arg);
+        if (flip_result != ORBIS_OK) {
+            LOG_ERROR(Lib_GnmDriver, "CPU flip after a DCB without prepareFlip failed: {:#x}",
+                      static_cast<u32>(flip_result));
+        }
+        if (SubmitLockOnDecode()) {
+            WaitPreviousFrameAtSubmit();
+        }
+        return result != ORBIS_OK ? result : flip_result;
     }
 
     const s32 patch_result =
