@@ -4299,7 +4299,9 @@ SCENARIOS["story-hostless"] = {
 # Hemwick's Mad Ones): a kill is taken back when a map generator brings the same enemy back. The
 # Witch's Abode lamp stands in her arena; the rig's saves have her alive once her flag is off.
 # The Mad One walking at the start dies in the host's game and comes back about 30 s later (rig
-# 2026-10-20): in the guest's game it is hidden as killed, then shown and alive again.
+# 2026-10-20): in the guest's game it is killed, then shown and alive again. The guest at the lamp
+# is within DiesNearMetres of it, so its copy dies by the game's kill rather than being hidden
+# (rig 2026-10-28: "1 near died" on release-1.3.1 too).
 HEMWICK = "0x16000000"
 WITCH_ABODE_LAMP = 2202951
 WITCH_DEFEATED = 12201800
@@ -4315,8 +4317,8 @@ SCENARIOS["mad-one-back"] = {
                  "wait 25", "wait 20", "census 60", f"expect-hp {MAD_ONE} > 0",
                  f"expect-hidden {MAD_ONE} 0", "sync mob-checked", "expect-session 2"],
         "guest": [*HEMWICK_START, "wait-session 2 300", "wait 10", "census 60", "sync mob-ready",
-                  "sync mob-killed", "wait 12", "census 60", f"expect-hidden {MAD_ONE} 1 10",
-                  "wait 18", "wait 15", "census 60", f"expect-hp {MAD_ONE} > 0",
+                  "sync mob-killed", "wait 3", "census 60", f"wait-hp {MAD_ONE} == 0 10",
+                  "wait 27", "wait 15", "census 60", f"expect-hp {MAD_ONE} > 0",
                   f"expect-hidden {MAD_ONE} 0 15", f"expect-disabled {MAD_ONE} 0",
                   "sync mob-checked", "expect-session 2"],
     },
