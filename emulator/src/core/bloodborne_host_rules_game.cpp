@@ -164,6 +164,7 @@ RotView ReadRotView() {
 
 void TickHostRules() {
     MakeEnemiesHarder(); // the enemy scaling rule follows the hunters on this map
+    TickBossTempo();
     TickTeamTravel();
     static s64 next_ms = 0;
     const s64 now_ms = SteadyMilliseconds();

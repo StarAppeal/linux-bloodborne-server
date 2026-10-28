@@ -3746,6 +3746,10 @@ constexpr float BossLeaveMetres = 45.0f;
 // own runner if it is in the arena, else the nearest standing member within BossEnterMetres.
 constexpr u64 NpcTypeOffset = 0x12E;
 constexpr u8 NpcTypeBoss = 1;
+// Boss tempo (Kaniel 2026-10-28): NpcParam's turnVellocity (degrees a second; Father Gascoigne
+// 120), the boss rows' (npcType 1) times `factor`; how many rows changed.
+constexpr u64 NpcTurnVelocityOffset = 0x0C;
+std::size_t ScaleBossTurnSpeed(std::span<u8> param, float factor);
 bool HandsOutBoss(std::optional<u8> npc_type, bool boss_sized);
 class BossRunnerPick {
 public:

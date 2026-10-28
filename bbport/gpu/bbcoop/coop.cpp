@@ -570,6 +570,7 @@ extern "C" int bbcoop_lobby_view(bbcoop_lobby* lobby) {
         lobby->rule_travel = rules.travel_together ? 1 : 0;
         lobby->rule_vote = rules.travel_vote ? 1 : 0;
         lobby->rule_scale = rules.enemy_scaling ? 1 : 0;
+        lobby->rule_tempo = static_cast<int>(rules.boss_tempo);
     }
     if (state->has_team()) {
         const bbcoop::Team& team = state->team();

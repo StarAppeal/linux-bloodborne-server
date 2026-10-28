@@ -99,6 +99,24 @@ TEST(BloodborneHarderEnemies, AttackScalesAndSaturates) {
     EXPECT_EQ(HarderEnemyAttack(60000, 2.0f), 65535);
 }
 
+// Kaniel 2026-10-28 (boss tempo): a boss row's (npcType 1) turnVellocity turns faster.
+TEST(BloodborneBossTempo, TurnsOnlyBossRowsFaster) {
+    constexpr std::size_t RowSize = 0x184;
+    auto param = MakeParam("NPC_PARAM_ST", RowSize, {100000, 271000, 271005});
+    Set<float>(param, 0, RowSize, NpcTurnVelocityOffset, 60.0f);
+    Set<float>(param, 1, RowSize, NpcTurnVelocityOffset, 120.0f);
+    Set<u8>(param, 1, RowSize, NpcTypeOffset, NpcTypeBoss);
+    Set<float>(param, 2, RowSize, NpcTurnVelocityOffset, 0.0f); // a boss that never turns
+    Set<u8>(param, 2, RowSize, NpcTypeOffset, NpcTypeBoss);
+    EXPECT_EQ(ScaleBossTurnSpeed(param, 1.3f), 1u);
+    EXPECT_FLOAT_EQ(Get<float>(param, 0, RowSize, NpcTurnVelocityOffset), 60.0f);
+    EXPECT_FLOAT_EQ(Get<float>(param, 1, RowSize, NpcTurnVelocityOffset), 156.0f);
+    EXPECT_FLOAT_EQ(Get<float>(param, 2, RowSize, NpcTurnVelocityOffset), 0.0f);
+    EXPECT_EQ(ScaleBossTurnSpeed(param, 1.0f), 0u);
+    auto attacks = MakeParam("ATK_PARAM_ST", 0xA4, {271000});
+    EXPECT_EQ(ScaleBossTurnSpeed(attacks, 1.3f), 0u);
+}
+
 TEST(BloodborneHarderEnemies, ScalesNpcParamRows) {
     constexpr std::size_t RowSize = 0x184;
     auto param = MakeParam("NPC_PARAM_ST", RowSize, {100000, 271000, 455000});

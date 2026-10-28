@@ -1005,6 +1005,12 @@ int TheLeaderSetsTheTeamsRules() {
   CHECK(back.ParseFromString(lobby.StateFor("b").SerializeAsString()));
   CHECK(back.team().rules().travel_together() &&
         back.team().rules().enemy_scaling() && !back.team().rules().rot());
+  // Kaniel 2026-10-28: the boss tempo, Vanilla unless the leader picks a level.
+  CHECK(now.boss_tempo() == bbcoop::BOSS_TEMPO_VANILLA);
+  rules.mutable_rules()->set_boss_tempo(bbcoop::BOSS_TEMPO_RELENTLESS);
+  CHECK(lobby.Request("a", rules).changed);
+  CHECK(back.ParseFromString(lobby.StateFor("b").SerializeAsString()));
+  CHECK(back.team().rules().boss_tempo() == bbcoop::BOSS_TEMPO_RELENTLESS);
   return 0;
 }
 

@@ -711,6 +711,14 @@ message TeamRules {
     // Enemies grow from the vanilla game (alone) to the harder defaults (a full team) with the
     // hunters on their map, over the player's own enemy setting.
     bool enemy_scaling = 4;
+    // Kaniel 2026-10-28: bosses rest less between attacks and turn faster.
+    BossTempo boss_tempo = 5;
+}
+
+enum BossTempo {
+    BOSS_TEMPO_VANILLA = 0;    // the game's
+    BOSS_TEMPO_AGGRESSIVE = 1; // half the breathers, x1.3 turn speed
+    BOSS_TEMPO_RELENTLESS = 2; // a quarter of the breathers, x1.6 turn speed
 }
 
 // The Rot rule's penalties (one each per death, picked at random).

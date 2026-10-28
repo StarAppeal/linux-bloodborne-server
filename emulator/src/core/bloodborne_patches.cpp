@@ -1601,6 +1601,21 @@ void InstallSilentKeyItems(u64 base, u64 image_size) {
     coop_features.On("silent key items");
 }
 
+// Kaniel 2026-10-28: the boss tempo rule's hook (BossTempoGoal), on whatever the rules say: it
+// changes nothing at Vanilla, and logs a boss's breathers there too.
+void InstallBossTempo(u64 base, u64 image_size) {
+    if (!CoopSitesMatch(base, image_size, "boss tempo",
+                        "the boss tempo rule leaves the bosses' breathers as they are")) {
+        return;
+    }
+    if (!InstallCoopHook(reinterpret_cast<void*>(base + AddSubGoalLifeHookOffset),
+                         AddSubGoalLifeHook, 0, GuestCodeHook{BossTempoGoal})) {
+        coop_features.Skipped("boss tempo", "the hook did not go in");
+        return;
+    }
+    coop_features.On("boss tempo");
+}
+
 // Kaniel 2026-10-25: the co-op cameras (spectating teammates, the free camera; see
 // CoopCameraStep), in the port only.
 void InstallCoopCamera(u64 base, u64 image_size) {
@@ -1883,6 +1898,7 @@ void InstallCoopFeatures(u64 base, u64 image_size) {
     InstallQuietSummonBanners(base, image_size);
     InstallNoMultiplayerBanners(base, image_size);
     InstallSilentKeyItems(base, image_size);
+    InstallBossTempo(base, image_size);
     InstallCharacterNames(base, image_size);
     InstallNoLostConnectionPopup(base, image_size);
     InstallGuestsHitNpcs(base, image_size);

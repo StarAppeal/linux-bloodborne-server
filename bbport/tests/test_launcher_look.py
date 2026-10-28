@@ -570,6 +570,21 @@ class CoopSettingsTests(unittest.TestCase):
         self.settle(0.5)
         self.assertEqual(bbport_coop.host_rules_value(self.app.coop), 'travel,vote,scale')
 
+    def test_boss_tempo_is_a_pick_vanilla_by_default(self):
+        """Kaniel 2026-10-28: the boss tempo host rule, Vanilla until the player picks Aggressive or
+        Relentless; the pick is saved."""
+        self.assertEqual(self.app.coop_vars['rule_tempo'].get(), '')
+        self.assertEqual(self.app.coop_tempo.get(), 'Vanilla: the game\'s own')
+        self.app.coop_tempo.current(2)
+        self.app.coop_tempo.event_generate('<<ComboboxSelected>>')
+        self.settle(0.5)
+        self.assertEqual(self.app.coop['rule_tempo'], 'relentless', 'saved')
+        self.assertEqual(bbport_coop.host_rules_value(self.app.coop), 'relentless')
+        self.app.coop_tempo.current(0)
+        self.app.coop_tempo.event_generate('<<ComboboxSelected>>')
+        self.settle(0.5)
+        self.assertEqual(self.app.coop['rule_tempo'], '')
+
     def test_how_to_connect_shows_the_steps_and_gives_the_host_their_vpn_address(self):
         """Kaniel 2026-10-21: players got lost at the VPN step; the co-op card has a help button with the
         Radmin VPN steps, and the host can take this PC's Radmin address with one press."""

@@ -4057,8 +4057,31 @@ class Launcher:
                                                   'up, a boss, your killer or your bloodstain takes it away',
                                                   'Гниль: каждая настоящая смерть даёт штраф (до 5); лампа, уровень, '
                                                   'босс, ваш убийца или ваше пятно крови снимают его'))
-        self.note(page, _('Auto and Rot are host rules: yours count when you lead the team.',
-                          'Авто и гниль — правила хоста: действуют ваши, когда вы лидер команды.'), top=14)
+        # Kaniel 2026-10-28: the boss tempo host rule (bosses rest less between attacks, turn faster).
+        cell = self.cell(page, 4, 0, _('Boss tempo (optional)', 'Темп боссов (по желанию)'), span=2)
+        cell.grid_configure(pady=(px(14), 0))
+        tempos = [('', _('Vanilla: the game\'s own', 'Как в игре')),
+                  ('aggressive', _('Aggressive: half the pauses, turns ×1.3', 'Агрессивный: вдвое меньше пауз, '
+                                                                               'поворот ×1.3')),
+                  ('relentless', _('Relentless: a quarter of the pauses, turns ×1.6',
+                                   'Беспощадный: вчетверо меньше пауз, поворот ×1.6'))]
+        saved_tempo = self.coop.get('rule_tempo', '')
+        tempo = var('rule_tempo', saved_tempo if saved_tempo in bbport_coop.BOSS_TEMPOS else '')
+        self.coop_tempo = ttk.Combobox(cell, values=[t for _v, t in tempos], state='readonly', width=44)
+        self.coop_tempo.current([v for v, _t in tempos].index(tempo.get()))
+
+        def tempo_picked(_e):
+            tempo.set(tempos[self.coop_tempo.current()][0])
+            self.coop_changed_soon()
+        self.coop_tempo.bind('<<ComboboxSelected>>', tempo_picked)
+        self.coop_tempo.pack(anchor='w')
+        self.flow(cell, _('Bosses rest less between their attacks and turn faster. Only bosses; the boss\'s '
+                          'own moves and damage stay the game\'s.',
+                          'Боссы меньше отдыхают между атаками и быстрее поворачиваются. Только боссы; их '
+                          'приёмы и урон остаются как в игре.'), 'small', MUTED).pack(fill='x', pady=(px(4), 0))
+        self.note(page, _('Auto, Rot and Boss tempo are host rules: yours count when you lead the team.',
+                          'Авто, гниль и темп боссов — правила хоста: действуют ваши, когда вы лидер команды.'),
+                  top=14)
 
         # Step 3: how the team travels.
         page = steps[2]

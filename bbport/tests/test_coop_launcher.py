@@ -86,6 +86,12 @@ class AnswersTests(unittest.TestCase):
         self.assertEqual(coop.host_rules_value(dict(coop.DEFAULTS, rule_vote='1')), 'off',
                          'the vote is a part of travelling together')
         self.assertEqual(coop.host_rules_value(dict(coop.DEFAULTS, rule_scale='1')), 'scale')
+        # Kaniel 2026-10-28: the boss tempo, Vanilla ('') unless picked; anything else is Vanilla.
+        self.assertEqual(coop.DEFAULTS['rule_tempo'], '')
+        self.assertEqual(coop.host_rules_value(dict(on, rule_tempo='relentless')),
+                         'rot,travel,vote,scale,relentless')
+        self.assertEqual(coop.host_rules_value(dict(coop.DEFAULTS, rule_tempo='aggressive')), 'aggressive')
+        self.assertEqual(coop.host_rules_value(dict(coop.DEFAULTS, rule_tempo='rot')), 'off')
         with tempfile.TemporaryDirectory() as folder:
             coop.save_settings(folder, dict(coop.DEFAULTS, rule_travel='1'))
             kept = coop.read_settings(folder)

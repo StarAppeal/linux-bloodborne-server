@@ -334,6 +334,8 @@ typedef struct bbcoop_lobby {
     /* Kaniel 2026-10-25: the host rules, the team's (its leader's launcher's); before a team,
      * this player's own launcher's. */
     int rule_rot, rule_travel, rule_vote, rule_scale;
+    /* Kaniel 2026-10-28: the boss tempo (0 Vanilla, 1 Aggressive, 2 Relentless). */
+    int rule_tempo;
     /* Kaniel 2026-10-25: the team's death mode, the leader's pick (BBCOOP_DEATH_*). */
     int death_mode;
     /* Amanises 2026-10-25: friends (online first), the friend requests waiting for an answer, the

@@ -657,6 +657,12 @@ void MakeEnemiesHarder();
 // this game plays by (its team's while in one, else its own).
 const HostRules& OwnHostRules();
 HostRules ActiveHostRules();
+// Kaniel 2026-10-28, the boss tempo rule (bloodborne_boss_tempo.cpp): the tuning this game
+// plays by (its rules' level and the dev setting); the hook at AddSubGoalLifeHookOffset, and the
+// game thread's step that finds the bosses on the map.
+BossTempoTuning ActiveBossTempoTuning();
+void PS4_SYSV_ABI BossTempoGoal(u64 tag, const GuestRegisterSnapshot* registers);
+void TickBossTempo();
 // The hunters on this player's map (1 alone, or when the party's map board is old).
 std::size_t HuntersOnMyMap();
 // The server's rot for this player once its lobby said it (taken once), and this player's rot

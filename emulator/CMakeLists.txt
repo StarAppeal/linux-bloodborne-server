@@ -976,6 +976,7 @@ if (ARCHITECTURE STREQUAL "x86_64")
              src/core/bloodborne_pings.cpp
              src/core/bloodborne_pings.h
              src/core/bloodborne_host_rules.cpp
+             src/core/bloodborne_boss_tempo.cpp
              src/core/bloodborne_host_rules_game.cpp
              src/core/bloodborne_host_rules.h
              src/core/bloodborne_pings_game.cpp
