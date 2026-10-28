@@ -63,6 +63,7 @@
     {"name": "server owns leaves", "required": true},
     {"name": "floor guard", "required": false},
     {"name": "flag block guard", "required": false},
+    {"name": "chalice altar pick", "required": false},
     {"name": "packet guard", "required": false},
     {"name": "co-op camera", "required": false},
     {"name": "boss fight deaths", "required": false},
@@ -276,6 +277,7 @@
     {"name": "contact object read", "feature": "floor guard", "kind": "hook", "offset": "0x01524B0C", "original": "4C 8B A8 A8 00 00 00", "patched": "", "accepted": []},
     {"name": "flag value first block", "feature": "flag block guard", "kind": "hook", "offset": "0x013CFF79", "original": "41 FF C9 44 89 C9 C1 E9 03", "patched": "", "accepted": []},
     {"name": "flag value second block", "feature": "flag block guard", "kind": "hook", "offset": "0x013CFFEC", "original": "45 29 D0 41 8D 58 FF 89 D8", "patched": "", "accepted": []},
+    {"name": "chalice view pick read", "feature": "chalice altar pick", "kind": "hook", "offset": "0x013BEB4D", "original": "31 C9 85 C0 44 8B 75 D4", "patched": "", "accepted": []},
     {"name": "member receive", "feature": "packet guard", "kind": "hook", "offset": "0x01A6D390", "original": "55 48 89 E5 41 57", "patched": "", "accepted": []},
     {"name": "camera manager result", "feature": "co-op camera", "kind": "hook", "offset": "0x0193BE5A", "original": "49 8B 85 28 01 00 00", "patched": "", "accepted": []},
     {"name": "kill character", "feature": "boss fight deaths", "kind": "hook", "offset": "0x018BF9A0", "original": "55 48 89 E5 41 57", "patched": "", "accepted": []}

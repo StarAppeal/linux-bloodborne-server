@@ -107,4 +107,51 @@ AltarRepair RepairAltarRecord(std::span<const u8> record);
 std::optional<AltarRecord> StandardAltarRecord(u8 key, std::span<const u8> state = {});
 AltarRecord EmptyAltarRecord();
 
+// The current altar's pick (Kaniel's playtest 2026-10-28: krolebord's game built altar 6's old
+// dungeon inside the party's altar 5 one, an open door and no boss room). Flags 9020-9026 are
+// "altar k is the current one" (9020 + k, set by the altar's talk and the Dream's warp event
+// 12107100); the game reads them as one 7-flag value (9020 its top bit) as a load registers a
+// chalice map's flag blocks, and points the map's view blocks (12900-12909, 52900-52909,
+// 72900-72909, 92900-92909) at that altar's. A party trip's load reads the save as written on
+// disk, which can name an altar picked before.
+inline constexpr s32 AltarPickFlag = 9020;
+inline constexpr u32 AltarPickFlagCount = 7;
+// The altar a 7-flag value names (exactly one flag on), if any.
+std::optional<s32> AltarOfPickBits(u32 bits);
+// The 7-flag value naming `altar`.
+constexpr u32 AltarPickBits(s32 altar) {
+    return 1u << (AltarPickFlagCount - 1 - static_cast<u32>(altar));
+}
+// The altar the pick flags among `on` (sorted, a team world's flags on) name, if one.
+std::optional<s32> AltarPickedIn(std::span<const s32> on);
+// The altar a ritual altar's "warp to the layer" request (72100420 + altar) names, if any.
+std::optional<s32> AltarOfWarpRequest(s32 flag);
+
+// The altar whose dungeon this game's next chalice map load should build: the one picked last,
+// by this player's own talk (its warp request, or a change of the game's flags while playing, not
+// a load's), by another member's warp into a dungeon (the trip this game follows goes there), or
+// by the team host's altar changing (as a guest joins, the host's dungeon).
+class ChaliceAltarPick {
+public:
+    // This game's own pick flags as read now (none when not readable).
+    void ObserveOwn(std::optional<s32> altar);
+    // The team world's (its host's) pick flags as they came now.
+    void ObserveTeam(std::optional<s32> altar);
+    // A warp request into altar `altar`'s dungeon: this player's own talk's, or another
+    // member's (the trip this game follows goes there).
+    void Warps(s32 altar);
+    // A load began: its save's flags are no pick of this player's.
+    void Loaded();
+    // Another session or character.
+    void Reset();
+    // The altar a load whose save names `saved` should build instead, if another.
+    std::optional<s32> ForLoad(std::optional<s32> saved) const;
+
+private:
+    std::optional<s32> picked;
+    bool own_seen = false;
+    std::optional<s32> own;
+    std::optional<s32> team;
+};
+
 } // namespace Core::Bloodborne

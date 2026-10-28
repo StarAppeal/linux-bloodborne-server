@@ -4,6 +4,7 @@
 // Travel and place: lamps and rests, talks, trips, the guest's resume. Split from
 // bloodborne_re.cpp; the shared declarations are in bloodborne_re_internal.h.
 
+#include "core/bloodborne_altar.h"
 #include "core/bloodborne_crash_dump.h"
 #include "core/bloodborne_flags.h"
 #include "core/bloodborne_lamp_points.h"
@@ -358,6 +359,10 @@ void PS4_SYSV_ABI RestInsteadOfLampTravel(u64, GuestRegisterSnapshot* registers)
                      flag);
         }
         return;
+    }
+    // This player's own warp into a ritual altar's dungeon: its load builds that altar's.
+    if (const auto altar = party_controller ? AltarOfWarpRequest(flag) : std::nullopt) {
+        NoteAltarWarp(*altar);
     }
     // A lamp whose boss lives (its character still off here) is not lit: event 7100 would run on
     // the request, light nothing and end (Kaniel's playtest 2026-10-20, the Witch's Abode).

@@ -109,6 +109,7 @@ inline constexpr auto CoopFeatures = std::to_array<CoopFeature>({
     {"server owns leaves", true},
     {"floor guard", false},
     {"flag block guard", false},
+    {"chalice altar pick", false},
     {"packet guard", false},
     {"co-op camera", false},
     {"boss fight deaths", false},
@@ -606,6 +607,12 @@ inline constexpr auto CoopSites = std::to_array<CoopSite>({
      "41 FF C9 44 89 C9 C1 E9 03"},
     {"flag value second block", "flag block guard", CoopSiteKind::Hook, 0x013CFFEC,
      "45 29 D0 41 8D 58 FF 89 D8"},
+
+    // A chalice map's view registration reads the current altar's pick flags 9020-9026
+    // (InstallChaliceAltarPick): a load builds the altar picked last, not the save's (Kaniel's
+    // playtest 2026-10-28: a party trip built altar 6's old dungeon in altar 5's).
+    {"chalice view pick read", "chalice altar pick", CoopSiteKind::Hook, 0x013BEB4D,
+     "31 C9 85 C0 44 8B 75 D4"},
 
     // The game's per-character receive of a remote player's state (InstallMemberPacketGuard): only
     // the newest copy of a member takes its packets (Kaniel's playtest 2026-10-19).

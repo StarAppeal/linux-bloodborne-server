@@ -805,6 +805,59 @@ TEST(BloodborneFlagRules, AnAltarsWarpRequestStaysInItsGame) {
     EXPECT_TRUE(IsWorldFlag(72100430));
 }
 
+// Kaniel's playtest 2026-10-28 (lamps lit as the party entered Central Pthumeru, krolebord's
+// door open and no boss room): a chalice map's flags (12900000-12909999, its items 52900000-
+// 52909999) are the current altar's view, the game keeps them in altar k's (14k0xxxx, 54k0xxxx).
+// The view is each game's own: as the host's world it carried an earlier dungeon's lamps, and the
+// host's view went over a teammate's on another altar. The altars' own flags are the world, the
+// lamps' shared, as any map's lamps.
+TEST(BloodborneFlagRules, AChaliceMapsFlagsAreTheCurrentAltarsView) {
+    for (const s32 flag : {12900000, 12901800, 12904700, 12906824, 12907810, 12907811, 12907830,
+                           12909999, 52900000, 52905000, 52909999}) {
+        EXPECT_EQ(RuleFor(flag).owner, FlagOwner::Session) << flag;
+        EXPECT_FALSE(SharedWithParty(flag)) << flag;
+        EXPECT_FALSE(IsWorldFlag(flag)) << flag;
+        EXPECT_FALSE(CarriesToGuestWorld(flag)) << flag;
+        EXPECT_FALSE(TakesHostMapFlag(flag)) << flag;
+    }
+    EXPECT_FALSE(LampOfActiveFlag(12907810) && SharedWithParty(12907810));
+    EXPECT_TRUE(TakesHostMapFlag(12899999));
+    EXPECT_TRUE(TakesHostMapFlag(12910000));
+    EXPECT_TRUE(SharedWithParty(12917810)) << "another map's lamp";
+    EXPECT_EQ(RuleFor(52910000).owner, FlagOwner::Host);
+    EXPECT_TRUE(CarriesToGuestWorld(52910000));
+    for (s32 altar = 0; altar < 7; ++altar) {
+        const s32 base = 14000000 + altar * 100000;
+        for (const s32 flag : {base + 7810, base + 7811, base + 7830, base + 7970}) {
+            EXPECT_TRUE(SharedWithParty(flag)) << flag << ": an altar's dungeon's lamp";
+            EXPECT_TRUE(IsWorldFlag(flag)) << flag;
+            EXPECT_TRUE(CarriesToGuestWorld(flag)) << flag;
+        }
+        for (const s32 flag : {base, base + 1800, base + 7210, base + 7812, base + 9999}) {
+            EXPECT_EQ(RuleFor(flag).owner, FlagOwner::Host) << flag;
+            EXPECT_TRUE(IsWorldFlag(flag)) << flag;
+            EXPECT_TRUE(CarriesToGuestWorld(flag)) << flag;
+        }
+    }
+    EXPECT_FALSE(SharedWithParty(14707810)) << "no altar 7";
+}
+
+// The team's lamps lit again at a guest's load and each second are the shared ones: the chalice
+// map's view lamps were an earlier dungeon's (Kaniel's playtest 2026-10-28: 7 lamps lit as the
+// party entered).
+TEST(BloodborneFlagRules, TheChaliceViewsLampsAreNotLitAgain) {
+    const std::set<s32> kept{12907810, 12417810};
+    const std::vector<s32> team{12907830, 12907831, 12407810};
+    EXPECT_EQ(LampsToRelight(kept, team, [](s32) { return false; }),
+              (std::vector<s32>{12407810, 12417810}));
+    WorldFlags world;
+    world.blocks = {12407, 12907};
+    world.on = {12407810, 12907810, 12907811};
+    EXPECT_EQ(TeamLampFlagsToSet(world, [](s32) { return false; }), (std::vector<s32>{12407810}));
+    EXPECT_EQ(TeamWorldLamps(1000, std::vector<u32>{12407, 12907}, world),
+              (std::vector<s32>{2401950}));
+}
+
 TEST(BloodborneFlagRules, ListsComeFromTheTable) {
     EXPECT_EQ(GuestProgressFlags(true, true, 0x18000000, true, true),
               (std::vector<s32>{9401, 9403}));

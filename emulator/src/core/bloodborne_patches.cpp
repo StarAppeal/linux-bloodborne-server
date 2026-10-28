@@ -1951,6 +1951,7 @@ void InstallCoopFeatures(u64 base, u64 image_size) {
     InstallTeamLobby(base, image_size);
     InstallFloorGuard(base, image_size);
     InstallFlagBlockGuard(base, image_size);
+    InstallChaliceAltarPick(base, image_size);
     InstallMemberPacketGuard(base, image_size);
     InstallSharedLoot(base, image_size);
     InstallLampsStayLitAtRegistration(base, image_size);

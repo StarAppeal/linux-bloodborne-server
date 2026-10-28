@@ -701,6 +701,11 @@ void InstallSolidNpcsInParty(u64 base, u64 image_size);
 void InstallFloorGuard(u64 base, u64 image_size);
 // A flag value read over a flag block that is missing reads as zeros (bloodborne_party_rules.cpp).
 void InstallFlagBlockGuard(u64 base, u64 image_size);
+// A chalice map's load builds the ritual altar picked last (ChaliceAltarPick), not always the
+// save's (bloodborne_flags_store.cpp).
+void InstallChaliceAltarPick(u64 base, u64 image_size);
+// A warp request (this player's or another member's) into ritual altar `altar`'s dungeon.
+void NoteAltarWarp(s32 altar);
 void InstallMemberPacketGuard(u64 base, u64 image_size);
 
 // Diagnostics for shared loot (RE trace only): the map item module (MapItemMan, 0x017D-0x017E)

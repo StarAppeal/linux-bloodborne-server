@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <string_view>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -361,4 +362,84 @@ TEST(BloodborneAltar, GoodRecordsStayAsTheyAre) {
     }
     EXPECT_EQ(StandardAltarRecord(11), std::nullopt);
     EXPECT_EQ(ClassifyAltarRecord(EmptyAltarRecord()), AltarRecordKind::Empty);
+}
+
+// Kaniel's playtest 2026-10-28 (krolebord saw an open door and no boss room in Central Pthumeru):
+// a chalice map's flags are the current altar's, and a load builds the altar its save's flags
+// 9020-9026 name (9020 + altar, the game's own read: the 7 flags as one value, 9020 its top bit).
+TEST(BloodborneAltar, TheAltarPickFlagsNameOneAltar) {
+    EXPECT_EQ(AltarOfPickBits(0b1000000), 0);
+    EXPECT_EQ(AltarOfPickBits(0b0000010), 5);
+    EXPECT_EQ(AltarOfPickBits(0b0000001), 6);
+    EXPECT_EQ(AltarOfPickBits(0), std::nullopt) << "no altar picked yet";
+    EXPECT_EQ(AltarOfPickBits(0b0000011), std::nullopt) << "two altars: not the game's own";
+    EXPECT_EQ(AltarOfPickBits(0b10000000), std::nullopt) << "past the 7 flags";
+    for (s32 altar = 0; altar < RitualAltarCount; ++altar) {
+        EXPECT_EQ(AltarOfPickBits(AltarPickBits(altar)), altar);
+    }
+    EXPECT_EQ(AltarPickedIn(std::vector<s32>{2010, 9025, 12100509}), 5);
+    EXPECT_EQ(AltarPickedIn(std::vector<s32>{9020}), 0);
+    EXPECT_EQ(AltarPickedIn(std::vector<s32>{9025, 9026}), std::nullopt);
+    EXPECT_EQ(AltarPickedIn(std::vector<s32>{9019, 9027}), std::nullopt);
+    EXPECT_EQ(AltarOfWarpRequest(72100420), 0);
+    EXPECT_EQ(AltarOfWarpRequest(72100425), 5);
+    EXPECT_EQ(AltarOfWarpRequest(72100426), 6);
+    EXPECT_EQ(AltarOfWarpRequest(72100427), std::nullopt);
+    EXPECT_EQ(AltarOfWarpRequest(72100419), std::nullopt);
+    EXPECT_EQ(AltarOfWarpRequest(72100300), std::nullopt) << "a layer pick, not an altar";
+}
+
+// krolebord picked altar 5 (his own talk, then Kaniel's warp), and the party trip's load built
+// altar 6, the one his save on disk still named: the load builds the altar picked last.
+TEST(BloodborneAltar, ALoadBuildsTheAltarPickedLast) {
+    ChaliceAltarPick pick;
+    EXPECT_EQ(pick.ForLoad(6), std::nullopt) << "nothing picked: the save's own";
+    pick.ObserveOwn(6); // the first look after a load: what the save had, no pick
+    EXPECT_EQ(pick.ForLoad(6), std::nullopt);
+    pick.ObserveOwn(6);
+    pick.ObserveOwn(5); // this player's talk with altar 5
+    EXPECT_EQ(pick.ForLoad(6), 5);
+    EXPECT_EQ(pick.ForLoad(5), std::nullopt) << "the save names it already";
+    pick.Warps(2); // another member's warp into altar 2's dungeon, which the trip follows
+    EXPECT_EQ(pick.ForLoad(5), 2);
+}
+
+// A guest whose save names altar 6 joins a host on altar 5, then enters altar 6's dungeon itself:
+// its talk changes no pick flag (altar 6 is its current one), its warp request does.
+TEST(BloodborneAltar, ThisPlayersOwnWarpIsAPick) {
+    ChaliceAltarPick pick;
+    pick.ObserveOwn(6);
+    pick.ObserveTeam(5);
+    EXPECT_EQ(pick.ForLoad(6), 5);
+    pick.Warps(6);
+    EXPECT_EQ(pick.ForLoad(6), std::nullopt);
+}
+
+TEST(BloodborneAltar, TheTeamHostsAltarIsAPickWhenItChanges) {
+    ChaliceAltarPick pick;
+    pick.ObserveTeam(5); // a join: the host's altar is the one its dungeon is
+    EXPECT_EQ(pick.ForLoad(6), 5);
+    pick.ObserveOwn(5);
+    pick.ObserveOwn(3);  // this player's own altar after
+    pick.ObserveTeam(5); // the same host altar again: no new pick
+    EXPECT_EQ(pick.ForLoad(5), 3);
+    pick.ObserveTeam(4);
+    EXPECT_EQ(pick.ForLoad(3), 4);
+    pick.ObserveTeam(std::nullopt); // a team world without one: no pick
+    EXPECT_EQ(pick.ForLoad(3), 4);
+}
+
+TEST(BloodborneAltar, ALoadsOwnAltarIsNoPick) {
+    ChaliceAltarPick pick;
+    pick.ObserveOwn(5);
+    pick.ObserveOwn(4);
+    EXPECT_EQ(pick.ForLoad(6), 4);
+    pick.Loaded(); // the next load's save names altar 6: seen first, not picked
+    pick.ObserveOwn(6);
+    EXPECT_EQ(pick.ForLoad(6), 4);
+    pick.ObserveOwn(std::nullopt); // flags not readable: nothing changes
+    pick.ObserveOwn(6);
+    EXPECT_EQ(pick.ForLoad(6), 4);
+    pick.Reset(); // another session or character
+    EXPECT_EQ(pick.ForLoad(6), std::nullopt);
 }

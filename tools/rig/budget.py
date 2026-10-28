@@ -105,6 +105,7 @@ LONG = {
     "chalice-altar-host": "a ritual and two dungeon loads, measured 315 s",
     "chalice-altar-team": "a ritual and two dungeon loads, measured 315 s",
     "chalice-altar-no-chalice": "a ritual and two dungeon loads, measured 353 s",
+    "chalice-altar-stale-pick": "Kaniel 2026-10-28: a ritual, a trip and two dungeon loads",
     "chalice-root-team": "a root ritual and two dungeon loads, waits for the ritual",
     "chalice-team3": "a ritual, three dungeon loads and three trips back, one at a time",
     "guest-drops": "a 70 s wait for the drops (Kaniel's playtest 2026-10-16)",

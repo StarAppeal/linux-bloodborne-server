@@ -409,6 +409,26 @@ inline constexpr std::array FirstRows{
 
 // Rows after the boss fogs': the general ranges the earlier rows cut into.
 inline constexpr std::array LastRows{
+    Range(12900000, 12909999, FlagOwner::Session, 0,
+          "a chalice map's flags (m29, 1290xxxx): the current altar's view, the game keeps them "
+          "in altar k's (14k0xxxx, +(11 + k) * 100000) and points the view there when the altar "
+          "is picked (flags 9020-9026); each game's own, as the host's world they carried an "
+          "earlier dungeon's lamps and went over a teammate's dungeon on another altar (Kaniel's "
+          "playtest 2026-10-28)"),
+    Range(52900000, 52909999, FlagOwner::Session, 0,
+          "a chalice map's item flags (5290xxxx): the current altar's view, kept in altar k's "
+          "(54k0xxxx)"),
+    FlagRange{.first = 14007810,
+              .last = 14608191,
+              .period = 100000,
+              .low = 7810,
+              .high = 8191,
+              .stride = 20,
+              .width = 2,
+              .rule = {FlagOwner::Shared, FlagCarriesHome},
+              .why = "a chalice dungeon's lamp's active flag and the one after, as altar k keeps "
+                     "them (14k07810 + lamp * 20, the view's 12907810 + lamp * 20): the game "
+                     "does not sync them"},
     FlagRange{.first = 12107810,
               .last = 13998191,
               .period = 10000,

@@ -1188,14 +1188,18 @@ std::vector<s32> LitHeadstoneLamps(const std::function<bool(s32)>& on) {
 
 std::vector<s32> LampsToRelight(const std::set<s32>& kept, std::span<const s32> team,
                                 const std::function<bool(s32)>& on) {
+    // The shared lamps only: a chalice map's view lamps are the current altar's (FlagTable).
+    const auto relights = [&](s32 flag) {
+        return LampOfActiveFlag(flag) && SharedWithParty(flag) && !on(flag);
+    };
     std::set<s32> lamps;
     for (const s32 flag : kept) {
-        if (LampOfActiveFlag(flag) && !on(flag)) {
+        if (relights(flag)) {
             lamps.insert(flag);
         }
     }
     for (const s32 flag : team) {
-        if (LampOfActiveFlag(flag) && !on(flag)) {
+        if (relights(flag)) {
             lamps.insert(flag);
         }
     }

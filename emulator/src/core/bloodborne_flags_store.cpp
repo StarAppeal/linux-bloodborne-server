@@ -291,7 +291,102 @@ void GiveBackAltarChalices() {
     }
 }
 
+// The chalice map's altar (bloodborne_altar.h, ChaliceAltarPick): the pick, kept from the
+// game's flags each second and other members' warps, decides the altar a chalice map's load
+// builds (PickChaliceAltarAtLoad).
+std::mutex chalice_altar_mutex;
+ChaliceAltarPick chalice_altar_pick;
+
+void ObserveChaliceAltarPick(s64 now_ms) {
+    const Place place = CurrentPlace();
+    // A load's own flags (its save's, then the team world's) are no pick: seen first once it
+    // settled.
+    constexpr s64 LoadSettleMs = 5'000;
+    const bool settled =
+        place.state == PlaceState::Playing && now_ms - place.since_ms >= LoadSettleMs;
+    const auto own = settled ? EventFlagBits(AltarPickFlag, AltarPickFlagCount) : std::nullopt;
+    const std::vector<s32> team = TeamWorldFlagsOnForGuest();
+    std::scoped_lock lock{chalice_altar_mutex};
+    if (!settled) {
+        chalice_altar_pick.Loaded();
+    } else if (own) {
+        chalice_altar_pick.ObserveOwn(AltarOfPickBits(*own));
+    }
+    chalice_altar_pick.ObserveTeam(AltarPickedIn(team));
+}
+
+[[maybe_unused]] const bool chalice_altar_reset_registered =
+    RegisterLifecycleReset("chalice altar pick", {Lifecycle::NewCharacter}, [] {
+        std::scoped_lock lock{chalice_altar_mutex};
+        chalice_altar_pick.Reset();
+    });
+
+// The block registration 0x013BEAC0 of a chalice map's view (area 0x1D, block 0) reads the pick
+// flags (`call 0x013CFD80` with the manager in r12, 9020, 7) and points the view at altar
+// 47 - bit length's blocks; here, right after the read, eax is the value. A party trip's load
+// reads the save as written on disk, so this game's later pick goes in instead (Kaniel's playtest
+// 2026-10-28: krolebord's trip into altar 5's dungeon built altar 6's, whose 9026 his save still
+// had), only for an altar whose record names a dungeon.
+constexpr u64 ChaliceViewPickReadOffset = 0x013BEB4D;
+constexpr std::array<u8, 8> ChaliceViewPickRead{0x31, 0xC9, 0x85, 0xC0, 0x44, 0x8B, 0x75, 0xD4};
+
+void PS4_SYSV_ABI PickChaliceAltarAtLoad(u64, GuestRegisterSnapshot* registers) {
+    if (!InPartySession()) {
+        return;
+    }
+    const u32 bits = static_cast<u32>(registers->rax) & ((1u << AltarPickFlagCount) - 1);
+    const std::optional<s32> saved = AltarOfPickBits(bits);
+    std::optional<s32> altar;
+    {
+        std::scoped_lock lock{chalice_altar_mutex};
+        altar = chalice_altar_pick.ForLoad(saved);
+    }
+    if (!altar) {
+        return;
+    }
+    using ReadBits = u32 PS4_SYSV_ABI (*)(u64 manager, s32 flag, u32 bits);
+    const auto read = reinterpret_cast<ReadBits>(image_base + ReadEventFlagBitsOffset);
+    std::array<u8, 4> head{};
+    for (size_t byte = 0; byte < head.size(); ++byte) {
+        head[byte] = static_cast<u8>(
+            read(registers->r12, AltarFlagBase(*altar) + static_cast<s32>(byte * 8), 8));
+    }
+    if (!AltarRecordDungeon(head) || !ChaliceDungeonExists(*AltarRecordDungeon(head))) {
+        LOG_WARNING(Debug,
+                    "Bloodborne chalice map: altar {} was picked last but names no dungeon "
+                    "({:02X} {:02X} {:02X} {:02X}): the save's altar {} is built",
+                    *altar, head[0], head[1], head[2], head[3], saved.value_or(-1));
+        return;
+    }
+    registers->rax = (registers->rax & ~u64{0xFFFFFFFF}) | AltarPickBits(*altar);
+    LOG_INFO(Debug,
+             "Bloodborne chalice map: this load builds altar {}'s dungeon ({:02X} {:02X} {:02X} "
+             "{:02X}), picked last, not the save's altar {}",
+             *altar, head[0], head[1], head[2], head[3],
+             saved ? std::to_string(*saved) : std::string{"(none)"});
+}
+
 } // namespace
+
+void NoteAltarWarp(s32 altar) {
+    std::scoped_lock lock{chalice_altar_mutex};
+    chalice_altar_pick.Warps(altar);
+}
+
+void InstallChaliceAltarPick(u64 base, u64 image_size) {
+    if (!party_controller) {
+        return;
+    }
+    if (ChaliceViewPickReadOffset + ChaliceViewPickRead.size() > image_size ||
+        !InstallCoopHook(reinterpret_cast<void*>(base + ChaliceViewPickReadOffset),
+                         ChaliceViewPickRead, 0, PickChaliceAltarAtLoad)) {
+        coop_features.Skipped("chalice altar pick",
+                              SiteFailure(base, image_size, ChaliceViewPickReadOffset));
+        return;
+    }
+    coop_features.On("chalice altar pick");
+    LOG_INFO(Debug, "Bloodborne chalice map: a load builds the altar picked last");
+}
 
 void RepairRitualAltars() {
     const auto repair = [](s32 base, std::string_view which) {
@@ -335,6 +430,7 @@ void KeepRitualAltarsWhole() {
         return;
     }
     checked_ms = now_ms;
+    ObserveChaliceAltarPick(now_ms);
     const auto broken = [](s32 base) {
         std::array<u8, 8> head{};
         for (size_t byte = 0; byte < head.size(); ++byte) {
@@ -1371,6 +1467,10 @@ void PS4_SYSV_ABI KeepLocalFlagsFromOthers(u64, GuestRegisterSnapshot* registers
         ((flag >= 12100000 && flag < 12110000) || (flag >= 72100000 && flag < 72110000))) {
         LOG_INFO(Debug, "Bloodborne party: the other player sends flag {} = {}", flag,
                  registers->r15 & 0xFF);
+        // Another member's warp into a chalice dungeon: the trip this game follows goes there.
+        if (const auto altar = AltarOfWarpRequest(flag)) {
+            NoteAltarWarp(*altar);
+        }
     }
     // A Dream headstone's flag: this game's own lamps decide, also for the message that carries
     // this game's own event's set in a session (HeadstoneLampsLit).

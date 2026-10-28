@@ -494,7 +494,7 @@ std::vector<s32> TeamWorldLamps(u32 flags_per_block, std::span<const u32> blocks
         if (std::find(blocks.begin(), blocks.end(), block) == blocks.end()) {
             continue;
         }
-        if (const auto lamp = LampOfActiveFlag(flag)) {
+        if (const auto lamp = LampOfActiveFlag(flag); lamp && SharedWithParty(flag)) {
             lamps.push_back(*lamp);
         }
     }
@@ -504,7 +504,8 @@ std::vector<s32> TeamWorldLamps(u32 flags_per_block, std::span<const u32> blocks
 std::vector<s32> TeamLampFlagsToSet(const WorldFlags& team, const std::function<bool(s32)>& on) {
     std::vector<s32> flags;
     for (const s32 flag : team.on) {
-        if ((LampOfActiveFlag(flag) || LampOfActiveFlag(flag - 1)) && !on(flag)) {
+        if ((LampOfActiveFlag(flag) || LampOfActiveFlag(flag - 1)) && SharedWithParty(flag) &&
+            !on(flag)) {
             flags.push_back(flag);
         }
     }

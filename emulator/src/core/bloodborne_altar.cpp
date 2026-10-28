@@ -289,4 +289,73 @@ AltarRecord EmptyAltarRecord() {
     return record;
 }
 
+std::optional<s32> AltarOfPickBits(u32 bits) {
+    if (bits == 0 || bits >= (1u << AltarPickFlagCount) || (bits & (bits - 1)) != 0) {
+        return std::nullopt;
+    }
+    s32 altar = static_cast<s32>(AltarPickFlagCount) - 1;
+    while ((bits >>= 1) != 0) {
+        --altar;
+    }
+    return altar;
+}
+
+std::optional<s32> AltarPickedIn(std::span<const s32> on) {
+    u32 bits = 0;
+    for (u32 index = 0; index < AltarPickFlagCount; ++index) {
+        if (std::binary_search(on.begin(), on.end(), AltarPickFlag + static_cast<s32>(index))) {
+            bits |= 1u << (AltarPickFlagCount - 1 - index);
+        }
+    }
+    return AltarOfPickBits(bits);
+}
+
+std::optional<s32> AltarOfWarpRequest(s32 flag) {
+    constexpr s32 WarpRequest = 72100420;
+    if (flag < WarpRequest || flag >= WarpRequest + RitualAltarCount) {
+        return std::nullopt;
+    }
+    return flag - WarpRequest;
+}
+
+void ChaliceAltarPick::ObserveOwn(std::optional<s32> altar) {
+    if (!altar) {
+        return;
+    }
+    if (own_seen && altar != own) {
+        picked = altar;
+    }
+    own_seen = true;
+    own = altar;
+}
+
+void ChaliceAltarPick::ObserveTeam(std::optional<s32> altar) {
+    if (altar && altar != team) {
+        picked = altar;
+    }
+    if (altar) {
+        team = altar;
+    }
+}
+
+void ChaliceAltarPick::Warps(s32 altar) {
+    picked = altar;
+}
+
+void ChaliceAltarPick::Loaded() {
+    own_seen = false;
+    own.reset();
+}
+
+void ChaliceAltarPick::Reset() {
+    *this = {};
+}
+
+std::optional<s32> ChaliceAltarPick::ForLoad(std::optional<s32> saved) const {
+    if (!picked || picked == saved) {
+        return std::nullopt;
+    }
+    return picked;
+}
+
 } // namespace Core::Bloodborne
