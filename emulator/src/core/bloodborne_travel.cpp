@@ -1006,16 +1006,18 @@ namespace Coop {
 
 std::atomic<bool> wipe_trip_respawn_pending{};
 
-void BringBackWhatTheHostBroughtBack(std::span<const u32> handles) {
+std::atomic<s64> session_host_moved_ms{0};
+
+bool BringBackWhatTheHostBroughtBack(std::span<const u32> handles) {
     static std::chrono::steady_clock::time_point last{};
     const auto now = std::chrono::steady_clock::now();
     if (handles.empty() || !lamp_rest_hooks_installed || now - last < BringBackEvery) {
-        return;
+        return false;
     }
     const u64 world = ReadValue<u64>(image_base + CandidateLocalStatePointerOffset, 0);
     if (world < 0x10000 || ReadValue<s32>(world, WorldRespawnStateOffset) != 0 ||
         party_rest_respawn_pending.load()) {
-        return;
+        return false;
     }
     last = now;
     brought_back_handles = {handles.begin(), handles.end()};
@@ -1035,6 +1037,7 @@ void BringBackWhatTheHostBroughtBack(std::span<const u32> handles) {
     party_rest_respawn_pending.store(true);
     party_rest_respawn_running.store(true);
     WriteValue(world, WorldRespawnStateOffset, s32{1});
+    return true;
 }
 
 void TickLampRest() {

@@ -522,6 +522,34 @@ constexpr s64 BringBackAfterMs = 3'000;
 std::vector<u32> BroughtBackByTheHost(std::span<const CharacterShown> host,
                                       std::span<const DeadCopy> dead_here,
                                       const std::unordered_set<u32>& party_kills, s64 now_ms);
+// Kaniel's DLC playtest 2026-10-28 (1.3.1): the host left, the session went to Lisara (#403), and
+// her copy had krolebord's dead enemies alive. His game brought them back every BringBackEvery,
+// and each time they died again at once by the game's own kill (and other enemies the respawn
+// woke with them), paying echoes: 16 respawns, 218 deaths, ~109,500 echoes, and every unkill went
+// to the server's log. An enemy brought back here that dies again within StaysBackMs while the
+// host's copy never died meanwhile does not stay back: it is not brought back again this visit.
+// One the host's copy dies and comes back again (the bell-ringing woman's skeletons) is a new
+// bring-back.
+class BringBackGuard {
+public:
+    static constexpr s64 StaysBackMs = 5'000;
+    // `back` (BroughtBackByTheHost) without the enemies that did not stay back; `host` is the
+    // host's board now, `dead_here` this guest's dead copies.
+    std::vector<u32> Filter(u64 visit, std::span<const u32> back,
+                            std::span<const CharacterShown> host,
+                            std::span<const DeadCopy> dead_here);
+    // The respawn for `handles` started.
+    void Brought(std::span<const u32> handles, s64 now_ms);
+
+private:
+    u64 visit = 0;
+    std::map<u32, s64> brought_at;
+    std::set<u32> refused;
+};
+// For a while after the session host moved to another game (a host left, #403), its board is the
+// old copy of a former guest: no bring-backs from it until HostMovedHoldMs passed.
+constexpr s64 HostMovedHoldMs = 15'000;
+bool HoldsBringBacks(s64 now_ms, std::optional<s64> host_moved_ms);
 // The same for the character state flags (+0x1E0) the scripts set and the respawn clears.
 constexpr u64 ScriptCharacterFlags = 0x4000 | 0x20000 | 0x40000000;
 u64 RestoreScriptFlagsAfterRespawn(u64 flags_before, u64 flags_after, s32 hp_before);

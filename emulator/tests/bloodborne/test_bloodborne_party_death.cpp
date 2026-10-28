@@ -1347,6 +1347,49 @@ TEST(BloodbornePartyDeath, AGuestBringsBackWhatTheHostsGeneratorBroughtBack) {
     EXPECT_TRUE(BroughtBackByTheHost({}, dead_here, {}, Now).empty());
 }
 
+// Kaniel's DLC playtest 2026-10-28 (1.3.1): the host left, the session went to Lisara, whose copy
+// had krolebord's dead enemies alive. His game brought 0x10038029 back every 2 s and it died again
+// at once by the game's own kill (16 respawns, ~109,500 echoes). One that dies again within
+// StaysBackMs of its bring-back while the host's copy never died is not brought back again this
+// visit; the host's copy dying and coming back (the bell-ringing woman's skeletons) starts anew.
+TEST(BloodbornePartyDeath, AnEnemyThatDiesAgainAtOnceIsNotBroughtBackAgain) {
+    constexpr s64 Now = 100'000;
+    constexpr u32 Hunter = 0x10038029;
+    constexpr u32 Skeleton = 0x1002c03d;
+    const std::vector<CharacterShown> alive{{.handle = Hunter}, {.handle = Skeleton}};
+    const std::vector<u32> back{Hunter, Skeleton};
+    BringBackGuard guard;
+    // First time: both come back.
+    EXPECT_EQ(guard.Filter(1, back, alive,
+                           std::vector<DeadCopy>{{Hunter, Now - 3'000}, {Skeleton, Now - 3'000}}), back);
+    guard.Brought(back, Now);
+    // Both die again 1 s later; the host's skeleton died and came back meanwhile.
+    const std::vector<CharacterShown> skeleton_died{{.handle = Hunter},
+                                                     {.handle = Skeleton, .dead = true}};
+    EXPECT_TRUE(guard.Filter(1, std::vector<u32>{}, skeleton_died, std::vector<DeadCopy>{}).empty());
+    const std::vector<DeadCopy> dead_again{{Hunter, Now + 1'000}, {Skeleton, Now + 1'000}};
+    EXPECT_EQ(guard.Filter(1, back, alive, dead_again), std::vector<u32>{Skeleton});
+    // Refused for the rest of the visit, even later on.
+    EXPECT_TRUE(guard.Filter(1, std::vector<u32>{Hunter}, alive,
+                             std::vector<DeadCopy>{{Hunter, Now + 60'000}}).empty());
+    // One that stayed back past StaysBackMs and died later (a player's kill) comes back again.
+    guard.Brought(std::vector<u32>{Skeleton}, Now + 4'000);
+    EXPECT_EQ(guard.Filter(1, std::vector<u32>{Skeleton}, alive,
+                           std::vector<DeadCopy>{{Skeleton, Now + 4'000 + BringBackGuard::StaysBackMs}}),
+              std::vector<u32>{Skeleton});
+    // A new visit forgets it all.
+    EXPECT_EQ(guard.Filter(2, std::vector<u32>{Hunter}, alive,
+                           std::vector<DeadCopy>{{Hunter, Now + 70'000}}),
+              std::vector<u32>{Hunter});
+}
+
+// For HostMovedHoldMs after the session host moved (#403), no bring-backs from the new host's board.
+TEST(BloodbornePartyDeath, BringBacksWaitAfterTheSessionHostMoved) {
+    EXPECT_FALSE(HoldsBringBacks(100'000, std::nullopt));
+    EXPECT_TRUE(HoldsBringBacks(100'000, 100'000 - HostMovedHoldMs + 1));
+    EXPECT_FALSE(HoldsBringBacks(100'000, 100'000 - HostMovedHoldMs));
+}
+
 // That respawn brings back only those, and only while they are still dead.
 TEST(BloodbornePartyDeath, TheHostsGeneratorRespawnTakesOnlyItsOwn) {
     const RespawnCandidate back{.hp = 0, .max_hp = 370, .death_flags = 0x06, .brought_back = true};

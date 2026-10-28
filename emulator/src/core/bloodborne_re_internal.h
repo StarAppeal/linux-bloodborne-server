@@ -419,7 +419,11 @@ extern std::atomic<bool> wipe_trip_respawn_pending;
 // A guest's dead copies of what the host's map generator brought back (BroughtBackByTheHost):
 // the bonfire respawn brings exactly those back, at most once every BringBackEvery. The game's
 // thread only.
-void BringBackWhatTheHostBroughtBack(std::span<const u32> handles);
+// Whether that respawn started (not too soon after the last one, no other respawn running).
+bool BringBackWhatTheHostBroughtBack(std::span<const u32> handles);
+// When the session host last moved to another game (SteadyMilliseconds, 0: never): see
+// HoldsBringBacks.
+extern std::atomic<s64> session_host_moved_ms;
 void MoveToRespawnPoint(bool arriving_from_trip);
 extern std::optional<std::chrono::steady_clock::time_point> guest_lamp_trip_at;
 constexpr u64 WarpNextStageBonfireOffset = 0x0132E050;

@@ -4692,6 +4692,49 @@ std::vector<u32> BroughtBackByTheHost(std::span<const CharacterShown> host,
     return back;
 }
 
+std::vector<u32> BringBackGuard::Filter(u64 now_visit, std::span<const u32> back,
+                                       std::span<const CharacterShown> host,
+                                       std::span<const DeadCopy> dead_here) {
+    if (now_visit != visit) {
+        visit = now_visit;
+        brought_at.clear();
+        refused.clear();
+    }
+    // The host's copy died: what comes back after that is a new bring-back.
+    for (const CharacterShown& character : host) {
+        if (character.dead) {
+            brought_at.erase(character.handle);
+            refused.erase(character.handle);
+        }
+    }
+    std::vector<u32> kept;
+    for (const u32 handle : back) {
+        if (refused.contains(handle)) {
+            continue;
+        }
+        const auto brought = brought_at.find(handle);
+        const auto dead = std::ranges::find(dead_here, handle, &DeadCopy::handle);
+        if (brought != brought_at.end() && dead != dead_here.end() &&
+            dead->dead_since_ms - brought->second < StaysBackMs) {
+            refused.insert(handle);
+            brought_at.erase(brought);
+            continue;
+        }
+        kept.push_back(handle);
+    }
+    return kept;
+}
+
+void BringBackGuard::Brought(std::span<const u32> handles, s64 now_ms) {
+    for (const u32 handle : handles) {
+        brought_at[handle] = now_ms;
+    }
+}
+
+bool HoldsBringBacks(s64 now_ms, std::optional<s64> host_moved_ms) {
+    return host_moved_ms && now_ms - *host_moved_ms < HostMovedHoldMs;
+}
+
 bool KeepDisabledAfterRespawn(bool disabled_before, s32 hp_before) {
     return disabled_before && hp_before > 0;
 }

@@ -361,6 +361,7 @@ bool TakeLobbyMessage(const bbcoop::Envelope& envelope) {
         if (team_session && !team_session->host().empty() && !session.host().empty() &&
             team_session->host() != session.host() && !session.join().empty()) {
             LOG_INFO(Debug, "Co-op team join: the session host moved to {}", session.host());
+            session_host_moved_ms.store(SteadyMilliseconds());
         }
         team_session = session;
         return true;
@@ -2176,6 +2177,7 @@ bool TickTeamJoin(bool ready) {
         }
         RequestServerHello();
         LOG_INFO(Debug, "Co-op team join: the session host moved to this game (the room is ours)");
+        session_host_moved_ms.store(SteadyMilliseconds());
         break;
     case TeamJoin::Action::LeaveAlone:
         // Phase 7: the others left the room (only the server ends a session, so it stays with this

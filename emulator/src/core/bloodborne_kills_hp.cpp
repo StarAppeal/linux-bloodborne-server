@@ -2535,8 +2535,22 @@ void KeepEnemyDeathsInStep(bool sharing) {
         }
     }
     if (hosts_now) {
-        BringBackWhatTheHostBroughtBack(
-            BroughtBackByTheHost(*hosts_now, dead_here, others, now_ms));
+        static BringBackGuard bring_back_guard;
+        const s64 host_moved = session_host_moved_ms.load();
+        const std::vector<u32> back = bring_back_guard.Filter(
+            visit, BroughtBackByTheHost(*hosts_now, dead_here, others, now_ms), *hosts_now,
+            dead_here);
+        static u32 held_logged = 0;
+        if (!back.empty() && HoldsBringBacks(now_ms, host_moved != 0 ? std::optional{host_moved}
+                                                                     : std::nullopt)) {
+            if (++held_logged <= 20) {
+                LOG_INFO(Debug,
+                         "Bloodborne party: {} bring-backs held, the session host moved {} ms ago",
+                         back.size(), now_ms - host_moved);
+            }
+        } else if (BringBackWhatTheHostBroughtBack(back)) {
+            bring_back_guard.Brought(back, now_ms);
+        }
     }
     TraceMemberKills(characters, pointers, hidden, others, died_for_others);
     size_t newly_hidden = 0;
