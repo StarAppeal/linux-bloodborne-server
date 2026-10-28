@@ -245,4 +245,78 @@ TEST(BloodborneEnemyScaling, CountsTheHuntersOnThisMap) {
     EXPECT_EQ(HuntersOnMap(board, "me", 0), 1u); // loading
 }
 
+// Kaniel 2026-10-28: the boss tempo rule, Vanilla (off) unless the leader picks Aggressive or
+// Relentless.
+TEST(BloodborneBossTempo, IsALevelWordOfTheRules) {
+    EXPECT_EQ(ParseHostRules("").boss_tempo, BossTempo::Vanilla);
+    EXPECT_EQ(ParseHostRules("aggressive").boss_tempo, BossTempo::Aggressive);
+    EXPECT_EQ(ParseHostRules("rot, relentless").boss_tempo, BossTempo::Relentless);
+    EXPECT_EQ(ParseHostRules("aggressive,relentless").boss_tempo, BossTempo::Relentless)
+        << "the last word";
+    EXPECT_EQ(HostRulesText({.boss_tempo = BossTempo::Aggressive}), "aggressive");
+    const HostRules all = ParseHostRules("rot,travel,vote,scale,relentless");
+    EXPECT_EQ(HostRulesText(all), "rot,travel,vote,scale,relentless");
+    EXPECT_EQ(ParseHostRules(HostRulesText(all)), all);
+}
+
+TEST(BloodborneBossTempo, EachLevelsTuning) {
+    EXPECT_EQ(BossTempoTuningFor(BossTempo::Vanilla), BossTempoTuning{});
+    const BossTempoTuning aggressive = BossTempoTuningFor(BossTempo::Aggressive);
+    EXPECT_FLOAT_EQ(aggressive.gap, 0.5f);
+    EXPECT_FLOAT_EQ(aggressive.odds, 0.5f);
+    EXPECT_FLOAT_EQ(aggressive.turn, 1.3f);
+    EXPECT_FLOAT_EQ(aggressive.anim, 1.0f) << "animation speed is not in this round";
+    const BossTempoTuning relentless = BossTempoTuningFor(BossTempo::Relentless);
+    EXPECT_FLOAT_EQ(relentless.gap, 0.25f);
+    EXPECT_FLOAT_EQ(relentless.odds, 0.25f);
+    EXPECT_FLOAT_EQ(relentless.turn, 1.6f);
+    EXPECT_FALSE(BossTempoTuning{}.Changes());
+    EXPECT_TRUE(aggressive.Changes());
+}
+
+// SHADPS4_BLOODBORNE_BOSS_TEMPO=gap,odds,turn,anim tunes a level that is on; Vanilla stays the
+// game's.
+TEST(BloodborneBossTempo, TheDevSettingTunesALevelThatIsOn) {
+    const auto tuned = ParseBossTempoTuning(" 0.4, 0.3 ,1.5,1");
+    ASSERT_TRUE(tuned);
+    EXPECT_FLOAT_EQ(tuned->gap, 0.4f);
+    EXPECT_FLOAT_EQ(tuned->odds, 0.3f);
+    EXPECT_FLOAT_EQ(tuned->turn, 1.5f);
+    EXPECT_FLOAT_EQ(tuned->anim, 1.0f);
+    EXPECT_FALSE(ParseBossTempoTuning(""));
+    EXPECT_FALSE(ParseBossTempoTuning("0.5,0.5,1.3"));
+    EXPECT_FALSE(ParseBossTempoTuning("0.5,x,1.3,1"));
+    EXPECT_FALSE(ParseBossTempoTuning("0,0.5,1.3,1")) << "no breather at all is a typo";
+    EXPECT_FALSE(ParseBossTempoTuning("0.5,1.5,1.3,1")) << "a chance is at most 1";
+    EXPECT_FALSE(ParseBossTempoTuning("0.5,0.5,9,1")) << "a typo, not a turn speed";
+    EXPECT_EQ(BossTempoTuningFor(BossTempo::Vanilla, tuned), BossTempoTuning{});
+    EXPECT_EQ(BossTempoTuningFor(BossTempo::Aggressive, tuned), *tuned);
+    EXPECT_EQ(BossTempoTuningFor(BossTempo::Relentless, std::nullopt),
+              BossTempoTuningFor(BossTempo::Relentless));
+}
+
+// A boss's breathers (AddSubGoal of GOAL_COMMON_Wait 2000, Turn 2001, LeaveTarget 2016 and
+// SidewayMove 2017) last `gap` of their time; a Wait, LeaveTarget or SidewayMove is cut to
+// almost nothing unless the roll (0-99) is under `odds`. A turn is never cut: the boss would
+// swing facing away.
+TEST(BloodborneBossTempo, BreathersShortenAndMostlyGo) {
+    const BossTempoTuning aggressive = BossTempoTuningFor(BossTempo::Aggressive);
+    EXPECT_FLOAT_EQ(BossGoalLife(GoalCommonWait, 2.0f, aggressive, 0), 1.0f);
+    EXPECT_FLOAT_EQ(BossGoalLife(GoalCommonWait, 2.0f, aggressive, 49), 1.0f);
+    EXPECT_FLOAT_EQ(BossGoalLife(GoalCommonWait, 2.0f, aggressive, 50), CutGoalLife);
+    EXPECT_FLOAT_EQ(BossGoalLife(GoalCommonLeaveTarget, 3.0f, aggressive, 10), 1.5f);
+    EXPECT_FLOAT_EQ(BossGoalLife(GoalCommonSidewayMove, 3.0f, aggressive, 99), CutGoalLife);
+    EXPECT_FLOAT_EQ(BossGoalLife(GoalCommonTurn, 2.0f, aggressive, 99), 1.0f);
+    EXPECT_FLOAT_EQ(BossGoalLife(2002, 2.0f, aggressive, 99), 2.0f) << "not a breather";
+    EXPECT_FLOAT_EQ(BossGoalLife(GoalCommonWait, -1.0f, aggressive, 99), -1.0f)
+        << "no time limit stays";
+    EXPECT_FLOAT_EQ(BossGoalLife(GoalCommonWait, 0.02f, aggressive, 99), 0.02f)
+        << "never longer than the game's";
+    for (const s32 goal : {GoalCommonWait, GoalCommonTurn, 2002}) {
+        EXPECT_FLOAT_EQ(BossGoalLife(goal, 2.0f, BossTempoTuning{}, 99), 2.0f);
+    }
+    EXPECT_TRUE(IsBossTempoGoal(GoalCommonSidewayMove));
+    EXPECT_FALSE(IsBossTempoGoal(2015)) << "ApproachTarget is no breather";
+}
+
 } // namespace

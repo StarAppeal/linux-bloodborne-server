@@ -268,14 +268,28 @@ std::optional<std::vector<u32>> kept_rot;
 u8 RulesBits(const HostRules& rules) {
     return static_cast<u8>((rules.rot ? 1 : 0) | (rules.travel_together ? 2 : 0) |
                            (rules.travel_vote && rules.travel_together ? 4 : 0) |
-                           (rules.enemy_scaling ? 8 : 0));
+                           (rules.enemy_scaling ? 8 : 0) |
+                           (static_cast<u8>(rules.boss_tempo) & 3) << 4);
 }
 
 HostRules RulesOf(u8 bits) {
+    const u8 tempo = (bits >> 4) & 3;
     return {.rot = (bits & 1) != 0,
             .travel_together = (bits & 2) != 0,
             .travel_vote = (bits & 4) != 0,
-            .enemy_scaling = (bits & 8) != 0};
+            .enemy_scaling = (bits & 8) != 0,
+            .boss_tempo = tempo <= 2 ? static_cast<BossTempo>(tempo) : BossTempo::Vanilla};
+}
+
+BossTempo BossTempoOf(bbcoop::BossTempo tempo) {
+    switch (tempo) {
+    case bbcoop::BOSS_TEMPO_AGGRESSIVE:
+        return BossTempo::Aggressive;
+    case bbcoop::BOSS_TEMPO_RELENTLESS:
+        return BossTempo::Relentless;
+    default:
+        return BossTempo::Vanilla;
+    }
 }
 
 void NoteTeamRules(const bbcoop::LobbyState& state, const std::string& me) {
@@ -284,7 +298,8 @@ void NoteTeamRules(const bbcoop::LobbyState& state, const std::string& me) {
     const HostRules rules{.rot = r.rot(),
                           .travel_together = r.travel_together(),
                           .travel_vote = r.travel_vote(),
-                          .enemy_scaling = r.enemy_scaling()};
+                          .enemy_scaling = r.enemy_scaling(),
+                          .boss_tempo = BossTempoOf(r.boss_tempo())};
     const u8 bits = RulesBits(rules);
     const bool was_in = in_team.exchange(team);
     if (team && (team_rules_bits.exchange(bits) != bits || !was_in)) {
@@ -445,6 +460,7 @@ void SendLobby(s64 now_ms) {
         r.set_travel_together(own.travel_together);
         r.set_travel_vote(own.travel_vote);
         r.set_enemy_scaling(own.enemy_scaling);
+        r.set_boss_tempo(static_cast<bbcoop::BossTempo>(own.boss_tempo));
         stream->Send(EncodeEnvelope(rules), now_ms);
     }
     for (const bbcoop::Envelope& envelope : lobby_outbox) {

@@ -14,6 +14,7 @@
 
 #include <gtest/gtest.h>
 
+#include "core/bloodborne_host_rules.h"
 #include "core/bloodborne_party.h"
 
 using namespace Core::Bloodborne;
@@ -438,6 +439,26 @@ TEST_F(BloodborneEboot, TheGiveQueuesItsPopupsAtTheHookedPush) {
     EXPECT_EQ(CallTarget(0x017D94C7), ItemGetQueuedOffset);
     EXPECT_EQ(Bytes(ItemGetQueuedOffset, ItemGetQueuedPrologue.size()),
               std::vector<u8>(ItemGetQueuedPrologue.begin(), ItemGetQueuedPrologue.end()));
+}
+
+// Boss tempo (Kaniel 2026-10-28): the AI scripts' AddSubGoal (each overload the Lua binding
+// registers under that name at 0x0127FBD4) calls 0x0124CC60, whose prologue keeps the goal's
+// life time at [rbp - 0xBC] just before the hooked instructions (goal in rdi, its id in esi).
+TEST_F(BloodborneEboot, TheBossTempoHookIsAddSubGoalAfterItsPrologue) {
+    EXPECT_EQ(CallTarget(0x0127EC97), AddSubGoalOffset);
+    EXPECT_EQ(CallTarget(0x0127ED13), AddSubGoalOffset);
+    EXPECT_EQ(Bytes(AddSubGoalOffset, FunctionPrologue.size()), FunctionPrologue);
+    EXPECT_EQ(Bytes(AddSubGoalLifeHookOffset - 8, 8),
+              (std::vector<u8>{0xC5, 0xFA, 0x11, 0x85, 0x44, 0xFF, 0xFF, 0xFF}));
+    static_assert(AddSubGoalLifeFrameOffset == -0xBC);
+    EXPECT_EQ(Bytes(AddSubGoalLifeHookOffset, AddSubGoalLifeHook.size()),
+              std::vector<u8>(AddSubGoalLifeHook.begin(), AddSubGoalLifeHook.end()));
+    // The AI's character: `mov rdi, [rbx]; mov rax, [rdi]; call [rax + 0x30];
+    // mov [rbx + 0x558], rax` (its manipulator's character).
+    static_assert(AiCharacterOffset == 0x558);
+    EXPECT_EQ(Bytes(AiTakesItsCharacterOffset, 16),
+              (std::vector<u8>{0x48, 0x8B, 0x3B, 0x48, 0x8B, 0x07, 0xFF, 0x50, 0x30, 0x48, 0x89,
+                               0x83, 0x58, 0x05, 0x00, 0x00}));
 }
 
 // Team pings (Kaniel 2026-10-24): the item popup's push plays its sound (300) with the system

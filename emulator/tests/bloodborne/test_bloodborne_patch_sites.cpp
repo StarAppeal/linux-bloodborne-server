@@ -14,6 +14,7 @@
 
 #include <gtest/gtest.h>
 
+#include "core/bloodborne_host_rules.h"
 #include "core/bloodborne_party.h"
 #include "core/bloodborne_patch_sites.h"
 
@@ -231,6 +232,8 @@ TEST(CoopSites, ThePartyHeaderHooksAreRegistered) {
         EXPECT_TRUE(IsRegisteredCoopHook(SprjRemoManStepOffsets[step], RemoStepEntry)) << step;
     }
     EXPECT_TRUE(IsRegisteredCoopHook(SprjRemoManStepOffsets.back(), RemoEpilogWaitEntry));
+    // Boss tempo: AddSubGoal after its prologue.
+    EXPECT_TRUE(IsRegisteredCoopHook(AddSubGoalLifeHookOffset, AddSubGoalLifeHook));
     // Other bytes, another length or an offset that is no hook are not.
     EXPECT_FALSE(IsRegisteredCoopHook(HitOffset, std::span{HitPrologue}.first(6)));
     EXPECT_FALSE(IsRegisteredCoopHook(HitOffset + 1, HitPrologue));

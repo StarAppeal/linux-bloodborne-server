@@ -65,7 +65,8 @@
     {"name": "flag block guard", "required": false},
     {"name": "packet guard", "required": false},
     {"name": "co-op camera", "required": false},
-    {"name": "boss fight deaths", "required": false}
+    {"name": "boss fight deaths", "required": false},
+    {"name": "boss tempo", "required": false}
   ],
   "sites": [
     {"name": "Beckoning area comparison", "feature": "seamless core", "kind": "patch", "offset": "0x0157F8C8", "original": "0F 87 90 00 00 00", "patched": "0F 8F 90 00 00 00", "accepted": []},
@@ -161,6 +162,7 @@
     {"name": "name by online id switch", "feature": "character names", "kind": "patch", "offset": "0x01AE8713", "original": "75 14", "patched": "90 90", "accepted": []},
     {"name": "name by online id option", "feature": "character names", "kind": "patch", "offset": "0x01AE8727", "original": "74 5C", "patched": "EB 5C", "accepted": []},
     {"name": "item get popup", "feature": "silent key items", "kind": "hook", "offset": "0x016D8850", "original": "55 48 89 E5 41 57 41 56", "patched": "", "accepted": []},
+    {"name": "AddSubGoal life", "feature": "boss tempo", "kind": "hook", "offset": "0x0124CCAC", "original": "49 89 FE 31 C9", "patched": "", "accepted": []},
     {"name": "lan cut error", "feature": "no lost-connection popup", "kind": "hook", "offset": "0x01387130", "original": "55 48 89 E5 41 56", "patched": "", "accepted": []},
     {"name": "player number handed out", "feature": "own player numbers", "kind": "hook", "offset": "0x0178C529", "original": "89 85 8C FE FF FF 89 85 DC FE FF FF", "patched": "", "accepted": []},
     {"name": "CreateSession", "feature": "team join", "kind": "call", "offset": "0x01788ED0", "original": "55 48 89 E5 41 57 41 56 53 50 C5 FA", "patched": "", "accepted": []},

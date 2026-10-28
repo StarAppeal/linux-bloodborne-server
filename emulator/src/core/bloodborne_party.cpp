@@ -3266,6 +3266,22 @@ std::size_t MakeNpcParamHarder(std::span<u8> param, const HarderEnemies& harder)
     });
 }
 
+std::size_t ScaleBossTurnSpeed(std::span<u8> param, float factor) {
+    if (factor == 1.0f) {
+        return 0;
+    }
+    return ForEachParamRow(param, "NPC_PARAM_ST", NpcTypeOffset + 1, [&](u8* row) {
+        float turn = 0.0f;
+        std::memcpy(&turn, row + NpcTurnVelocityOffset, sizeof(turn));
+        if (row[NpcTypeOffset] != NpcTypeBoss || !(turn > 0.0f)) {
+            return false;
+        }
+        turn *= factor;
+        std::memcpy(row + NpcTurnVelocityOffset, &turn, sizeof(turn));
+        return true;
+    });
+}
+
 std::size_t RemoveCoopBossHpBonus(std::span<u8> sp_effect_param) {
     if (!IsParamOfType(sp_effect_param, "SP_EFFECT_PARAM_ST")) {
         return 0;

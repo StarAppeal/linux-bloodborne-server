@@ -69,6 +69,10 @@ RECENT = {
 LONG = {
     "boss-death-spectate": "#414: a boss fight to a teammate's death and the fight after (600 s)",
     "boss-death-wipe": "#414: a boss fight to the whole party's deaths (600 s)",
+    "boss-tempo-vanilla": "Kaniel 2026-10-28 boss tempo: 90 s of Gascoigne's fight at the game's tempo",
+    "boss-tempo-aggressive": "Kaniel 2026-10-28 boss tempo: 90 s of Gascoigne's fight at Aggressive",
+    "boss-tempo-relentless": "Kaniel 2026-10-28 boss tempo: 90 s of Gascoigne's fight at Relentless",
+    "boss-tempo-party": "Kaniel 2026-10-28 boss tempo: a join, then 60 s of Gascoigne's fight at the leader's Relentless",
     "boss-targets-host": "Kaniel 2026-10-28 passive bosses: a boss fight held a minute",
     "boss-targets-guest": "Kaniel 2026-10-28 passive bosses: a boss fight held a minute",
     "boss-targets-runner-dies": "Kaniel 2026-10-28 passive bosses: a boss fight held a minute, a death and the walk back",

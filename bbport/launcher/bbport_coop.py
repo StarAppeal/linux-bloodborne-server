@@ -52,7 +52,10 @@ DEFAULTS = {'game': '', 'update': '', 'role': 'guest', 'host_ip': '', 'account':
             # The PC the player id was made on (this_machine()): a copied install makes its own id.
             'machine': '',
             # Kaniel 2026-10-25: the host rules ('1' on, all off by default): the leader's are its team's.
-            'rule_rot': '', 'rule_travel': '', 'rule_vote': '', 'rule_scale': ''}
+            'rule_rot': '', 'rule_travel': '', 'rule_vote': '', 'rule_scale': '',
+            # Kaniel 2026-10-28: the boss tempo host rule, '' (Vanilla), 'aggressive' or 'relentless'.
+            'rule_tempo': ''}
+BOSS_TEMPOS = ('', 'aggressive', 'relentless')
 HARDER_ON = '3,1.5,3'  # the kit's harder enemies: HP, damage and poise multipliers
 HARDER_BIT, HARDER_MUCH = '1.5,1.25,1.5', '5,2,5'
 # What the game takes for each multiplier (ParseHarderEnemies in the emulator); all 1 is the normal game.
@@ -501,6 +504,8 @@ def host_rules_value(settings):
              if on(key)]
     if on('rule_travel') and on('rule_vote'):
         words.insert(words.index('travel') + 1, 'vote')
+    if (tempo := str(settings.get('rule_tempo', ''))) in BOSS_TEMPOS[1:]:
+        words.append(tempo)
     return ','.join(words) or 'off'
 
 

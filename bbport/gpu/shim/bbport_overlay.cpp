@@ -4166,6 +4166,8 @@ void Screen() {
         add(lobby.rule_travel, lobby.rule_vote ? T("Travel together (vote)", "Путь вместе (голосование)")
                                                : T("Travel together", "Путь вместе"));
         add(lobby.rule_scale, T("Enemies scale with the team", "Враги сильнее с командой"));
+        add(lobby.rule_tempo == 1, T("Boss tempo: Aggressive", "Темп боссов: агрессивный"));
+        add(lobby.rule_tempo == 2, T("Boss tempo: Relentless", "Темп боссов: беспощадный"));
         const std::string text = std::string(T("Host rules: ", "Правила хоста: ")) +
                                  (rules.empty() ? std::string(T("none", "нет")) : rules);
         ImGui::PushFont(MenuArt::Font(), 16.0f);

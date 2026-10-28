@@ -5428,3 +5428,83 @@ SCENARIOS["guest-follower-stutter"] = _follower_stutter(
 SCENARIOS["guest-follower-stutter-harder"] = _follower_stutter(
     "guest-follower-stutter with harder enemies on the guest only (its once-a-second param "
     "scans)", {"guest": HARDER})
+
+
+# Kaniel 2026-10-28, the boss tempo host rule (docs/BOSS_TEMPO.md): Father Gascoigne fights the
+# host alone for 90 s at each level (the host's game runs his AI). Each of his breathers is logged
+# with its life before and after ("goal 2000 Wait life 1.20 -> 0.60"). Vanilla changes nothing;
+# the levels cut most breathers and turn the boss rows of NpcParam faster (Gascoigne's row
+# 271000: 120 degrees a second).
+def _boss_tempo_steps() -> list[str]:
+    return [START, f"set-flag {GASCOIGNE_DEFEATED} 0", f"travel {CENTRAL_YHARNAM_LAMP}", "godmode",
+            "wait 20", f"approach {GASCOIGNE} 4 0", "wait 3", f"hit {GASCOIGNE} 30",
+            "log tempo: fight on", "wait 30", "wait 30", "wait 30", "log tempo: fight checked",
+            "census 40", "snapshot"]
+
+
+_BOSS_GOAL = (r"Bloodborne boss tempo: boss {boss} \(think \d+\) goal 20\d\d \w+ life "
+              r"{life} \({level}\)")
+_BOSS_FOUND = rf"Bloodborne boss tempo: \d+ boss\(es\) on map 0x[0-9a-f]+: [^\n]*{GASCOIGNE}"
+_TEMPO_LEVELS = {
+    "vanilla": None,
+    "aggressive": ("Aggressive", "0\\.50", "50", "1\\.30", "156"),
+    "relentless": ("Relentless", "0\\.25", "25", "1\\.60", "192"),
+}
+for _word, _level in _TEMPO_LEVELS.items():
+    if _level is None:
+        _expect = [_BOSS_FOUND,
+                   _BOSS_GOAL.format(boss=GASCOIGNE, life=r"(\d+\.\d\d) -> \1", level="Vanilla")]
+        _forbid = [_BOSS_GOAL.format(boss=r"\S+", life=r"(\d+\.\d\d) -> (?!\1 )\S+",
+                                     level="Vanilla"),
+                   r"Bloodborne boss tempo: \d+ boss NpcParam rows turn"]
+    else:
+        _name, _gap, _kept, _turn, _gascoigne = _level
+        _expect = [rf"Bloodborne boss tempo: {_name}: breathers x{_gap}, {_kept}% of them kept, "
+                   rf"turn x{_turn}",
+                   rf"Bloodborne boss tempo: \d+ boss NpcParam rows turn x{_turn} \(Father "
+                   rf"Gascoigne {_gascoigne} degrees a second\)",
+                   _BOSS_FOUND,
+                   _BOSS_GOAL.format(boss=GASCOIGNE, life=r"\d+\.\d\d -> 0\.05", level=_name)]
+        _forbid = []
+    SCENARIOS[f"boss-tempo-{_word}"] = {
+        "about": f"the boss tempo rule at {_word}: Father Gascoigne fights the host alone for 90 s; "
+                 "his breathers and turn speed are logged",
+        "settings": {"SHADPS4_BLOODBORNE_HOST_RULES": _word if _level else "off"},
+        "roles": {"host": _boss_tempo_steps()},
+        "expect": {"host": _expect},
+        "forbid": {"host": SESSION_HOLDS + _forbid},
+        "timeout": 420,
+    }
+
+# The rule is the team's: only the host (the leader) picks Relentless; the guest's game turns the
+# boss rows faster too, and the host's game (Gascoigne's runner) cuts his breathers.
+SCENARIOS["boss-tempo-party"] = {
+    "about": "the boss tempo rule is the team's: the host (the leader) picks Relentless, the guest "
+             "nothing; the guest's game turns the bosses faster too, and the host's runs "
+             "Gascoigne's shortened breathers while both stand by him",
+    "role_settings": {"host": {"SHADPS4_BLOODBORNE_HOST_RULES": "relentless"}},
+    "roles": {
+        "host": [START, f"set-flag {GASCOIGNE_DEFEATED} 0", f"travel {CENTRAL_YHARNAM_LAMP}",
+                 "godmode", "wait-session 2 300", "wait 20", f"approach {GASCOIGNE} 4 0", "wait 3",
+                 f"hit {GASCOIGNE} 30", "sync tempo-in", "log tempo: both by the boss", "wait 30",
+                 "wait 30", "log tempo: fight checked", "census 40", "snapshot",
+                 "expect-session 2"],
+        "guest": [START, f"set-flag {GASCOIGNE_DEFEATED} 0", f"travel {CENTRAL_YHARNAM_LAMP}",
+                  "godmode", "wait-session 2 300", "wait 20", "sync tempo-in",
+                  f"approach {GASCOIGNE} -4 0", "log tempo: both by the boss", "wait 30",
+                  "wait 30", "log tempo: fight checked", "census 40", "snapshot",
+                  "expect-session 2"],
+    },
+    "syncs": {"tempo-in": {"chapter": "boss-tempo-party", "roles": ["host", "guest"]}},
+    "expect": {
+        "host": [r"Co-op host rules: the team's rules are [^\n]*relentless",
+                 r"Bloodborne boss tempo: \d+ boss NpcParam rows turn x1\.60",
+                 _BOSS_GOAL.format(boss=GASCOIGNE, life=r"\d+\.\d\d -> 0\.05",
+                                   level="Relentless")],
+        "guest": [r"Co-op host rules: the team's rules are [^\n]*relentless",
+                  r"Bloodborne boss tempo: Relentless: breathers x0\.25",
+                  r"Bloodborne boss tempo: \d+ boss NpcParam rows turn x1\.60"],
+    },
+    "forbid": {"host": SESSION_HOLDS, "guest": SESSION_HOLDS},
+    "timeout": 600,
+}
