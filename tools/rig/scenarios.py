@@ -2408,7 +2408,11 @@ SCENARIOS = {
     # Kaniel 2026-10-25: anyone who leaves is out of the team at once, the host too. The host quits
     # to the title (the System menu's Exit Game) while the guest plays: the guest leads the team
     # now and hosts its session where it stands (its own enemies, the team's world from its
-    # save); the old host takes the invite back and joins as a guest, in the same game.
+    # save); the old host takes the invite back and joins as a guest, in the same game. The old host
+    # waits at the title until the new leader's flag is in the team's world on the server (set some
+    # 20 s after the old host left, reported within TeamWorldReportMs): a game takes the team's
+    # world as it loads, so a load before that report has the flag only from its next load (rig
+    # 2026-10-27: the old host joined 10 s before it, both runs).
     "host-quits-title": {
         "about": "the host quits to the title; the guest leads the team now and hosts where it "
                  "stands (it runs the enemies, its world is the team's), and the old host comes "
@@ -2416,7 +2420,7 @@ SCENARIOS = {
         "roles": {
             "host": ["team-create", "team-invite rig_guest", "team-wait 2", "team-start", START,
                      "godmode", "wait-session 2 300", "wait 10", "sync hqt-in", "quit-title",
-                     "team-accept", "team-ready", "godmode", "wait-session 2 420",
+                     "title-wait 45", "team-accept", "team-ready", "godmode", "wait-session 2 420",
                      "wait-members 2 120", "wait 20", "snapshot", "expect-session 2",
                      f"expect-map {CENTRAL_YHARNAM}", f"expect-flag {TEAM_WORLD_FLAG} 1",
                      f"expect-hp {ENEMY} < 484", "sync hqt-back"],
@@ -2438,7 +2442,8 @@ SCENARIOS = {
     },
     # The same with three: the host quits to the title; the two guests stay together in their
     # session, the one whose game took the room hosting it and leading the team; the old host
-    # comes back as the third.
+    # comes back as the third. The old host stays at the title until the guests' check that the two
+    # are together is over (rig 2026-10-28: back in 25 s, it was the third at the check).
     "host-quits-title3": {
         "about": "a team of three: the host quits to the title; the guests stay together, one "
                  "of them hosting and leading, and the old host comes back as a guest: three "
@@ -2446,7 +2451,8 @@ SCENARIOS = {
         "roles": {
             "host": ["team-create", "team-invite rig_guest", "team-invite rig_guest2",
                      "team-wait 3", "team-start", START, "godmode", "wait-session 3 480",
-                     "wait 10", "sync hqt3-in", "quit-title", "team-accept", "team-ready",
+                     "wait 10", "sync hqt3-in", "quit-title", "title-wait 45", "team-accept",
+                     "team-ready",
                      "godmode", "wait-session 3 480", "wait 20", "snapshot", "expect-session 3",
                      "sync hqt3-back"],
             **{guest: ["team-accept", "team-ready", START, "godmode", "wait-session 3 480",
