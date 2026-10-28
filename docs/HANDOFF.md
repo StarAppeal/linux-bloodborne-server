@@ -178,8 +178,12 @@ does not give it again at home. The host's own events give the host its own, unc
 | Hunter's Nightmare NPC (m34) | Holy Moonlight Sword | m34 13400980 | 73400424 -> 43211 | no / yes |
 | Research Hall (m35) | Balcony Key; rune; Blood of Adeline | m35 13501920, 13501940 | 73500321 -> 43010; 73500322 -> 43020; 73500320 -> 43000 | no / yes |
 | Fishing Hamlet (m36) | Accursed Brew | m36 13600943 | 73600300 -> 43600 | no / yes |
-| Valtr (m27) | One-eyed Iron Helm | m27 12700908 (also his death flag 1790) | 72700330 -> 43110 | no / no |
-| Simon (m34, m35, m36) | Simon's Bowblade | 13400953, 13500953, 13600954 (also his death flags 1710-1713) | 73400430/31, 73500630, 73600530 -> 43200-43220 | no / no |
+| Valtr (m27) | One-eyed Iron Helm | m27 12700908 (also his death flag 1790) | 72700330 -> 43110 | no / yes (talk: `NpcGifts`; death: `NpcDeathDrops`, 2026-10-28) |
+| Simon (m34, m35, m36) | Simon's Bowblade | 13400953, 13500953, 13600954 (also his death flags 1710-1713) | 73400430/31, 73500630, 73600530 -> 43200-43220 | no / yes (talk: `NpcGifts`; death: `NpcDeathDrops`, 2026-10-28) |
+| Hunter's Nightmare beast hunter (m34, entity 3400910) | Firing Hammer Badge (goods 4120) | m34 13400995 (ends for a client) | death 13400970 -> 43800 | no / yes (`NpcDeathDrops`: the lot's flag 6671 is the host's world, so the guest's own badge decides; DLC playtest 2026-10-28) |
+| Hunter's Nightmare Gatling Gun hunter (m34, entity 3400911) | Gatling Gun | m34 13400980 slot 1 | death 13400971 -> 43810 | no / yes (`NpcDeathDrops`; krolebord, DLC playtest 2026-10-28) |
+| Research Hall NPCs (m35, 13501900 slots) | attire, weapon, helm | m35 13501920 slots 3-5 | death 13501900/03/05 -> 43830, 43820, 43710 | no / yes (`NpcDeathDrops`) |
+| Forbidden Woods NPC (m27, entity 2700930); Cathedral Ward NPC (m24_02, entity 2420268) | goods 2140; goods 4006 | m27 12700909, m24_02 12420700 | their own flags -> 43840, 2420900 | no / yes (`NpcDeathDrops`) |
 | Micolash (m26) | Mensis Cage | m26 12601850 (a boss kill event) | 72600301 -> 21000 | unknown (check the boss event patch) |
 | Tonsil Stone voices (17: m24_00, m24_01, m22, m27's Forbidden Woods house) | Tonsil Stone | the talk script itself, on the first talk only (its flag 73200330-35, 40-44, 50-55) | none | no / yes (the first-talk flags were the host's world, so a guest got the "talked before" line: per player now, `GiftTalkFlags`, and off while the player holds no stone, `KeepGiftTalkFlagsOwn`; playtest 2026-10-25) |
 | Blood Vial and Blood of Adella givers (the shelter) | Blood Vial, Blood of Adella | the talk script itself (c1_52 adds, c1_65 the popup) | none | yes (runs in the guest's own game; its cooldown flags 72400390-98 are still the host's world; not rig-tested) |

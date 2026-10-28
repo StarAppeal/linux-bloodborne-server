@@ -795,6 +795,8 @@ void GiveDeferredBossItems();
 // A party guest's own talk set an NPC gift's trigger (GivesGuestNpcGift): its lot is given and the
 // trigger cleared NpcGiftDelay later, on the game's thread (GiveDeferredBossItems).
 void QueueGuestNpcGift(const NpcGift& gift);
+// See GivesNpcDeathDrop; `map` the packed map this game plays (0 none). The game's thread.
+void GiveNpcDeathDrops(bool in_session, u32 map);
 void InstallKeepLocalFlags(u64 base, u64 image_size);
 void InstallDeferredBossItems(u64 base, u64 image_size);
 extern std::atomic<s64> world_changed_ms;

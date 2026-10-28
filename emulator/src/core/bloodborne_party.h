@@ -2250,10 +2250,55 @@ inline constexpr std::array NpcGifts{
     NpcGift{73500322, 43020, NpcGiftAfter::SetDoneFlag, 13501922}, // a rune (Research Hall)
     NpcGift{73500320, 43000, NpcGiftAfter::ClearTrigger},          // Blood of Adeline
     NpcGift{73600300, 43600, NpcGiftAfter::KeepTrigger},           // Accursed Brew
+    // Simon's Bowblade and Valtr's One-eyed Iron Helm: their events (m34 13400953, m35 13500953,
+    // m36 13600954, m27 12700908) give the lot once the talk sets the trigger, or once the NPC
+    // is dead (NpcDeathDrops)
+    NpcGift{73400430, 43200, NpcGiftAfter::KeepTrigger}, // Simon's Bowblade
+    NpcGift{73400431, 43210, NpcGiftAfter::KeepTrigger},
+    NpcGift{73500630, 43200, NpcGiftAfter::KeepTrigger},
+    NpcGift{73600530, 43220, NpcGiftAfter::KeepTrigger},
+    NpcGift{72700330, 43110, NpcGiftAfter::KeepTrigger}, // Valtr's One-eyed Iron Helm
 };
 std::optional<NpcGift> NpcGiftFor(s32 trigger);
 std::optional<s32> NpcGiftLot(s32 trigger);
 bool GivesGuestNpcGift(bool in_party_session, bool summoned_guest, s32 flag);
+// NPC death drops: map events that wait for an NPC's death flag and award an item lot, but end
+// for a client (1003:6 state 1) or unless the local player is alive (4:3 player 10000 type 0), so
+// never for a party guest (Kaniel's DLC playtest 2026-10-28: only the host got the Hunter's
+// Nightmare beast hunter's Firing Hammer Badge, m34 13400995, and krolebord no Gatling Gun, m34
+// 13400980 slot 1). A guest on the NPC's map (`map`, packed; 0 any) while the death flag is on
+// gets the lot from us, once: while the lot's own flag (a map pickup flag, the guest's own list)
+// is off, or for a lot whose flag is the host's world (6671 "holds the Firing Hammer Badge"),
+// while it does not hold `goods`. The host's own events give the host its own, unchanged.
+struct NpcDeathDrop {
+    s32 death_flag;
+    s32 lot;
+    u32 map;
+    u32 goods = 0; // the item a lot with a host-world flag gives
+};
+inline constexpr std::array NpcDeathDrops{
+    // m34 13400970 sets 13400970 + slot as its NPC dies
+    NpcDeathDrop{13400970, 43800, 0x22000000, 4120}, // beast hunter: Firing Hammer Badge (13400995)
+    NpcDeathDrop{13400971, 43810, 0x22000000},       // Gatling Gun (13400980 slot 1)
+    // m35 13501900 sets 13501900 + slot as its NPC dies; 13501920 slots 3-5
+    NpcDeathDrop{13501900, 43830, 0x23000000}, // an attire
+    NpcDeathDrop{13501903, 43820, 0x23000000}, // a weapon
+    NpcDeathDrop{13501905, 43710, 0x23000000}, // a helm
+    // events that set their own flag once their NPC is dead
+    NpcDeathDrop{12700909, 43840, 0x1B000000},   // m27 12700909
+    NpcDeathDrop{12420700, 2420900, 0x18020000}, // m24_02 12420700
+    // Simon's death flags (Bowblade), Valtr's (One-eyed Iron Helm): see NpcGifts
+    NpcDeathDrop{1710, 43200, 0x22000000},
+    NpcDeathDrop{1711, 43210, 0x22000000},
+    NpcDeathDrop{1712, 43200, 0x23000000},
+    NpcDeathDrop{1713, 43220, 0x24000000},
+    NpcDeathDrop{1790, 43110, 0x1B000000},
+};
+// Whether this game gives `drop` now: a party guest in a session on its map, the death flag on,
+// not given yet (`given`: this character, this session), and the lot not the guest's already
+// (`lot_flag_on` with a flag of the guest's own, `holds_goods` with a host-world flag).
+bool GivesNpcDeathDrop(const NpcDeathDrop& drop, bool guest_in_session, u32 map, bool death_flag_on,
+                       bool lot_flag_on, bool lot_flag_hosts, bool holds_goods, bool given);
 // Held this long after the talk sets the trigger, as for the boss items: the gift's dialog comes
 // once the talk has moved on.
 constexpr auto NpcGiftDelay = std::chrono::seconds{2};

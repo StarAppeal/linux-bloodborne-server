@@ -1324,6 +1324,60 @@ void GiveDueNpcGifts(std::chrono::steady_clock::time_point now) {
     }
 }
 
+// See GivesNpcDeathDrop: every 2 s, a party guest gets the drop of an NPC that died on its map
+// (the host's world says so), as the host's event gave the host. The game's thread.
+void GiveNpcDeathDrops(bool in_session, u32 map) {
+    static s64 checked_ms = 0;
+    static int given_slot = -2;
+    static std::set<s32> given; // death flags, this character in this session
+    const s64 now_ms = SteadyMilliseconds();
+    if (const int slot = character_slot.load(); slot != given_slot || !in_session) {
+        given_slot = slot;
+        given.clear();
+    }
+    const bool guest = in_session && IsPartyGuestRole();
+    if (!guest || now_ms - checked_ms < 2'000 || GetLocalPlayer() < 0x10000 ||
+        !PlayerItemsReadable()) {
+        return;
+    }
+    checked_ms = now_ms;
+    using AwardItemLot = void PS4_SYSV_ABI (*)(u64, s32, u32);
+    using SetFlag = void PS4_SYSV_ABI (*)(u64, s32, bool);
+    for (const NpcDeathDrop& drop : NpcDeathDrops) {
+        if (drop.map != map) {
+            continue; // before reading anything
+        }
+        const s32 lot_flag = ItemLotFlag(drop.lot);
+        const bool lot_flag_on = lot_flag > 0 && EventFlagOn(lot_flag);
+        const bool lot_flag_hosts = lot_flag > 0 && ClearsNpcGiftLotFlag(lot_flag, true);
+        const bool holds =
+            drop.goods != 0 && TradeHeld({BloodborneCoop::TradeItemKind::Goods, drop.goods, 0}) > 0;
+        if (!GivesNpcDeathDrop(drop, guest, map, EventFlagOn(drop.death_flag), lot_flag_on,
+                               lot_flag_hosts, holds, given.contains(drop.death_flag))) {
+            continue;
+        }
+        const u64 item_man = ReadValue<u64>(image_base + MapItemManPointerOffset, 0);
+        if (!HasVtable(item_man, MapItemManVtable, "NPC death drop item lot")) {
+            return;
+        }
+        given.insert(drop.death_flag);
+        // The lot gives nothing while its flag is on: the host's (6671, the host holds the badge)
+        // is not this guest's.
+        if (lot_flag_on && lot_flag_hosts) {
+            reinterpret_cast<SetFlag>(image_base + PartyGhostSetEventFlagOffset)(0, lot_flag,
+                                                                                 false);
+        }
+        giving_deferred_item_lot = true;
+        reinterpret_cast<AwardItemLot>(image_base + AwardItemLotOffset)(item_man, drop.lot, 0);
+        giving_deferred_item_lot = false;
+        LOG_INFO(Debug,
+                 "Bloodborne party: NPC death flag {} on (map {:#x}); gave the guest its drop, "
+                 "item lot {} (its flag {} {})",
+                 drop.death_flag, map, drop.lot, lot_flag,
+                 lot_flag_on ? (lot_flag_hosts ? "was the host's" : "on") : "off");
+    }
+}
+
 void GiveDeferredBossItems() {
     std::vector<s32> due;
     {

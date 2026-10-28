@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <filesystem>
@@ -974,6 +975,44 @@ TEST(BloodborneSharedLoot, AGuestsOwnTalkGivesItsNpcGift) {
 // Kaniel 2026-10-13: "I hope this will work with all npc's". Every event that awards an item lot
 // once an NPC's talk sets its trigger and ends unless the local player is alive (common 9100 and
 // 9040, the maps' gift events) is in the table, with what the event does once it has given it.
+// Kaniel's DLC playtest 2026-10-28: only the host got the Hunter's Nightmare beast hunter's
+// Firing Hammer Badge, and krolebord no Gatling Gun. Their drops are map events that wait for the
+// NPC's death flag and end for a client or unless the local player is alive; a guest on the map
+// gets the lot once the death flag is on, while it is not the guest's already.
+TEST(BloodborneSharedLoot, AGuestGetsAnNpcsDeathDrop) {
+    const auto drop = [](s32 death_flag) {
+        const auto it = std::ranges::find(NpcDeathDrops, death_flag, &NpcDeathDrop::death_flag);
+        EXPECT_NE(it, NpcDeathDrops.end()) << death_flag;
+        return *it;
+    };
+    const NpcDeathDrop gatling = drop(13400971);
+    EXPECT_EQ(gatling.lot, 43810);
+    constexpr u32 Nightmare = 0x22000000;
+    EXPECT_TRUE(GivesNpcDeathDrop(gatling, true, Nightmare, true, false, false, false, false));
+    EXPECT_FALSE(GivesNpcDeathDrop(gatling, false, Nightmare, true, false, false, false, false))
+        << "the host's own event gives the host its own";
+    EXPECT_FALSE(GivesNpcDeathDrop(gatling, true, Nightmare, false, false, false, false, false))
+        << "still alive";
+    EXPECT_FALSE(GivesNpcDeathDrop(gatling, true, Nightmare, true, true, false, false, false))
+        << "this guest's own pickup flag: it has it";
+    EXPECT_FALSE(GivesNpcDeathDrop(gatling, true, Nightmare, true, false, false, false, true))
+        << "given once";
+    EXPECT_FALSE(GivesNpcDeathDrop(gatling, true, 0x23000000, true, false, false, false, false))
+        << "another map: the guest was not there";
+    // The badge's lot flag (6671) is the host's world: it says nothing about the guest, holding
+    // the badge does.
+    const NpcDeathDrop badge = drop(13400970);
+    EXPECT_EQ(badge.lot, 43800);
+    EXPECT_EQ(badge.goods, 4120u);
+    EXPECT_TRUE(GivesNpcDeathDrop(badge, true, Nightmare, true, true, true, false, false));
+    EXPECT_FALSE(GivesNpcDeathDrop(badge, true, Nightmare, true, false, true, true, false));
+    // Simon's Bowblade and Valtr's helm: by death flag, and by the guest's own talk.
+    EXPECT_EQ(drop(1710).lot, 43200);
+    EXPECT_EQ(drop(1790).lot, 43110);
+    EXPECT_EQ(NpcGiftLot(73400430), std::optional<s32>{43200});
+    EXPECT_EQ(NpcGiftLot(72700330), std::optional<s32>{43110});
+}
+
 TEST(BloodborneSharedLoot, EveryNpcTalkGiftReachesAGuest) {
     const auto gift = [](s32 trigger) { return NpcGiftFor(trigger); };
     // Common event 9100: gives again whenever the talk sets the trigger; clears it.
@@ -1003,10 +1042,13 @@ TEST(BloodborneSharedLoot, EveryNpcTalkGiftReachesAGuest) {
     EXPECT_EQ(gift(72700321)->after, NpcGiftAfter::KeepTrigger);
     EXPECT_EQ(gift(73600300)->after, NpcGiftAfter::KeepTrigger);
     EXPECT_EQ(gift(73500320)->after, NpcGiftAfter::ClearTrigger) << "Adeline's blood";
-    // Not gifts, or not decided by a talk (an NPC's death, Queenly Flesh's own event).
+    // Not gifts, or not decided by a talk (an NPC's death, NpcDeathDrops; Queenly Flesh's own
+    // event).
     EXPECT_FALSE(gift(72410300));
     EXPECT_FALSE(gift(1790));
-    EXPECT_FALSE(gift(73400430)) << "Simon's bowblade waits on his death too";
+    // Simon's Bowblade: m34 13400953 waits for the talk's trigger while he lives, and sets it
+    // itself once he is dead (his death is NpcDeathDrops').
+    EXPECT_EQ(gift(73400430)->after, NpcGiftAfter::KeepTrigger);
     for (const NpcGift& each : NpcGifts) {
         EXPECT_EQ(std::ranges::count(NpcGifts, each.trigger, &NpcGift::trigger), 1) << each.trigger;
         EXPECT_GT(each.lot, 0);

@@ -3077,6 +3077,17 @@ bool GivesGuestNpcGift(bool in_party_session, bool summoned_guest, s32 flag) {
     return in_party_session && summoned_guest && NpcGiftLot(flag).has_value();
 }
 
+bool GivesNpcDeathDrop(const NpcDeathDrop& drop, bool guest_in_session, u32 map, bool death_flag_on,
+                       bool lot_flag_on, bool lot_flag_hosts, bool holds_goods, bool given) {
+    if (!guest_in_session || !death_flag_on || given || (drop.map != 0 && drop.map != map)) {
+        return false;
+    }
+    if (lot_flag_hosts && drop.goods != 0) {
+        return !holds_goods; // the host's flag says nothing about this guest
+    }
+    return !lot_flag_on;
+}
+
 bool MenuSeesAClient(bool party_configured, bool summoned_client) {
     return summoned_client && !party_configured;
 }
