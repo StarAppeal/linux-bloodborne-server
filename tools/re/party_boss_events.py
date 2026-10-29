@@ -51,7 +51,8 @@ sync) 0, as the first visit does. The Hunter's Dream messengers' gift events (m2
 12101020-12101028) get that instruction, so one player's gift pick no longer finishes the other's
 gift event (the emulator also keeps their flags local, KeepsLocalFlag).
 
-Usage: py -3.12 party_boss_events.py <mods dvdroot_ps4\\event> <game event dir> [<update event dir>]
+Usage: python3 party_boss_events.py <mods dvdroot_ps4/event> <game event dir> [<update event dir>]
+(Windows: py -3.12 ...)
 (a file in a later directory replaces the same file in an earlier one, as the update does)
 
 Every output is checked against the game's file before anything is written (validate: only the
@@ -952,8 +953,10 @@ def main(argv: list[str] | None = None) -> int:
     target = pathlib.Path(argv[0])
     files: dict[str, pathlib.Path] = {}
     for source in argv[1:]:
-        for path in pathlib.Path(source).glob('*.emevd.dcx'):
-            files[path.name] = path
+        # Case-insensitive: Linux file systems are not, and dumps differ in case.
+        for path in pathlib.Path(source).iterdir():
+            if path.is_file() and path.name.lower().endswith('.emevd.dcx'):
+                files[path.name] = path
     # Every file is patched and checked before any is written, so a bad patch leaves the
     # folder as it was.
     outputs = {}

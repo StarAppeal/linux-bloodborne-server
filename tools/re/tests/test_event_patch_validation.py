@@ -24,7 +24,7 @@ from test_party_boss_events import (boss_intro_event, build_emevd, host_fog_even
 
 SHOP = 12101000
 DREAM = 'm21_00_00_00.emevd.dcx'
-GAME = pathlib.Path(os.environ.get('BB_ROOT', r'C:\bb')) / 'rig' / 'game'
+GAME = pathlib.Path(os.environ.get('BB_ROOT', r'C:\bb' if os.name == 'nt' else '~/bb')).expanduser() / 'rig' / 'game'
 GAME_EVENTS = [GAME / 'CUSA03173' / 'dvdroot_ps4' / 'event',
                GAME / 'CUSA03173-patch' / 'dvdroot_ps4' / 'event']
 

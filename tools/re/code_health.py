@@ -34,6 +34,7 @@ import concurrent.futures
 import json
 import pathlib
 import re
+import shutil
 import statistics
 import subprocess
 import sys
@@ -44,7 +45,7 @@ BASELINE = pathlib.Path(__file__).resolve().parent / "code_health_baseline.json"
 SOURCES = "emulator/src/core/bloodborne_*.cpp"
 # Diagnostics in these files are kept (the sources and the co-op headers they include).
 OWN_FILES = re.compile(r"^emulator/src/core/bloodborne_[\w]+\.(cpp|h)$")
-CLANG_TIDY = r"C:\msys64\clang64\bin\clang-tidy.exe"
+CLANG_TIDY = shutil.which("clang-tidy") or r"C:\msys64\clang64\bin\clang-tidy.exe"
 CHECKS = "-*,readability-function-cognitive-complexity,readability-function-size"
 CONFIG = ("{CheckOptions: {"
           "readability-function-cognitive-complexity.Threshold: 0, "
