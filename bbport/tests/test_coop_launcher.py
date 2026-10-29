@@ -423,8 +423,18 @@ class FindGameTests(unittest.TestCase):
             self.assertIsNone(coop.search_game(root / 'install', drives=[root / 'drive'], homes=[]))
 
 
-@unittest.skipUnless(sys.platform == 'win32', 'folder links (junctions) are Windows')
+# Folder links: junctions on Windows, symbolic links elsewhere (make_junction).
 class GameViewTests(unittest.TestCase):
+    def test_the_game_view_stays_beside_the_install_where_links_work(self):
+        # Linux took the folder under the home: the probe link was removed with rmdir, which a
+        # symbolic link refuses, so links counted as not working.
+        with tempfile.TemporaryDirectory() as folder:
+            install = Path(folder)
+            self.assertTrue(coop.junctions_work(install / 'coop-game'))
+            self.assertEqual(coop.view_root(install), install / 'coop-game')
+            self.assertEqual(list((install / 'coop-game').iterdir()), [])
+
+
     def test_the_update_goes_over_the_game_through_links(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

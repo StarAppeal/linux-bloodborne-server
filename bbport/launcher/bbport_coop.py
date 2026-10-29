@@ -798,12 +798,15 @@ def view_root(install):
 def junctions_work(folder):
     folder = Path(folder)
     probe = folder / '.junction-probe'
+    # A junction goes with rmdir, a symbolic link (make_junction off Windows) with unlink, as in
+    # remove_view: rmdir on a link failed, so Linux always took the folder under the home.
+    remove = lambda link: os.rmdir(link) if is_junction(link) else link.unlink()
     try:
         folder.mkdir(parents=True, exist_ok=True)
-        if is_junction(probe):
-            os.rmdir(probe)
+        if is_junction(probe) or probe.is_symlink():
+            remove(probe)
         make_junction(probe, folder)
-        os.rmdir(probe)
+        remove(probe)
         return True
     except OSError:
         return False
@@ -1081,6 +1084,18 @@ def unlocked_fps(fps_mode):
     return fps_mode in ('uncap', '90')
 
 
+def release_version(path=None):
+    """The co-op release's version from VERSION.txt's first line ("... v1.3.0 ..."), else ''. The server refuses
+    a game of another release (the build check on join), so a game without one says "dev"."""
+    path = Path(path) if path else Path(__file__).resolve().parent.parent / 'VERSION.txt'
+    try:
+        first = path.read_text(encoding='utf-8').splitlines()[0]
+    except (OSError, IndexError):
+        return ''
+    match = re.search(r'v(\d+\.\d+\.\d+\S*)', first)
+    return match.group(1) if match else ''
+
+
 def game_environment(env, settings, install, root):
     """The game's environment for co-op, as 2 - PLAY set it, over the launcher's own."""
     install, root = Path(install), Path(root)
@@ -1097,6 +1112,10 @@ def game_environment(env, settings, install, root):
         'BB_SHADNET_WEBAPI': f'http://{host}:{WEBAPI_PORT}',
         'BB_SHADNET_NPID': settings['account'], 'BB_SHADNET_PASSWORD': settings['password'],
         'SHADPS4_BLOODBORNE_SEAMLESS_COOP': '1',
+    })
+    # Build check on join: the release this game is (an inherited BB_RELEASE_VERSION is the launcher's own).
+    env['BB_RELEASE_VERSION'] = release_version() or env.get('BB_RELEASE_VERSION') or 'dev'
+    env.update({
         'SHADPS4_BLOODBORNE_RE_TRACE': '0',
     })
     # The server's key, when one is known for it (link_key_for); else the game trusts the first one.

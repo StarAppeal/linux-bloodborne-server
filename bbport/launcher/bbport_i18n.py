@@ -754,6 +754,49 @@ def system_language():
     return "en"
 
 
+# The co-op page (bbport_launcher.build_coop_page); the other languages fall back to these.
+EN.update({
+    "Значки кнопок": "Button icons",
+    "Кооператив": "Co-op",
+    "Сервер": "Server",
+    "IP адрес хоста (или имя сервера), к которому вы подключаетесь. Хост вводит свой адрес, по которому его видят остальные.":
+        "The host's IP address (or a server's name) you connect to. A host types their own address, the one the others reach them at.",
+    "IP хоста / сервер": "Host IP / server",
+    "Локальный сервер": "Local server",
+    "Запустить сервер": "Start server",
+    "Остановить сервер": "Stop server",
+    "Работает": "Running",
+    "Не работает": "Not running",
+    "Папка игры (CUSA03173)": "Game folder (CUSA03173)",
+    "Папка обновления 1.09 (необязательно)": "1.09 update folder (optional)",
+    "Выбрать папку обновления": "Choose the update folder",
+    "Папка обновления 1.09": "1.09 update folder",
+    "Искать рядом с игрой": "Look beside the game",
+    "Рядом с игрой": "Beside the game",
+    "Правила кооператива": "Co-op rules",
+    "Для хоста: правила команды ведущего. Команда создаётся в игре, на экране команды.":
+        "For the host: the rules of the team's leader. The team is made in the game's team screen.",
+    "Кровавая порча (rot)": "Blood rot (rot)",
+    "Путешествие вместе (travel)": "Travel together (travel)",
+    "Голосование за переход (vote)": "Vote on travel (vote)",
+    "Масштаб сложности (scale)": "Difficulty scaling (scale)",
+    "Враги сильнее": "Harder enemies",
+    "Обычные": "Normal",
+    "Немного сильнее": "A bit harder",
+    "Сильнее": "Harder",
+    "Намного сильнее": "Much harder",
+    "P2P порт (auto: по умолчанию)": "P2P port (auto: the default)",
+    "Графика и управление берутся из настроек лаунчера (bbport.ini копируется в папку кооператива при каждом запуске).":
+        "Graphics and controls come from the launcher's settings (bbport.ini is copied into the co-op folder at every start).",
+    "Играть в кооперативе": "Play co-op",
+    "Введите IP хоста или имя сервера": "Type the host's IP address or a server's name",
+    "Выберите папку игры (с eboot.bin)": "Choose the game folder (with eboot.bin)",
+    "IP хоста должен быть адресом этого ПК": "The host's IP must be an address of this PC",
+    "Сервер не запустился (журнал: {})": "The server did not start (log: {})",
+    "Bloodborne CUSA03173": "Bloodborne CUSA03173",
+})
+
+
 _language = "ru"
 
 

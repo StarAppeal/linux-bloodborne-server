@@ -18,8 +18,10 @@ import sys
 import time
 from pathlib import Path
 from bbport_assets import fsr411_problem
-from bbport_controls import CONTROLS  # input, label, default keys and buttons; the Windows launcher shares it
+from bbport_controls import CONTROLS, ICON_CHOICES, ICON_DEFAULT  # input, label, default keys and buttons; the Windows launcher shares it
 from bbport_i18n import language, set_language, tr
+import bbport_coop
+import bbport_coop_cli
 
 import gi
 
@@ -35,9 +37,18 @@ from patches import external_patches  # noqa: E402
 # Packaged (AppImage): generated files, saves and bbport.ini live in BB_DATA_DIR.
 PACKAGED = bool(os.environ.get("BB_PREBUILT"))
 DATA_DIR = Path(os.environ.get("BB_DATA_DIR", PORT_DIR))
-CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "bbport-launcher"
+# BB_LAUNCHER_CONFIG: another settings folder, to run next to the upstream launcher (bb-launcher.sh sets it).
+CONFIG_DIR = Path(os.environ.get("BB_LAUNCHER_CONFIG") or
+                  Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "bbport-launcher")
 CONFIG_FILE = CONFIG_DIR / "settings.json"
 MAX_LOG_LINES = 5000
+# Co-op: its own folder (coop.json, saves, logs, game view, bbport.ini), as coop-run.sh keeps it.
+COOP_DIR = bbport_coop_cli.default_dir()
+COOP_RUN = PORT_DIR / "coop-run.sh"
+COOP_RULES = [("rule_rot", "Кровавая порча (rot)"), ("rule_travel", "Путешествие вместе (travel)"),
+              ("rule_vote", "Голосование за переход (vote)"), ("rule_scale", "Масштаб сложности (scale)")]
+COOP_HARDER = [("Обычные", "off"), ("Немного сильнее", bbport_coop.HARDER_BIT),
+               ("Сильнее", bbport_coop.HARDER_ON), ("Намного сильнее", bbport_coop.HARDER_MUCH)]
 # The memory model (run.sh: BB_PC_MODEL): "auto" leaves it to the GPU (the new one on AMD, the
 # 0.3 one elsewhere), or either by hand. The new one goes through the layer's memory module on
 # every GPU (no sparse binding of the game's memory; BB_LAYER_MEMORY=0: AMD's sparse arena).
@@ -161,6 +172,7 @@ INI_DEFAULTS = {
     "output_res": "1920x1080",
     "model_lod": "0",
     "live_resolution": "0",
+    "button_icons": ICON_DEFAULT,
     **{key: "1" if default else "0" for key, _, default in EFFECTS},
 }
 
@@ -217,6 +229,31 @@ def save_ini(values, lines):
         if key not in written and value is not None:
             out.append(f"{key}={value}")
     ini_path().write_text("\n".join(out) + "\n", encoding="utf-8")
+
+
+def coop_problem(coop):
+    """What stops co-op from starting with these answers (None: nothing). Text in the launcher's
+    language key (Russian), for tr()."""
+    host = (coop.get("host_ip") or "").strip()
+    if not host or not (bbport_coop.valid_host(host) or bbport_coop.region_url(host)):
+        return "Введите IP хоста или имя сервера"
+    game = coop.get("game") or ""
+    if not game or not bbport_coop.is_game_folder(Path(game).expanduser()):
+        return "Выберите папку игры (с eboot.bin)"
+    return None
+
+
+def coop_play_command(coop, fps_mode, ini):
+    """coop-run.sh with the saved answers: it makes the game view and event files, signs in and starts
+    the game; the launcher's `ini` is copied into the co-op folder's own bbport.ini first."""
+    command = ["setsid", "bash", str(COOP_RUN), "--dir", str(COOP_DIR), "--ini", str(ini)]
+    if bbport_coop.unlocked_fps(fps_mode):
+        command += ["--unlocked-fps", "1"]
+    return command
+
+
+def coop_server_command(host_ip):
+    return ["setsid", "bash", str(COOP_RUN), "server", "--listen", host_ip]
 
 
 def patches_dir(settings):
@@ -399,6 +436,9 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.process = None
         self.stream = None
         self.fsr411_build = None  # tools/fsr4cap/build_assets.sh while it runs
+        self.coop = bbport_coop.load_settings(COOP_DIR)
+        self.server = None  # coop-run.sh server, while this window started it
+        self.server_poll = False
         self.build()
         self.connect("close-request", self.on_close)
 
@@ -422,6 +462,8 @@ class LauncherWindow(Adw.ApplicationWindow):
         log_text = self.log_text() if hasattr(self, "log_view") else ""
         self.stack.add_titled_with_icon(self.build_settings_page(), "settings", tr("Настройки"),
                                         "preferences-system-symbolic")
+        self.stack.add_titled_with_icon(self.build_coop_page(), "coop", tr("Кооператив"),
+                                        "network-workgroup-symbolic")
         self.stack.add_titled_with_icon(self.build_log_page(), "log", tr("Журнал"),
                                         "utilities-terminal-symbolic")
         self.log_view.get_buffer().set_text(log_text)
@@ -429,6 +471,8 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.update_game_status()
         self.update_user_status()
         self.update_upscaler_status()
+        self.update_coop_game()
+        self.update_coop_server()
 
     def update_launch_button(self):
         running = self.process is not None
@@ -440,6 +484,9 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.launch_button.set_sensitive(self.fsr411_build is None)
         if hasattr(self, "fsr411_button"):
             self.fsr411_button.set_sensitive(not running)
+        if hasattr(self, "coop_play_button"):
+            self.coop_play_button.set_label(tr("Остановить") if running else tr("Играть в кооперативе"))
+            self.coop_play_button.set_sensitive(self.fsr411_build is None)
 
     # --- settings page -------------------------------------------------------------------
 
@@ -557,6 +604,11 @@ class LauncherWindow(Adw.ApplicationWindow):
                                                 lambda _button: self.fill_gamepads()))
         self.fill_gamepads()
         controls.add(self.gamepad_row)
+        # button_icons: "auto" follows the device in use and can flip between Xbox and PlayStation glyphs.
+        icon_choices = [(texts[0] if language() != "ru" else texts[1], key) for key, texts in ICON_CHOICES]
+        self.icons_row = combo_row(tr("Значки кнопок"), None, icon_choices,
+                                   self.ini.get("button_icons", ICON_DEFAULT))
+        controls.add(self.icons_row)
         # Bindings: "Assign" waits for a key or button (bb-gpu-capabilities --read-input).
         self.control_rows = {}
         for kind, title, icon in (("key", tr("Клавиатура"), "input-keyboard-symbolic"),
@@ -926,6 +978,7 @@ class LauncherWindow(Adw.ApplicationWindow):
             "sharpness": f"{self.sharpness_row.get_value():.2f}",
             "object_motion": "1" if self.motion_row.get_active() else "0",
             "show_fps": "1" if self.show_fps_row.get_active() else "0",
+            "button_icons": combo_value(self.icons_row),
             "output_res": combo_value(self.output_row),
             "model_lod": combo_value(self.lod_row),
             "live_resolution": combo_value(self.live_row),
@@ -933,6 +986,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         })
         save_ini(self.ini, self.ini_lines)
         self.ini, self.ini_lines = load_ini()
+        self.store_coop()
 
     def environment(self):
         return game_environment(self.settings)
@@ -1048,6 +1102,205 @@ class LauncherWindow(Adw.ApplicationWindow):
 
     # --- log page ------------------------------------------------------------------------
 
+    # --- co-op ---------------------------------------------------------------------------
+
+    def build_coop_page(self):
+        """The co-op settings of bbport_coop (coop.json), the local server and the play button;
+        the work is coop-run.sh's."""
+        page = Adw.PreferencesPage()
+
+        host = Adw.PreferencesGroup(
+            title=tr("Сервер"),
+            description=tr("IP адрес хоста (или имя сервера), к которому вы подключаетесь. Хост вводит "
+                           "свой адрес, по которому его видят остальные."))
+        self.coop_host_row = Adw.EntryRow(title=tr("IP хоста / сервер"))
+        self.coop_host_row.set_text(self.coop.get("host_ip", ""))
+        self.coop_host_row.connect("changed", lambda *_: self.update_coop_server())
+        host.add(self.coop_host_row)
+        self.coop_server_row = Adw.ActionRow(title=tr("Локальный сервер"))
+        self.coop_server_button = Gtk.Button(valign=Gtk.Align.CENTER)
+        self.coop_server_button.connect("clicked", self.on_coop_server)
+        self.coop_server_row.add_suffix(self.coop_server_button)
+        host.add(self.coop_server_row)
+        page.add(host)
+
+        game = Adw.PreferencesGroup(title=tr("Игра"))
+        self.coop_game_row = Adw.ActionRow(title=tr("Папка игры (CUSA03173)"))
+        self.coop_game_status = Gtk.Image()
+        self.coop_game_row.add_suffix(self.coop_game_status)
+        self.coop_game_row.add_suffix(flat_button("folder-open-symbolic", tr("Выбрать папку с eboot.bin"),
+                                                  self.on_coop_choose_game))
+        game.add(self.coop_game_row)
+        self.coop_update_row = Adw.ActionRow(title=tr("Папка обновления 1.09 (необязательно)"))
+        self.coop_update_row.add_suffix(flat_button("folder-open-symbolic", tr("Выбрать папку обновления"),
+                                                    self.on_coop_choose_update))
+        self.coop_update_row.add_suffix(flat_button("edit-clear-symbolic", tr("Искать рядом с игрой"),
+                                                    self.on_coop_clear_update))
+        game.add(self.coop_update_row)
+        page.add(game)
+
+        rules = Adw.PreferencesGroup(
+            title=tr("Правила кооператива"),
+            description=tr("Для хоста: правила команды ведущего. Команда создаётся в игре, на экране команды."))
+        self.coop_rule_rows = {}
+        for key, title in COOP_RULES:
+            row = Adw.SwitchRow(title=tr(title), active=self.coop.get(key) == "1")
+            self.coop_rule_rows[key] = row
+            rules.add(row)
+        self.coop_rule_rows["rule_travel"].connect("notify::active", lambda *_: self.update_coop_rules())
+        harder = self.coop.get("harder", "off")
+        choices = COOP_HARDER if harder in [c[1] for c in COOP_HARDER] else \
+            COOP_HARDER + [(harder, harder)]
+        self.coop_harder_row = combo_row(tr("Враги сильнее"), None, choices, harder)
+        rules.add(self.coop_harder_row)
+        self.coop_port_row = Adw.EntryRow(title=tr("P2P порт (auto: по умолчанию)"))
+        self.coop_port_row.set_text(self.coop.get("p2p_port", "auto"))
+        rules.add(self.coop_port_row)
+        page.add(rules)
+        self.update_coop_rules()
+
+        play = Adw.PreferencesGroup(
+            description=tr("Графика и управление берутся из настроек лаунчера (bbport.ini копируется "
+                           "в папку кооператива при каждом запуске)."))
+        self.coop_play_button = Gtk.Button(halign=Gtk.Align.CENTER)
+        self.coop_play_button.add_css_class("suggested-action")
+        self.coop_play_button.add_css_class("pill")
+        self.coop_play_button.connect("clicked", self.on_coop_play)
+        play.add(self.coop_play_button)
+        page.add(play)
+        return page
+
+    def update_coop_rules(self):
+        # The vote is a part of travelling together (bbport_coop.host_rules_value).
+        travel = self.coop_rule_rows["rule_travel"].get_active()
+        self.coop_rule_rows["rule_vote"].set_sensitive(travel)
+
+    def store_coop(self):
+        """The co-op page's answers into coop.json."""
+        c = self.coop
+        c["host_ip"] = self.coop_host_row.get_text().strip()
+        c["harder"] = combo_value(self.coop_harder_row)
+        c["p2p_port"] = self.coop_port_row.get_text().strip() or "auto"
+        for key, row in self.coop_rule_rows.items():
+            c[key] = "1" if row.get_active() else ""
+        try:
+            bbport_coop.save_settings(COOP_DIR, c)
+        except OSError:
+            pass
+
+    def update_coop_game(self):
+        game = self.coop.get("game", "")
+        ok = bool(game) and bbport_coop.is_game_folder(Path(game).expanduser())
+        self.coop_game_row.set_subtitle(game if game else tr("не выбрана"))
+        self.coop_game_status.set_from_icon_name("object-select-symbolic" if ok else "dialog-warning-symbolic")
+        self.coop_game_status.set_tooltip_text(tr("Bloodborne CUSA03173") if ok else tr("Нет eboot.bin в папке"))
+        update = self.coop.get("update", "")
+        self.coop_update_row.set_subtitle(update if update else tr("Рядом с игрой"))
+
+    def on_coop_choose_game(self, _button):
+        def chosen(path):
+            found = bbport_coop.find_game_folder(path) or Path(path)
+            self.coop["game"] = str(found)
+            if not bbport_coop.is_game_folder(found):
+                self.toasts.add_toast(Adw.Toast(title=tr("Нет eboot.bin в папке")))
+            self.update_coop_game()
+            self.store_coop()
+        self.choose_folder(tr("Папка игры (с eboot.bin)"), self.coop.get("game") or Path.home(), chosen)
+
+    def on_coop_choose_update(self, _button):
+        def chosen(path):
+            self.coop["update"] = path
+            self.update_coop_game()
+            self.store_coop()
+        self.choose_folder(tr("Папка обновления 1.09"), self.coop.get("update") or Path.home(), chosen)
+
+    def on_coop_clear_update(self, _button):
+        self.coop["update"] = ""
+        self.update_coop_game()
+        self.store_coop()
+
+    def coop_server_state(self):
+        return bbport_coop.server_state()
+
+    def update_coop_server(self):
+        state = self.coop_server_state()
+        running = state != "stopped"
+        self.coop_server_row.set_subtitle({
+            "running": tr("Работает"),
+            "no_backend": tr(bbport_coop.NO_BACKEND_TEXT)}.get(state, tr("Не работает")))
+        self.coop_server_button.set_label(tr("Остановить сервер") if running else tr("Запустить сервер"))
+        host = self.coop_host_row.get_text().strip()
+        # Only this PC's own address hosts (bbport_coop.is_this_pc); a running server stops by its owner.
+        self.coop_server_button.set_sensitive(
+            (self.server is not None) if running else bbport_coop.is_this_pc(host))
+
+    def on_coop_server(self, _button):
+        if self.server:
+            self.stop_coop_server()
+            self.update_coop_server()
+            return
+        host = self.coop_host_row.get_text().strip()
+        if not (bbport_coop.valid_ip(host) and bbport_coop.is_this_pc(host)):
+            self.toasts.add_toast(Adw.Toast(title=tr("IP хоста должен быть адресом этого ПК")))
+            return
+        self.store_coop()
+        log = COOP_DIR / "user" / "log"
+        log.mkdir(parents=True, exist_ok=True)
+        launcher = Gio.SubprocessLauncher.new(Gio.SubprocessFlags.STDERR_MERGE)
+        launcher.set_stdout_file_path(str(log / "shadnet.txt"))
+        launcher.set_cwd(str(PORT_DIR))
+        try:
+            self.server = launcher.spawnv(coop_server_command(host))
+        except GLib.Error as error:
+            self.toasts.add_toast(Adw.Toast(title=tr("Не удалось запустить: {}").format(error.message)))
+            return
+        self.server.wait_async(None, self.on_coop_server_exit)
+        self.server_poll = True
+        GLib.timeout_add_seconds(1, self.poll_coop_server)
+        self.update_coop_server()
+
+    def poll_coop_server(self):
+        """Refreshes the server line while the server starts and runs."""
+        self.update_coop_server()
+        if self.server is None:
+            self.server_poll = False
+            return False
+        return True
+
+    def on_coop_server_exit(self, process, result):
+        try:
+            process.wait_finish(result)
+        except GLib.Error:
+            pass
+        failed = process.get_if_exited() and process.get_exit_status() != 0 and self.server is process
+        if self.server is process:
+            self.server = None
+        self.update_coop_server()
+        if failed:
+            self.toasts.add_toast(Adw.Toast(
+                title=tr("Сервер не запустился (журнал: {})").format(COOP_DIR / "user" / "log" / "shadnet.txt")))
+
+    def stop_coop_server(self):
+        server, self.server = self.server, None
+        if server is None:
+            return
+        try:
+            os.killpg(int(server.get_identifier()), signal.SIGTERM)
+        except (OSError, TypeError, ValueError):
+            server.force_exit()
+
+    def on_coop_play(self, _button):
+        if self.process:
+            self.stop_game()
+            return
+        self.store()  # launcher settings and bbport.ini, then the co-op answers
+        problem = coop_problem(self.coop)
+        if problem:
+            self.toasts.add_toast(Adw.Toast(title=tr(problem)))
+            return
+        self.log_view.get_buffer().set_text("")
+        self.start_process(coop_play_command(self.coop, self.settings["fps_mode"], ini_path()))
+
     def build_log_page(self):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.log_view = Gtk.TextView(editable=False, monospace=True, cursor_visible=False,
@@ -1121,14 +1374,24 @@ class LauncherWindow(Adw.ApplicationWindow):
             self.stop_game()
             return
         self.store()
+        # Like the Windows co-op release's PLAY: with co-op set up, the header button starts co-op
+        # (coop-run.sh: own saves, game view and event files); plain run.sh only without it.
+        if coop_problem(self.coop) is None:
+            self.on_coop_play(_button)
+            return
         self.log_view.get_buffer().set_text("")
+        self.start_process(["setsid", "bash", str(PORT_DIR / "run.sh")])
+
+    def start_process(self, command):
+        """Starts the game (run.sh, or coop-run.sh for co-op) with the launcher's environment and shows
+        its output in the log."""
         launcher = Gio.SubprocessLauncher.new(
             Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_MERGE)
         launcher.set_environ([f"{k}={v}" for k, v in self.environment().items()])
         launcher.set_cwd(str(PORT_DIR))
         try:
             # setsid: the game and its helpers form one process group, stopped together.
-            self.process = launcher.spawnv(["setsid", "bash", str(PORT_DIR / "run.sh")])
+            self.process = launcher.spawnv(command)
         except GLib.Error as error:
             self.toasts.add_toast(Adw.Toast(title=tr("Не удалось запустить: {}").format(error.message)))
             return
@@ -1186,6 +1449,7 @@ class LauncherWindow(Adw.ApplicationWindow):
             self.stop_game()
         if self.fsr411_build:
             self.stop_fsr411_build()
+        self.stop_coop_server()
         return False
 
     # --- FSR 4.1.1 from the user's DLL -----------------------------------------------------
