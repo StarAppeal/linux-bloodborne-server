@@ -953,10 +953,12 @@ def main(argv: list[str] | None = None) -> int:
     target = pathlib.Path(argv[0])
     files: dict[str, pathlib.Path] = {}
     for source in argv[1:]:
-        # Case-insensitive: Linux file systems are not, and dumps differ in case.
+        # Case-insensitive: Linux file systems are not, and dumps differ in case. The lower-case
+        # name is the key, so an update's file replaces the game's whatever their case, and
+        # patch_file sees the names it knows (m..., CLIENT_EVENTS).
         for path in pathlib.Path(source).iterdir():
             if path.is_file() and path.name.lower().endswith('.emevd.dcx'):
-                files[path.name] = path
+                files[path.name.lower()] = path
     # Every file is patched and checked before any is written, so a bad patch leaves the
     # folder as it was.
     outputs = {}
