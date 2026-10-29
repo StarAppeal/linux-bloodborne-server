@@ -1084,13 +1084,28 @@ def unlocked_fps(fps_mode):
     return fps_mode in ('uncap', '90')
 
 
+def git_release_tag(folder):
+    """The nearest release tag ("v1.3.0" -> '1.3.0') of the git checkout holding `folder`, else ''.
+    A source build has no VERSION.txt (make-release.ps1 writes it into the release only)."""
+    try:
+        run = subprocess.run(['git', '-C', str(folder), 'describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*'],
+                             capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return ''
+    match = re.fullmatch(r'v(\d+\.\d+\.\d+\S*)', run.stdout.strip()) if run.returncode == 0 else None
+    return match.group(1) if match else ''
+
+
 def release_version(path=None):
     """The co-op release's version from VERSION.txt's first line ("... v1.3.0 ..."), else ''. The server refuses
-    a game of another release (the build check on join), so a game without one says "dev"."""
-    path = Path(path) if path else Path(__file__).resolve().parent.parent / 'VERSION.txt'
+    a game of another release (the build check on join), so a game without one says "dev". Without a `path`
+    and without the release's VERSION.txt, a git checkout's nearest release tag stands in for it."""
+    folder = Path(__file__).resolve().parent.parent
     try:
-        first = path.read_text(encoding='utf-8').splitlines()[0]
-    except (OSError, IndexError):
+        first = (Path(path) if path else folder / 'VERSION.txt').read_text(encoding='utf-8').splitlines()[0]
+    except OSError:
+        return '' if path else git_release_tag(folder)
+    except IndexError:
         return ''
     match = re.search(r'v(\d+\.\d+\.\d+\S*)', first)
     return match.group(1) if match else ''

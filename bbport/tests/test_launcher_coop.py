@@ -70,7 +70,11 @@ class ReleaseVersionTests(unittest.TestCase):
     """The build check on join: the game says which co-op release it is, as the server's VERSION.txt does."""
 
     def test_the_version_comes_from_version_txt(self):
-        self.assertEqual(bbport_coop.release_version(), '1.3.0')
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'VERSION.txt'
+            path.write_text('Yharnam Together: Bloodborne Seamless Co-op v1.3.0 (Linux)\nGame: 1.09\n',
+                            encoding='utf-8')
+            self.assertEqual(bbport_coop.release_version(path), '1.3.0')
 
     def test_a_missing_or_unreadable_file_is_no_version(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -78,9 +82,25 @@ class ReleaseVersionTests(unittest.TestCase):
             (Path(tmp) / 'VERSION.txt').write_text('no version here\n', encoding='utf-8')
             self.assertEqual(bbport_coop.release_version(Path(tmp) / 'VERSION.txt'), '')
 
+    def test_a_git_checkout_without_version_txt_takes_its_release_tag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            git = ['git', '-C', tmp, '-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false',
+                   '-c', 'tag.gpgsign=false']
+            try:
+                subprocess.run(['git', 'init', '-q', tmp], check=True, capture_output=True)
+                subprocess.run(git + ['commit', '-q', '--allow-empty', '-m', 'release'], check=True, capture_output=True)
+                subprocess.run(git + ['tag', 'v9.8.7'], check=True, capture_output=True)
+                subprocess.run(git + ['commit', '-q', '--allow-empty', '-m', 'after'], check=True, capture_output=True)
+            except (OSError, subprocess.CalledProcessError):
+                self.skipTest('git is not available')
+            self.assertEqual(bbport_coop.git_release_tag(tmp), '9.8.7')
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(bbport_coop.git_release_tag(tmp), '')
+
     def test_the_co_op_game_gets_it_in_its_environment(self):
         settings = {'host_ip': '10.0.0.5', 'account': 'a', 'password': 'p'}
-        env = bbport_coop.game_environment({'BB_RELEASE_VERSION': 'dev'}, settings, '/x', '/x/game')
+        with mock.patch.object(bbport_coop, 'release_version', return_value='1.3.0'):
+            env = bbport_coop.game_environment({'BB_RELEASE_VERSION': 'dev'}, settings, '/x', '/x/game')
         self.assertEqual(env['BB_RELEASE_VERSION'], '1.3.0')
 
 
