@@ -28,6 +28,8 @@ grep -q /nix/store packaging/runtime-paths.nix || {
     echo 'The build does not use /nix/store libraries: rebuild in nix-shell --pure shell.nix --run "bash build.sh".' >&2
     exit 1
 }
+# FSR 4 assets (MIT, a pinned download; the Windows release bundles them too).
+[[ -d fsr4_shaders ]] || bash tools/fetch_fsr4_assets.sh
 version=${BB_RELEASE_VERSION:-$(python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import bbport_coop; print(bbport_coop.release_version())' launcher)}
 [[ -n $version ]] || { echo 'No release version: set BB_RELEASE_VERSION (e.g. 1.3.0).' >&2; exit 1; }
 if [[ ! -f VERSION.txt ]]; then
