@@ -2986,10 +2986,12 @@ bool GuestMakesItsOwnLampTrip(bool in_party_session, PartyRole role) {
 }
 
 std::vector<MultiplayerWall> MultiplayerWalls() {
-    // InitializeEvent(_, 7600, object, sfx) in m22-m35's event files (01.09).
-    static constexpr std::array<s32, 18> Walls{
-        2201999, 2301999, 2401999, 2401998, 2401997, 2401996, 2401995, 2411999, 2411998,
-        2411997, 2421999, 2421998, 2701999, 2701998, 2801999, 2801998, 3201999, 3501990,
+    // InitializeEvent(_, 7600, object, sfx) in m22-m35's event files (01.09), and the Hunter's
+    // Nightmare's own wall at the exit of Ludwig's arena (m34_00 event 13400010: shown while in
+    // multiplayer even after Ludwig's defeat; player report 2026-10-29).
+    static constexpr std::array<s32, 19> Walls{
+        2201999, 2301999, 2401999, 2401998, 2401997, 2401996, 2401995, 2411999, 2411998, 2411997,
+        2421999, 2421998, 2701999, 2701998, 2801999, 2801998, 3201999, 3401801, 3501990,
     };
     std::vector<MultiplayerWall> walls;
     for (const s32 object : Walls) {

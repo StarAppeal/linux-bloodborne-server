@@ -535,7 +535,7 @@ TEST(BloodborneGuestAsHost, OnlyWhenSwitchedOnAndAWhitePhantomInAPartySession) {
 // multiplayer) are what keeps a summoned guest inside an area. A party session turns them off.
 TEST(BloodborneMultiplayerWalls, ListsTheWallsOfEveryMap) {
     const auto walls = MultiplayerWalls();
-    ASSERT_EQ(walls.size(), 18u);
+    ASSERT_EQ(walls.size(), 19u);
     const auto on = [&](u32 map) {
         return std::ranges::count_if(walls, [&](const MultiplayerWall& wall) {
             return PackedMapOfWarpPoint(wall.object) == map;
@@ -544,6 +544,7 @@ TEST(BloodborneMultiplayerWalls, ListsTheWallsOfEveryMap) {
     EXPECT_EQ(on(0x18010000), 3); // Central Yharnam
     EXPECT_EQ(on(0x18000000), 5); // Cathedral Ward
     EXPECT_EQ(on(0x15000000), 0) << "the Hunter's Dream has none";
+    EXPECT_EQ(on(0x22000000), 1) << "the Hunter's Nightmare's own (m34_00 event 13400010)";
     for (const MultiplayerWall& wall : walls) {
         EXPECT_EQ(wall.sfx, wall.object + 2000) << wall.object;
     }
