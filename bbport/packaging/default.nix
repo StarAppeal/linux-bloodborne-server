@@ -138,6 +138,9 @@ pkgs.stdenv.mkDerivation {
     install -Dm755 out/gpu/libbbgpu.so $d/bin/gpu/libbbgpu.so
     runHook postInstall
   '';
+  # Settings and data apart from the upstream bbport AppImage's (~/.config/bbport-launcher,
+  # ~/.local/share/bbport): its patches.json can replace the co-op's 60 FPS patch and its launcher
+  # settings turn mods off. The config is bb-launcher.sh's, so a source build and this share it.
   postFixup = ''
     # bin/bbport is a static program (bbport-entry.c) that clears the host's LD_PRELOAD (Steam's
     # overlay) and similar before the wrapper's own dynamic programs start.
@@ -153,7 +156,8 @@ pkgs.stdenv.mkDerivation {
       --prefix PATH : ${lib.makeBinPath [ pkgs.bash pkgs.coreutils pkgs.util-linux pkgs.procps
                                           pkgs.gawk pkgs.gnused pkgs.gnugrep pkgs.spirv-tools
                                           pkgs.systemdMinimal ]} \
-      --run 'export BB_DATA_DIR=''${BB_DATA_DIR:-''${XDG_DATA_HOME:-$HOME/.local/share}/bbport}; mkdir -p "$BB_DATA_DIR"'
+      --run 'export BB_DATA_DIR=''${BB_DATA_DIR:-''${XDG_DATA_HOME:-$HOME/.local/share}/bbport-coop}; mkdir -p "$BB_DATA_DIR"' \
+      --run 'export BB_LAUNCHER_CONFIG=''${BB_LAUNCHER_CONFIG:-''${XDG_CONFIG_HOME:-$HOME/.config}/bbport-launcher-gtk}'
     # The game alone, without the launcher (settings from the data directory's bbport.ini).
     makeShellWrapper ${pkgs.python3}/bin/python3 $out/bin/bbport-game \
       ${common}      --add-flags "$out/share/bbport/launcher/bbport_vulkan.py ${pkgs.bash}/bin/bash $out/share/bbport/run.sh" \
@@ -161,7 +165,7 @@ pkgs.stdenv.mkDerivation {
       --set PYTHON ${pkgs.python3}/bin/python3 \
       --set BB_BUNDLED_VK_DRIVER_FILES ${icds} \
       --prefix PATH : ${lib.makeBinPath [ pkgs.bash pkgs.coreutils pkgs.procps ]} \
-      --run 'export BB_DATA_DIR=''${BB_DATA_DIR:-''${XDG_DATA_HOME:-$HOME/.local/share}/bbport}; mkdir -p "$BB_DATA_DIR"'
+      --run 'export BB_DATA_DIR=''${BB_DATA_DIR:-''${XDG_DATA_HOME:-$HOME/.local/share}/bbport-coop}; mkdir -p "$BB_DATA_DIR"'
   '';
   meta.mainProgram = "bbport";
 }

@@ -3,7 +3,8 @@
 # its scripts and the launcher, bundled with their Nix closure (nix-appimage: the AppImage mounts
 # its /nix/store with user namespaces, available on SteamOS and most desktops).
 # Running it opens the launcher; `--play` starts the game with the launcher's saved settings.
-# Data (generated files, saves, bbport.ini): ~/.local/share/bbport (BB_DATA_DIR); co-op keeps its
+# Data (generated files, saves, bbport.ini): ~/.local/share/bbport-coop (BB_DATA_DIR), launcher
+# settings: ~/.config/bbport-launcher-gtk (as bb-launcher.sh); co-op keeps its
 # own in ~/.local/share/bloodborne-coop.
 # The co-op release's version goes into the package's VERSION.txt (the server refuses a game of
 # another release): BB_RELEASE_VERSION=1.3.0, else bbport/VERSION.txt or the nearest v* git tag.
