@@ -21,7 +21,27 @@ endif()
 
 find_package(Qt6 REQUIRED COMPONENTS Core Network Sql Concurrent HttpServer)
 
-add_subdirectory(externals)
+# protobuf: the submodule (externals/protobuf) when it is checked out, else the system's (a source
+# tarball without submodules; Arch/CachyOS: pacman -S protobuf). -DSHADNET_SYSTEM_PROTOBUF=ON forces
+# the system's.
+set(_shadnet_protobuf_default OFF)
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/externals/protobuf/CMakeLists.txt")
+    set(_shadnet_protobuf_default ON)
+endif()
+option(SHADNET_SYSTEM_PROTOBUF "Use the system's protobuf instead of externals/protobuf"
+       ${_shadnet_protobuf_default})
+if(SHADNET_SYSTEM_PROTOBUF)
+    find_package(Protobuf CONFIG REQUIRED)
+    # The targets the rest of this file names: libprotobuf and protoc.
+    add_library(libprotobuf INTERFACE)
+    target_link_libraries(libprotobuf INTERFACE protobuf::libprotobuf)
+    set(SHADNET_PROTOC protobuf::protoc)
+    set(SHADNET_PROTOBUF_INCLUDE "")
+else()
+    add_subdirectory(externals)
+    set(SHADNET_PROTOC protoc)
+    set(SHADNET_PROTOBUF_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/externals/protobuf/src")
+endif()
 
 set(PROTO_OUT "${CMAKE_CURRENT_BINARY_DIR}/proto_gen")
 file(MAKE_DIRECTORY "${PROTO_OUT}")
@@ -30,13 +50,13 @@ add_custom_command(
     OUTPUT
         "${PROTO_OUT}/shadnet.pb.cc"
         "${PROTO_OUT}/shadnet.pb.h"
-    COMMAND $<TARGET_FILE:protoc>
+    COMMAND $<TARGET_FILE:${SHADNET_PROTOC}>
         "--proto_path=${CMAKE_CURRENT_SOURCE_DIR}/src"
         "--cpp_out=${PROTO_OUT}"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/shadnet.proto"
     DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/src/shadnet.proto"
-        protoc
+        ${SHADNET_PROTOC}
     COMMENT "Generating shadnet protobuf sources"
     VERBATIM
 )
@@ -47,13 +67,13 @@ add_custom_command(
     OUTPUT
         "${PROTO_OUT}/coop.pb.cc"
         "${PROTO_OUT}/coop.pb.h"
-    COMMAND $<TARGET_FILE:protoc>
+    COMMAND $<TARGET_FILE:${SHADNET_PROTOC}>
         "--proto_path=${CMAKE_CURRENT_SOURCE_DIR}/coop"
         "--cpp_out=${PROTO_OUT}"
         "${CMAKE_CURRENT_SOURCE_DIR}/coop/coop.proto"
     DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/coop/coop.proto"
-        protoc
+        ${SHADNET_PROTOC}
     COMMENT "Generating the co-op protobuf sources"
     VERBATIM
 )
@@ -215,7 +235,7 @@ target_include_directories(shadnet PRIVATE
     src
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${PROTO_OUT}"                                    
-    "${CMAKE_CURRENT_SOURCE_DIR}/externals/protobuf/src"
+    ${SHADNET_PROTOBUF_INCLUDE}
 )
 
 target_link_libraries(shadnet PRIVATE
@@ -292,7 +312,7 @@ if(BUILD_TESTING)
         src
         "${CMAKE_CURRENT_SOURCE_DIR}"
         "${PROTO_OUT}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/externals/protobuf/src"
+        ${SHADNET_PROTOBUF_INCLUDE}
     )
     target_link_libraries(test_region PRIVATE Qt6::Core Qt6::Network libprotobuf)
     target_compile_definitions(test_region PRIVATE
@@ -332,7 +352,7 @@ if(BUILD_TESTING)
         src
         "${CMAKE_CURRENT_SOURCE_DIR}"
         "${PROTO_OUT}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/externals/protobuf/src"
+        ${SHADNET_PROTOBUF_INCLUDE}
     )
     target_link_libraries(test_bloodborne_world PRIVATE Qt6::Core libprotobuf)
     add_test(NAME bloodborne_world COMMAND test_bloodborne_world)
@@ -348,7 +368,7 @@ if(BUILD_TESTING)
         src
         "${CMAKE_CURRENT_SOURCE_DIR}"
         "${PROTO_OUT}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/externals/protobuf/src"
+        ${SHADNET_PROTOBUF_INCLUDE}
     )
     target_link_libraries(test_world_writer PRIVATE Qt6::Core libprotobuf)
     add_test(NAME world_writer COMMAND test_world_writer)
@@ -371,7 +391,7 @@ if(BUILD_TESTING)
         src
         "${CMAKE_CURRENT_SOURCE_DIR}"
         "${PROTO_OUT}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/externals/protobuf/src"
+        ${SHADNET_PROTOBUF_INCLUDE}
     )
     target_link_libraries(test_admin PRIVATE Qt6::Core Qt6::Network libprotobuf)
     add_test(NAME admin COMMAND test_admin)
@@ -388,7 +408,7 @@ if(BUILD_TESTING)
     target_include_directories(test_team_lobby PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}"
         "${PROTO_OUT}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/externals/protobuf/src"
+        ${SHADNET_PROTOBUF_INCLUDE}
     )
     target_link_libraries(test_team_lobby PRIVATE libprotobuf)
     add_test(NAME team_lobby COMMAND test_team_lobby)
@@ -409,7 +429,7 @@ if(BUILD_TESTING)
     target_include_directories(test_bloodborne_trade PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}"
         "${PROTO_OUT}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/externals/protobuf/src"
+        ${SHADNET_PROTOBUF_INCLUDE}
     )
     target_link_libraries(test_bloodborne_trade PRIVATE libprotobuf)
     add_test(NAME bloodborne_trade COMMAND test_bloodborne_trade)
@@ -421,7 +441,7 @@ if(BUILD_TESTING)
     target_include_directories(test_bloodborne_duel PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}"
         "${PROTO_OUT}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/externals/protobuf/src"
+        ${SHADNET_PROTOBUF_INCLUDE}
     )
     target_link_libraries(test_bloodborne_duel PRIVATE libprotobuf)
     add_test(NAME bloodborne_duel COMMAND test_bloodborne_duel)
@@ -450,7 +470,7 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}"
         "${CMAKE_CURRENT_BINARY_DIR}/include"
         "${PROTO_OUT}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/externals/protobuf/src"
+        ${SHADNET_PROTOBUF_INCLUDE}
     )
     target_link_libraries(test_fuzz_decoders PRIVATE
         Qt6::Core Qt6::Network Qt6::Sql Qt6::Concurrent Qt6::HttpServer libprotobuf)
@@ -497,7 +517,7 @@ target_include_directories(bbload PRIVATE
     src
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${PROTO_OUT}"
-    "${CMAKE_CURRENT_SOURCE_DIR}/externals/protobuf/src"
+    ${SHADNET_PROTOBUF_INCLUDE}
 )
 target_link_libraries(bbload PRIVATE Qt6::Core Qt6::Network libprotobuf)
 
@@ -526,7 +546,7 @@ if(SHADNET_FUZZ)
         tests
         "${CMAKE_CURRENT_SOURCE_DIR}"
         "${PROTO_OUT}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/externals/protobuf/src"
+        ${SHADNET_PROTOBUF_INCLUDE}
     )
     target_link_libraries(shadnet_fuzz_core PUBLIC
         Qt6::Core Qt6::Network Qt6::Sql Qt6::Concurrent Qt6::HttpServer libprotobuf)

@@ -13,8 +13,27 @@ if(MSVC)
     add_compile_options(/EHsc /utf-8)
 endif()
 
-if(NOT TARGET libprotobuf)
-    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../externals" externals)
+# protobuf: the server's submodule when it is checked out, else the system's (see ../CMakeLists.txt).
+set(_sample_protobuf_default OFF)
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../externals/protobuf/CMakeLists.txt")
+    set(_sample_protobuf_default ON)
+endif()
+option(SHADNET_SYSTEM_PROTOBUF "Use the system's protobuf instead of ../externals/protobuf"
+       ${_sample_protobuf_default})
+if(SHADNET_SYSTEM_PROTOBUF)
+    find_package(Protobuf CONFIG REQUIRED)
+    if(NOT TARGET libprotobuf)
+        add_library(libprotobuf INTERFACE)
+        target_link_libraries(libprotobuf INTERFACE protobuf::libprotobuf)
+    endif()
+    set(SAMPLE_PROTOC protobuf::protoc)
+    set(SAMPLE_PROTOBUF_INCLUDE "")
+else()
+    if(NOT TARGET libprotobuf)
+        add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../externals" externals)
+    endif()
+    set(SAMPLE_PROTOC protoc)
+    set(SAMPLE_PROTOBUF_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/../externals/protobuf/src")
 endif()
 
 set(PROTO_OUT "${CMAKE_CURRENT_BINARY_DIR}/proto_gen")
@@ -24,13 +43,13 @@ add_custom_command(
     OUTPUT
         "${PROTO_OUT}/shadnet.pb.cc"
         "${PROTO_OUT}/shadnet.pb.h"
-    COMMAND $<TARGET_FILE:protoc>
+    COMMAND $<TARGET_FILE:${SAMPLE_PROTOC}>
         "--proto_path=${CMAKE_CURRENT_SOURCE_DIR}"
         "--cpp_out=${PROTO_OUT}"
         "${CMAKE_CURRENT_SOURCE_DIR}/shadnet.proto"
     DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/shadnet.proto"
-        protoc
+        ${SAMPLE_PROTOC}
     COMMENT "Generating shadnet protobuf sources"
     VERBATIM
 )
@@ -45,7 +64,7 @@ add_executable(shadnet-sample
 target_include_directories(shadnet-sample PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${PROTO_OUT}"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../externals/protobuf/src"
+    ${SAMPLE_PROTOBUF_INCLUDE}
 )
 
 target_link_libraries(shadnet-sample PRIVATE libprotobuf)
@@ -65,5 +84,9 @@ if(MSVC)
     target_compile_options(shadnet-sample PRIVATE /W3 /utf-8)
 else()
     target_compile_options(shadnet-sample PRIVATE -Wall -Wextra)
-    target_link_options(shadnet-sample PRIVATE -static-libgcc -static-libstdc++)
+    # A static C++ runtime only with the static submodule protobuf: the system's libprotobuf.so
+    # brings the shared one.
+    if(NOT SHADNET_SYSTEM_PROTOBUF)
+        target_link_options(shadnet-sample PRIVATE -static-libgcc -static-libstdc++)
+    endif()
 endif()
