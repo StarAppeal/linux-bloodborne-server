@@ -126,6 +126,9 @@ Requirements: Windows 10 (1903 or later) or 11, 64-bit, and a Vulkan 1.3 graphic
 current driver. Everything else is in the setup. Tested with CUSA03173 (the European Game of the
 Year edition) at 1.09; all players in a party should use the same edition.
 
+On Linux there is no setup yet: build from source ([Linux](#linux)) and play with the GTK launcher.
+Linux and Windows players of the same release play together.
+
 ## How it works
 
 ```text
@@ -190,7 +193,7 @@ port and shadPS4 players cannot be in one party.
 
 ## Build from source
 
-Windows only for now. Prerequisites:
+Windows below; Linux in [Linux](#linux). Prerequisites on Windows:
 
 - the port: [MSYS2](https://www.msys2.org) with the CLANG64 packages listed in
   [bbport/packaging/windows/README.md](bbport/packaging/windows/README.md), and a python.org
@@ -227,6 +230,46 @@ To play a build of your own, run `bash build.sh` and `bash packaging/windows/pac
 The website builds on its own with Node 22: `npm ci` and `npm run check` in `website/` (format,
 lint, type check, tests and the production build); `tools/ci-check.ps1 -Component website` runs
 the same. Deploying it is described in [website/README.md](website/README.md).
+
+### Linux
+
+The port runs natively (x86-64, Vulkan 1.3; tested on CachyOS with an AMD GPU). Arch Linux and
+derivatives:
+
+```bash
+sudo pacman -S --needed base-devel git clang cmake ninja pkgconf python glslang sdl3 \
+    vulkan-headers vulkan-icd-loader fmt boost robin-map zydis xxhash libx11 ffmpeg protobuf \
+    nlohmann-json openssl zlib miniz python-gobject gtk4 libadwaita qt6-base qt6-httpserver
+```
+
+robin-map, zydis, VMA and xbyak fall back to the emulator's submodules when no system package is
+found; the server takes the system's protobuf when `server/externals/protobuf` is not checked out
+(`-DSHADNET_SYSTEM_PROTOBUF=ON` forces it).
+
+```bash
+git clone https://github.com/lKaniel/bloodborne-server.git && cd bloodborne-server
+git config submodule.emulator/externals/mesa-kosmickrisp.update none   # macOS-only
+git submodule update --init --recursive
+(cd bbport && bash build.sh)                                    # out/bb-probe, out/gpu/libbbgpu.so
+(cd server && cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build)
+```
+
+A git clone is needed: a source archive has no submodules, and the build check on join takes the
+release from the nearest `v*` tag (a release's `VERSION.txt` on Windows).
+
+Play with the launcher, `bash bbport/launcher/bb-launcher.sh` (`launcher/install-desktop.sh` adds
+it to the app menu): its **Co-op** page takes the game folder and the host's IP; with those set,
+both **Play** (top bar) and **Play co-op** start co-op. Without the window, `bbport/coop-run.sh`:
+
+| Command | What it does |
+|---|---|
+| `bbport/coop-run.sh --host <IP> --game <CUSA03173 folder> [--update <1.09 folder>]` | first start: prepares the game view and the co-op event files (`tools/re/party_boss_events.py`), then plays; later starts need no options |
+| `bbport/coop-run.sh server --listen <address>` | the host's co-op server (`server/build/shadnet`); open UDP 31314 and TCP 31315/20443 |
+| `bbport/coop-run.sh --help` | every option (`bbport/launcher/bbport_coop_cli.py`) |
+
+Settings, saves and logs live in `~/.local/share/bloodborne-coop` (`BB_COOP_DIR`), apart from the
+solo port's `bbport/user`. Tests: `python3 -m unittest discover -s bbport/tests -p 'test_*coop*.py'`
+and `python3 -m unittest discover -s tools/re/tests`.
 
 ## Make a release
 
