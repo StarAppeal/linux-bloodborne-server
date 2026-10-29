@@ -84,9 +84,13 @@ bool HostRegion(uintptr_t address, Region& found) {
 }
 #else
 // /proc/self/maps, read again when an address is not in it or it is older than a moment: the
-// co-op code asks about stack words in bursts (a call chain), one region after another.
+// co-op code asks about stack words in bursts (a call chain), one region after another. A miss
+// reads it again at most every MissRereadMs: the world walks (ForgetDownedTargets, every frame
+// while anyone is down) probe stale pointers that are in no mapping, and a full read per probe
+// (the file's thousands of lines, the kernel's mmap lock) cost frames.
 bool HostRegion(uintptr_t address, Region& found) {
     using Clock = std::chrono::steady_clock;
+    constexpr auto MissRereadMs = std::chrono::milliseconds{50};
     static std::mutex mutex;
     static std::vector<Region> regions;
     static Clock::time_point read_at;
@@ -94,6 +98,9 @@ bool HostRegion(uintptr_t address, Region& found) {
     const auto now = Clock::now();
     if (now - read_at < std::chrono::milliseconds{250} && FindIn(regions, address, found)) {
         return true;
+    }
+    if (now - read_at < MissRereadMs) {
+        return false; // read a moment ago and not in it
     }
     regions.clear();
     read_at = now;
