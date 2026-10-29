@@ -126,8 +126,8 @@ Requirements: Windows 10 (1903 or later) or 11, 64-bit, and a Vulkan 1.3 graphic
 current driver. Everything else is in the setup. Tested with CUSA03173 (the European Game of the
 Year edition) at 1.09; all players in a party should use the same edition.
 
-On Linux there is no setup yet: build from source ([Linux](#linux)) and play with the GTK launcher.
-Linux and Windows players of the same release play together.
+On Linux there is no download yet: build from source or build an AppImage ([Linux](#linux)) and
+play with the GTK launcher. Linux and Windows players of the same release play together.
 
 ## How it works
 
@@ -270,6 +270,22 @@ both **Play** (top bar) and **Play co-op** start co-op. Without the window, `bbp
 Settings, saves and logs live in `~/.local/share/bloodborne-coop` (`BB_COOP_DIR`), apart from the
 solo port's `bbport/user`. Tests: `python3 -m unittest discover -s bbport/tests -p 'test_*coop*.py'`
 and `python3 -m unittest discover -s tools/re/tests`.
+
+An AppImage for other Linux PCs (and the Steam Deck) bundles the port, the launcher and the co-op
+files with their libraries. It needs [Nix](https://nixos.org) (Arch: `pacman -S nix`, the
+`nix-daemon` service, `experimental-features = nix-command flakes` and a `nixpkgs` channel):
+
+```bash
+cd bbport
+nix-shell --pure shell.nix --run "bash build.sh"   # Clang and the libraries from /nix/store
+nix-shell shell.nix --run "bash packaging/appimage.sh"
+```
+
+`dist/Bloodborne-bbport-x86_64.AppImage` opens the launcher. It downloads the FSR 4 assets when
+they are missing and writes the release version (`BB_RELEASE_VERSION`, else the nearest `v*` tag)
+into its `VERSION.txt`. Its settings are in `~/.config/bbport-launcher-gtk` (as `bb-launcher.sh`'s)
+and its data in `~/.local/share/bbport-coop`, apart from the upstream bbport AppImage's folders. The
+AppImage has no co-op server: the host runs shadNet ([server/README.md](server/README.md)).
 
 ## Make a release
 
