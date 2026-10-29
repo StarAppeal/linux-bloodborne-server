@@ -657,11 +657,18 @@ void NoteHandOutSent(const std::string& member, std::span<u8> payload, bool writ
         std::memcpy(&count, payload.data(), 4);
     }
     if (writable && count <= 0x800 && payload.size() == 4 + size_t{count} * 4) {
+        // An empty hand-out's vectors have a null data(), and memcpy with it is UB even for 0
+        // bytes: glibc declares memcpy nonnull, so Clang took the vector as never empty, allocated
+        // 0 bytes and cleared 2^64 - 4 of them (the heap broke, the free aborted).
         std::vector<u32> entries(count);
-        std::memcpy(entries.data(), payload.data() + 4, size_t{count} * 4);
+        if (count != 0) {
+            std::memcpy(entries.data(), payload.data() + 4, size_t{count} * 4);
+        }
         static HandOutSettle settle;
         const std::vector<u32> settled = settle.Filter(member, entries, now_ms);
-        std::memcpy(payload.data() + 4, settled.data(), size_t{count} * 4);
+        if (count != 0) {
+            std::memcpy(payload.data() + 4, settled.data(), size_t{count} * 4);
+        }
         const auto held = static_cast<u32>(std::ranges::count(settled, HandOutHeldEntry));
         static std::map<std::string, u32> held_last;
         static u32 held_logged = 0;
