@@ -350,6 +350,8 @@ static void fault(int sig, siginfo_t *info, void *context) {
             snprintf(line, sizeof(line), "  #%d %p\n", i, frames[i]);
         ssize_t written_=write(2, line, strlen(line)); (void)written_;
     }
+    /* user/log/crash-*.txt, as on Windows; after the stderr lines, which cannot hang. */
+    bbcoop_crash_signal(sig, info, context);
     _exit(128 + sig);
 }
 #endif

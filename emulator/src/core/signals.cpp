@@ -131,6 +131,8 @@ void SignalHandler(int sig, siginfo_t* info, void* raw_context) {
                                                     reinterpret_cast<ucontext_t*>(raw_context));
                 return;
             }
+            const Bloodborne::CrashSignal crash{sig, info, raw_context};
+            Bloodborne::WriteCrashReport(const_cast<Bloodborne::CrashSignal*>(&crash));
             UNREACHABLE_MSG("Unhandled access violation at code address {}: {} address {}",
                             fmt::ptr(code_address), is_write ? "Write to" : "Read from",
                             fmt::ptr(info->si_addr));
@@ -144,6 +146,8 @@ void SignalHandler(int sig, siginfo_t* info, void* raw_context) {
                                                     reinterpret_cast<ucontext_t*>(raw_context));
                 return;
             }
+            const Bloodborne::CrashSignal crash{sig, info, raw_context};
+            Bloodborne::WriteCrashReport(const_cast<Bloodborne::CrashSignal*>(&crash));
             UNREACHABLE_MSG("Unhandled illegal instruction at code address {}: {}",
                             fmt::ptr(code_address), DisassembleInstruction(code_address));
         }

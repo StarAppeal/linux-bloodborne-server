@@ -144,6 +144,11 @@ extern "C" void bbcoop_crash_report(void* exception_pointers) {
     Core::Bloodborne::WriteCrashReport(exception_pointers);
 }
 
+extern "C" void bbcoop_crash_signal(int signal, void* info, void* context) {
+    Core::Bloodborne::CrashSignal crash{signal, info, context};
+    Core::Bloodborne::WriteCrashReport(&crash);
+}
+
 extern "C" void bbcoop_window_closing(void) {
     Core::Bloodborne::ReportFreezeOnClose();
 }

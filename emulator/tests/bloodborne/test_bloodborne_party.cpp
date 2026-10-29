@@ -4,6 +4,12 @@
 #include <string>
 
 #include <gtest/gtest.h>
+#ifdef __linux__
+#include <atomic>
+#include <thread>
+#include <sys/mman.h>
+#include <unistd.h>
+#endif
 
 #include "core/bloodborne_party.h"
 #include "core/bloodborne_write_watch.h"
@@ -117,6 +123,69 @@ TEST(BloodborneWriteWatch, TheStackScanStaysOnTheStack) {
     EXPECT_EQ(StackSlotsToScan(7, 256), 0u);
     EXPECT_EQ(StackSlotsToScan(0, 256), 0u);
 }
+
+#ifdef __linux__
+// The readable bytes the scan gets: up to the first page it cannot read, as on Windows.
+TEST(BloodborneWriteWatch, ReadableBytesStopAtTheFirstUnreadablePage) {
+    using Core::Bloodborne::ReadableBytesAt;
+    const size_t page = static_cast<size_t>(sysconf(_SC_PAGESIZE));
+    // Two readable pages, then one that cannot be read (a stack's guard page).
+    auto* base = static_cast<unsigned char*>(
+        mmap(nullptr, 3 * page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+    ASSERT_NE(base, MAP_FAILED);
+    ASSERT_EQ(mprotect(base + 2 * page, page, PROT_NONE), 0);
+    const u64 at = reinterpret_cast<u64>(base);
+    EXPECT_EQ(ReadableBytesAt(at + 100, 16 * page), 2 * page - 100);
+    EXPECT_EQ(ReadableBytesAt(at + 100, 256 * 8), 256u * 8); // `most` caps it
+    EXPECT_EQ(ReadableBytesAt(at + 2 * page - 8, 256 * 8), 8u);
+    EXPECT_EQ(ReadableBytesAt(at + 2 * page, 256 * 8), 0u);
+    // Read-only counts; a page unmapped after it ends the run as the guard page does.
+    ASSERT_EQ(mprotect(base, page, PROT_READ), 0);
+    EXPECT_EQ(ReadableBytesAt(at, page), page);
+    ASSERT_EQ(munmap(base + page, 2 * page), 0);
+    EXPECT_EQ(ReadableBytesAt(at, 4 * page), page);
+    ASSERT_EQ(munmap(base, page), 0);
+    EXPECT_EQ(ReadableBytesAt(at, 256 * 8), 0u);
+    EXPECT_EQ(ReadableBytesAt(0, 256 * 8), 0u);
+}
+
+namespace {
+std::atomic<int> watched_hits{0};
+std::atomic<u64> watched_rip{0}, watched_rsp{0};
+void CountWatchedWrite(u64 rip, u64 rsp) {
+    watched_rip = rip;
+    watched_rsp = rsp;
+    ++watched_hits;
+}
+} // namespace
+
+// The write watch fires on the writing thread after each write to the byte, and only for that
+// byte; the calling thread is left out, as on Windows. Skipped where perf events are refused
+// (perf_event_paranoid 3, containers).
+TEST(BloodborneWriteWatch, WritesToTheWatchedByteReachTheObserver) {
+    using Core::Bloodborne::WatchByteWrites;
+    alignas(64) static volatile unsigned char bytes[64]{};
+    std::atomic<int> step{0};
+    std::thread writer([&] {
+        while (step.load() == 0) {
+        }
+        bytes[1] = 1; // not watched
+        bytes[0] = 7;
+        bytes[0] = 8;
+    });
+    if (!WatchByteWrites(reinterpret_cast<u64>(&bytes[0]), CountWatchedWrite)) {
+        step = 1;
+        writer.join();
+        GTEST_SKIP() << "perf_event hardware breakpoints unavailable";
+    }
+    bytes[0] = 1; // this thread is not armed
+    step = 1;
+    writer.join();
+    EXPECT_EQ(watched_hits.load(), 2);
+    EXPECT_NE(watched_rip.load(), 0u);
+    EXPECT_NE(watched_rsp.load(), 0u);
+}
+#endif
 
 // Kaniel's playtest 2026-10-16: krolebord's copy stayed by the Cleric Beast lantern after his Dream
 // trip: Lisara stood 16 m away and kept it shown. Each member vouches for one character only.

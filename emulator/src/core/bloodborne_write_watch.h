@@ -14,8 +14,10 @@ namespace Core::Bloodborne {
 using WriteObserver = void (*)(u64 rip, u64 rsp);
 
 // A hardware write watch (debug register 0) on one byte, armed on every thread of the process
-// that exists now; call again to arm threads started since. Diagnostics only. False off Windows
-// or when no thread could be armed.
+// that exists now but the calling one; call again to arm threads started since. Diagnostics only.
+// Windows: debug register 0; Linux x86-64: a perf_event hardware breakpoint per thread, the
+// observer called from a signal handler (keep it async-signal-safe). False elsewhere or when no
+// thread could be armed.
 bool WatchByteWrites(u64 address, WriteObserver observer);
 
 // Kaniel's playtest 2026-10-16: krolebord's game crashed reading the stack past its end in a

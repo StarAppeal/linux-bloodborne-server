@@ -22,6 +22,9 @@ void bbcoop_install(unsigned char *image, uint64_t eboot_size, void *code, uint6
 /* A fatal exception (Windows: its EXCEPTION_POINTERS) is ending the process: the crash report
  * (user/log/crash-*.txt and .dmp). */
 void bbcoop_crash_report(void *exception_pointers);
+/* The same from a POSIX fault handler: the signal, its siginfo_t* and ucontext_t*
+ * (user/log/crash-*.txt). */
+void bbcoop_crash_signal(int signal, void *info, void *context);
 
 /* The window is closing: a game whose thread has stopped ticking writes a freeze report
  * (user/log/freeze-*.txt and .dmp) first. */
