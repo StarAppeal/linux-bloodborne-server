@@ -92,7 +92,7 @@ enum { CAM_PITCH=0x140, CAM_YAW=0x144, CAM_TARGET_PITCH=0x150, CAM_PITCH_MAX=0x1
        CAM_PIVOT=0xd0, CAM_DRAWN=0x100 };
 static float *field(unsigned char *camera, unsigned offset) { return (float *)(camera+offset); }
 /* On the game's camera thread, from the stub (System V ABI, like the game). */
-static __attribute__((unused)) ABI float camhook_frame(unsigned char *camera, float pitch_in) {
+static ABI float camhook_frame(unsigned char *camera, float pitch_in) {
     const uint64_t taken=__atomic_exchange_n(delta,0,__ATOMIC_ACQ_REL);
     float turn[2];
     memcpy(turn,&taken,8);
@@ -132,14 +132,7 @@ static unsigned char *near_page(uintptr_t site) {
     }
     return NULL;
 }
-/* The camera's automatic turning while the character moves ("Disable Camera Auto Rotation via
- * Movement", Imedved and Kyo, patches/Bloodborne.xml): the four stores `vmovss [r13+offset],xmm`
- * (camera object offsets +0x144 twice, +0x130 and +0x294) that the walking camera turns itself with, nopped;
- * only +0x144 is the yaw this file turns. A mouse camera turns only by the mouse (or the stick). */
-static const struct { uint32_t at; unsigned char original[9]; } auto_rotation[]={
-    {0x143c6e8,{0xc4,0xc1,0x7a,0x11,0x85,0x44,0x01,0x00,0x00}}, {0x143c984,{0xc4,0xc1,0x7a,0x11,0x8d,0x30,0x01,0x00,0x00}},
-    {0x143dde6,{0xc4,0xc1,0x7a,0x11,0x85,0x94,0x02,0x00,0x00}}, {0x143c870,{0xc4,0xc1,0x7a,0x11,0xad,0x44,0x01,0x00,0x00}},
-};
+static void free_pages(unsigned char *page) { VirtualFree(page,0,MEM_RELEASE); }
 static int write_code(unsigned char *at, const void *bytes, size_t size) {
     DWORD old;
     if (!VirtualProtect(at,size,PAGE_EXECUTE_READWRITE,&old)) return 0;
@@ -148,6 +141,57 @@ static int write_code(unsigned char *at, const void *bytes, size_t size) {
     FlushInstructionCache(GetCurrentProcess(),at,size);
     return 1;
 }
+/* The stub's page executable and read-only; the data page stays read/write. */
+static int seal_stub(unsigned char *page) {
+    DWORD old;
+    if (!VirtualProtect(page,STUB_DATA,PAGE_EXECUTE_READ,&old)) return 0;
+    FlushInstructionCache(GetCurrentProcess(),page,STUB_DATA);
+    return 1;
+}
+static unsigned long last_error(void) { return (unsigned long)GetLastError(); }
+#else
+#include <errno.h>
+#include <sys/mman.h>
+#include <unistd.h>
+/* As on Windows, at 64 KiB steps around the site; MAP_FIXED_NOREPLACE keeps the guest's mappings
+ * (and an older kernel that only takes the address as a hint is caught by the address check). */
+static unsigned char *near_page(uintptr_t site) {
+    for (int64_t step=1;step<0x7000;++step) for (int dir=-1;dir<=1;dir+=2) {
+        const uintptr_t at=((site&~(uintptr_t)0xffff)+(uintptr_t)(dir*step*0x10000));
+        void *p=mmap((void *)at,2*STUB_DATA,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED_NOREPLACE,-1,0);
+        if (p==MAP_FAILED) continue;
+        if ((uintptr_t)p==at) return p;
+        munmap(p,2*STUB_DATA);
+    }
+    return NULL;
+}
+static void free_pages(unsigned char *page) { munmap(page,2*STUB_DATA); }
+/* The game's code is mapped read/execute (probe.c); its pages are made writable for the copy only. */
+static int write_code(unsigned char *at, const void *bytes, size_t size) {
+    const uintptr_t page=(uintptr_t)sysconf(_SC_PAGESIZE);
+    unsigned char *first=(unsigned char *)((uintptr_t)at&~(page-1));
+    const size_t span=(size_t)(at+size-first);
+    if (mprotect(first,span,PROT_READ|PROT_WRITE|PROT_EXEC)) return 0;
+    memcpy(at,bytes,size);
+    mprotect(first,span,PROT_READ|PROT_EXEC);
+    __builtin___clear_cache((char *)at,(char *)at+size);
+    return 1;
+}
+static int seal_stub(unsigned char *page) {
+    if (mprotect(page,STUB_DATA,PROT_READ|PROT_EXEC)) return 0;
+    __builtin___clear_cache((char *)page,(char *)page+STUB_DATA);
+    return 1;
+}
+static unsigned long last_error(void) { return (unsigned long)errno; }
+#endif
+/* The camera's automatic turning while the character moves ("Disable Camera Auto Rotation via
+ * Movement", Imedved and Kyo, patches/Bloodborne.xml): the four stores `vmovss [r13+offset],xmm`
+ * (camera object offsets +0x144 twice, +0x130 and +0x294) that the walking camera turns itself with, nopped;
+ * only +0x144 is the yaw this file turns. A mouse camera turns only by the mouse (or the stick). */
+static const struct { uint32_t at; unsigned char original[9]; } auto_rotation[]={
+    {0x143c6e8,{0xc4,0xc1,0x7a,0x11,0x85,0x44,0x01,0x00,0x00}}, {0x143c984,{0xc4,0xc1,0x7a,0x11,0x8d,0x30,0x01,0x00,0x00}},
+    {0x143dde6,{0xc4,0xc1,0x7a,0x11,0x85,0x94,0x02,0x00,0x00}}, {0x143c870,{0xc4,0xc1,0x7a,0x11,0xad,0x44,0x01,0x00,0x00}},
+};
 static void disable_auto_rotation(void) {
     static const unsigned char nops[9]={0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90};
     int done=0;
@@ -182,20 +226,18 @@ int runtime_camhook_install(int no_auto_rotation, const char **why) {
     memcpy(page+STUB_FRAME,&frame,8);
     memcpy(page+STUB_BACK,&back,8);
     const int64_t rel=(int64_t)((uintptr_t)page-((uintptr_t)site+5));
-    if (rel<INT32_MIN || rel>INT32_MAX) { VirtualFree(page,0,MEM_RELEASE); *why="no memory near the game code"; return 0; }
+    if (rel<INT32_MIN || rel>INT32_MAX) { free_pages(page); *why="no memory near the game code"; return 0; }
     const int32_t rel32=(int32_t)rel;
-    DWORD old;
-    if (!VirtualProtect(page,STUB_DATA,PAGE_EXECUTE_READ,&old)) { /* the data page stays read/write */
-        VirtualFree(page,0,MEM_RELEASE);
+    if (!seal_stub(page)) {
+        free_pages(page);
         *why="the camera stub cannot be made executable";
         return 0;
     }
-    FlushInstructionCache(GetCurrentProcess(),page,STUB_DATA);
     unsigned char jump[6]={0xe9,0,0,0,0,0x90};
     memcpy(jump+1,&rel32,4);
     if (!write_code(site,jump,6)) {
-        VirtualFree(page,0,MEM_RELEASE);
-        snprintf(reason,sizeof(reason),"the game code cannot be written (error %lu)",(unsigned long)GetLastError());
+        free_pages(page);
+        snprintf(reason,sizeof(reason),"the game code cannot be written (error %lu)",last_error());
         *why=reason;
         return 0;
     }
@@ -204,13 +246,6 @@ int runtime_camhook_install(int no_auto_rotation, const char **why) {
     if (no_auto_rotation) disable_auto_rotation();
     return 1;
 }
-#else
-int runtime_camhook_install(int no_auto_rotation, const char **why) {
-    (void)no_auto_rotation;
-    *why="the camera hook is Windows only";
-    return 0;
-}
-#endif
 
 int runtime_camhook_active(void) { return delta!=NULL; }
 
