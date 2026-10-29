@@ -68,6 +68,10 @@ int main(int argc, char** argv) {
 
     Info info{};
     info.hw_stage=HwStage::Compute; info.sw_stage=SwStage::Compute;
+    // Bloodborne's buffer copy shader (games/bloodborne.cpp), which the backend recognizes through
+    // Profile::buffer_copy_shader_hash (set below, as vk_pipeline_cache.cpp does from the game's
+    // profile): its paged stores write the guest bytes as well.
+    constexpr u64 BufferCopyShaderHash=0xfefebf9f;
     info.pgm_hash=BufferCopyShaderHash; info.uses_paged_buffers=true;
     for (u32 i=0;i<3;++i) {
         BufferResource buffer{};
@@ -94,6 +98,7 @@ int main(int argc, char** argv) {
     runtime.hw.cs.workgroup_size={1,1,1};
     Profile profile{}; profile.supported_spirv=0x00010600; profile.support_int64=true;
     profile.paged_buffers=true; profile.sparse_page_shift=16;
+    profile.buffer_copy_shader_hash=BufferCopyShaderHash;
     Backend::Bindings bindings{};
     const auto code=Backend::SPIRV::EmitSPIRV(profile,runtime,program,bindings);
     if (argc>1) {

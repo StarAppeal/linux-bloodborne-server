@@ -62,6 +62,12 @@ mkdir -p pgo
 # Submodules (git clone --recursive, or: git submodule update --init) and this port's changes
 # to FSR-Vulkan (gpu/patches/fsr-vulkan), applied to its working tree once.
 if [[ ! -f gpu/third_party/fsr-vulkan/CMakeLists.txt || ! -f gpu/third_party/imgui/imgui.h ]]; then
+    if ! git rev-parse --git-dir >/dev/null 2>&1; then
+        echo 'Submodules missing and this is no git checkout (a source tarball?): clone with' >&2
+        echo '  git clone --recurse-submodules https://github.com/lKaniel/bloodborne-server' >&2
+        echo 'or copy gpu/third_party/* and third_party/* from such a clone.' >&2
+        exit 1
+    fi
     git submodule update --init --recursive
 fi
 for patch in gpu/patches/fsr-vulkan/*.patch; do

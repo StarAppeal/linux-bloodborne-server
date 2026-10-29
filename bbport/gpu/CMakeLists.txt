@@ -51,11 +51,18 @@ if (NOT magic_enum_FOUND)
     target_include_directories(magic_enum INTERFACE third_party/magic_enum/include
                                                     third_party/magic_enum/include/magic_enum)
 endif()
-find_package(tsl-robin-map REQUIRED)
+# Without the system package (Arch: robin-map), the emulator's submodule.
+find_package(tsl-robin-map QUIET)
+if (NOT tsl-robin-map_FOUND)
+    add_subdirectory(../../emulator/externals/robin-map ${CMAKE_CURRENT_BINARY_DIR}/robin-map
+                     EXCLUDE_FROM_ALL)
+endif()
 find_package(VulkanMemoryAllocator CONFIG QUIET)
 if (NOT VulkanMemoryAllocator_FOUND)
-    # MSYS2 ships the header (include/vma/vk_mem_alloc.h) without a CMake package.
-    find_path(VMA_INCLUDE_DIR vk_mem_alloc.h PATH_SUFFIXES vma REQUIRED)
+    # MSYS2 ships the header (include/vma/vk_mem_alloc.h) without a CMake package; Arch has it
+    # only in the AUR, so the emulator's submodule (emulator/externals/vma) is the last resort.
+    find_path(VMA_INCLUDE_DIR vk_mem_alloc.h PATH_SUFFIXES vma
+              HINTS ${CMAKE_CURRENT_SOURCE_DIR}/../../emulator/externals/vma/include REQUIRED)
     add_library(VulkanMemoryAllocator INTERFACE)
     add_library(GPUOpen::VulkanMemoryAllocator ALIAS VulkanMemoryAllocator)
     target_include_directories(VulkanMemoryAllocator INTERFACE ${VMA_INCLUDE_DIR})
@@ -77,7 +84,15 @@ if (NOT miniz_FOUND)
     unset(CMAKE_POLICY_VERSION_MINIMUM)
     add_library(miniz::miniz ALIAS miniz)
 endif()
-find_package(Zydis REQUIRED)
+# Without the system package (Arch: zydis), the emulator's submodule (with zycore).
+find_package(Zydis QUIET)
+if (NOT Zydis_FOUND)
+    set(ZYDIS_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+    set(ZYDIS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(ZYDIS_BUILD_SHARED_LIB OFF CACHE BOOL "" FORCE)
+    add_subdirectory(../../emulator/externals/zydis ${CMAKE_CURRENT_BINARY_DIR}/zydis
+                     EXCLUDE_FROM_ALL)
+endif()
 find_program(GLSLANG_COMPILER NAMES glslang glslangValidator REQUIRED)
 
 set(SIRIT_USE_SYSTEM_SPIRV_HEADERS OFF CACHE BOOL "" FORCE)
@@ -343,6 +358,8 @@ endif()
 target_link_libraries(bbgpu PRIVATE ffx-vulkan::portable ffx-vulkan::fsr4-v07-vulkan)
 target_link_libraries(bbgpu PUBLIC Vulkan::Headers fmt::fmt Boost::headers magic_enum::magic_enum
     tsl::robin_map GPUOpen::VulkanMemoryAllocator PkgConfig::XXHASH PkgConfig::SDL3 PkgConfig::FFMPEG miniz::miniz Zydis::Zydis sirit)
+# xbyak (header-only) from the submodule everywhere: MSYS2 and Arch have no package (AUR only).
+target_include_directories(bbgpu PRIVATE third_party/xbyak)
 if (WIN32)
     # Guest code is entered with the System V ABI; NOMINMAX/WIN32_LEAN_AND_MEAN keep
     # <windows.h> out of the way of std::min/max and the Vulkan/SDL headers.
@@ -350,7 +367,6 @@ if (WIN32)
     target_compile_options(bbgpu PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/shim/bb_win_compat.h)
     # <sys/uio.h> (process_vm_readv), <dlfcn.h> and <execinfo.h> for the diagnostics.
     target_include_directories(bbgpu PRIVATE shim/win_posix)
-    target_include_directories(bbgpu PRIVATE third_party/xbyak)
     target_link_libraries(bbgpu PUBLIC Vulkan::Vulkan ws2_32 bcrypt ntdll synchronization winmm)
 else()
     target_link_libraries(bbgpu PUBLIC PkgConfig::X11)
@@ -386,6 +402,12 @@ if (WIN32)
 endif()
 
 # Explicit test targets; neither launches the game nor needs a Vulkan device.
+if (NOT WIN32)
+    # libbbgpu.so leaves the runtime's functions (runtime_*) to bb-probe, which exports them
+    # (-rdynamic); the tests and tools below link the library without bb-probe and never call
+    # them. On Windows bbgpu is static, so only the objects a test uses are linked at all.
+    add_link_options(-Wl,--allow-shlib-undefined)
+endif()
 if (WIN32)
     add_executable(file-windows-test EXCLUDE_FROM_ALL ../tests/test_file_windows.c ../src/compat_win.c)
     set_target_properties(file-windows-test PROPERTIES C_STANDARD 11 C_EXTENSIONS OFF)
@@ -520,6 +542,14 @@ add_executable(depth-stencil-test EXCLUDE_FROM_ALL ../tests/test_depth_stencil.c
 target_compile_options(depth-stencil-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
 target_include_directories(depth-stencil-test PRIVATE shim shadps4)
 target_link_libraries(depth-stencil-test PRIVATE bbgpu)
+if (NOT WIN32)
+    # The shared library's runtime data (runtime_fault_recover, a TLS variable, and the toggles)
+    # is bound when it loads, so these tests need the stand-ins the shader tests link; the static
+    # Windows library only pulls in what a test uses.
+    foreach(test cache-storage-test pixel-format-test vertex-formats-test depth-stencil-test)
+        target_sources(${test} PRIVATE ../tests/test_gpu_runtime_stubs.cpp)
+    endforeach()
+endif()
 add_executable(ui-composition-test EXCLUDE_FROM_ALL ../tests/test_ui_composition.cpp)
 target_compile_options(ui-composition-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
 target_include_directories(ui-composition-test PRIVATE ..)

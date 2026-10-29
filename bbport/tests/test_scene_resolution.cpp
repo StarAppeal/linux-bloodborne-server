@@ -25,14 +25,17 @@ int main() {
     dispatch.init(instance.GetDevice());
     Scheduler scheduler(instance);
     Runtime runtime(instance, scheduler);
-    Common::SlotVector<VideoCore::ImageView> views;
-    Common::SlotVector<VideoCore::Image> images;
+    // A capacity, as the texture cache gives its own (slot_images{MAX_IMAGES}).
+    Common::SlotVector<VideoCore::ImageView> views{16};
+    Common::SlotVector<VideoCore::Image> images{16};
     VideoCore::ImageInfo ci;
     ci.size = {1920,1080,1};
     ci.resources = {1,1};
     ci.type = AmdGpu::ImageType::Color2D;
     ci.pixel_format = vk::Format::eR8G8B8A8Unorm;
     ci.num_bits = 32;
+    ci.num_samples = 1; // no default in ImageInfo
+
     const auto color_id = images.Insert(instance, runtime, views, ci);
     auto di = ci;
     di.pixel_format = vk::Format::eD32SfloatS8Uint;

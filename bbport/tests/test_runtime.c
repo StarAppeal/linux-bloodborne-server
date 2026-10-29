@@ -12,6 +12,7 @@ void runtime_restart(void) { abort(); }
 #include <stdlib.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <sys/mman.h>
 #include <time.h>
 
 typedef int (ABI *Register)(GuestCallback);
@@ -433,6 +434,11 @@ int main(int argc,char **argv) {
     if (argc>1 && !strcmp(argv[1],"--rwlock-lifecycle")) { rw_lifecycle(); return 0; }
     if (argc>1 && !strcmp(argv[1],"--rwlock-concurrency")) { rw_concurrency(); return 0; }
     if (argc>1 && !strcmp(argv[1],"--rwlock-timeouts")) { rw_timeouts(); return 0; }
+    /* Thread records come from low memory (40-bit handles) only once the game's image is placed
+     * at its start, as test_runtime_windows.c does: a stand-in image there first. */
+    void *image=runtime_low_map(65536,PROT_READ|PROT_WRITE);
+    assert((uintptr_t)image==UINT64_C(0x800000000));
+    runtime_image_start=(uintptr_t)image;
     libc_support(); posix_mutexes(); wall_time(); exit_handlers(); guards(); mutexes(); direct_memory(); write_traps(); memory_primitives();
     rw_lifecycle(); rw_concurrency(); rw_timeouts();
     puts("PASS: callback lifecycle, guard ABI, mutex errors, shared direct memory, memory primitives, resolver scope");

@@ -337,7 +337,7 @@ void runtime_thread_cpu_report(void) {
     const long ticks=sysconf(_SC_CLK_TCK);
     for (struct dirent *e; (e=readdir(tasks)) && count<MaxThreads;) {
         if (e->d_name[0]<'0' || e->d_name[0]>'9') continue;
-        char path[64], line[512];
+        char path[320], line[512];
         snprintf(path,sizeof(path),"/proc/self/task/%s/stat",e->d_name);
         FILE *f=fopen(path,"r");
         if (!f) continue;

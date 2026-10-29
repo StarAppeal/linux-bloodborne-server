@@ -460,6 +460,13 @@ std::optional<std::array<s32, 4>> OwnOutfit() {
 // party HUD, never wants it).
 std::atomic<bool> offscreen_wanted{false};
 
+// The player's PlayerGameData, or 0 (outside the party HUD's block: OwnCharacterName uses it in
+// every build).
+u64 PlayerGameDataNow() {
+    const u64 man = ReadValue<u64>(image_base + GameDataManPointerOffset, 0);
+    return man >= 0x10000 ? ReadValue<u64>(man, 8) : 0;
+}
+
 #ifdef BLOODBORNE_PARTY_HUD
 // The status page's body renderer (CSMenuAsmModelRend, vtable 0x53A4F00) built off-screen, so a
 // character has its portrait without opening the status page (Kaniel 2026-10-13). It is a task of
@@ -487,11 +494,6 @@ struct OffscreenModel {
     s32 logged_step = -2;
 };
 OffscreenModel offscreen;
-
-u64 PlayerGameDataNow() {
-    const u64 man = ReadValue<u64>(image_base + GameDataManPointerOffset, 0);
-    return man >= 0x10000 ? ReadValue<u64>(man, 8) : 0;
-}
 
 // Allocates and fills the renderer's request as the status window does (0x1B35963): the face
 // (PlayerGameData +0x4AC, 0xF0 bytes) at +0x568, the gender (+0xCA) at +0x658, the armour (its

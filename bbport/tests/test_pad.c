@@ -167,28 +167,73 @@ int main(void) {
     assert(id!=0);
     SDL_Joystick *joystick=SDL_OpenJoystick(id);
     assert(joystick);
+    /* The SDL touchpad (Kaniel 2026-10-18/24, runtime_pad.c map_hold_step): while it is held the
+     * game sees neither its button nor its fingers; a hold of MAP_HOLD_US opens the port's map; a
+     * lone short tap reaches the game TOUCH_DOUBLE_US after it is let go, as a click on the side it
+     * was pressed; two taps within that time are a team ping, and the game sees neither. */
+    const int map_before=map_opened, pings_before=pings_asked;
+    /* Two fingers, the right one first, and the touchpad pressed: held, nothing reaches the game. */
     assert(SDL_SetJoystickVirtualTouchpad(joystick,0,0,true,0.75f,0.5f,1.0f));
     assert(SDL_SetJoystickVirtualTouchpad(joystick,0,1,true,0.25f,1.0f,1.0f));
     assert(SDL_SetJoystickVirtualButton(joystick,SDL_GAMEPAD_BUTTON_TOUCHPAD,true));
     SDL_UpdateJoysticks();
     SDL_UpdateGamepads();
     assert(pad_read_state(1,&data)==0);
-    assert(gamepad && data.touch_count==2 && (data.buttons & BTN_TOUCHPAD));
-    assert(data.touches[0].x==1439 && data.touches[0].y==471 && data.touches[0].id==2);
-    assert(data.touches[1].x==480 && data.touches[1].y==942 && data.touches[1].id==3);
+    assert(gamepad && data.touch_count==0 && !(data.buttons & BTN_TOUCHPAD));
     capture=1;
     assert(pad_read_state(1,&data)==0 && data.touch_count==0 && data.buttons==0);
     capture=0;
+    /* Held past MAP_HOLD_US: the map opens once, and the game still sees no touchpad. */
+    usleep((MAP_HOLD_US+20000u));
+    assert(pad_read_state(1,&data)==0 && data.touch_count==0 && !(data.buttons & BTN_TOUCHPAD));
+    assert(map_opened==map_before+1);
+    assert(pad_read_state(1,&data)==0 && map_opened==map_before+1);
     assert(SDL_SetJoystickVirtualTouchpad(joystick,0,0,false,0,0,0));
     assert(SDL_SetJoystickVirtualTouchpad(joystick,0,1,false,0,0,0));
-    SDL_UpdateJoysticks();
-    SDL_UpdateGamepads();
-    assert(pad_read_state(1,&data)==0 && data.touch_count==1 && data.touches[0].x==480);
     assert(SDL_SetJoystickVirtualButton(joystick,SDL_GAMEPAD_BUTTON_TOUCHPAD,false));
     SDL_UpdateJoysticks();
     SDL_UpdateGamepads();
-    /* Buttons still held when the overlay stopped capturing stay hidden until released. */
-    assert(pad_read_state(1,&data)==0 && data.buttons==0);
+    /* Let go after the map opened: no click for the game, then or later. */
+    assert(pad_read_state(1,&data)==0 && data.buttons==0 && data.touch_count==0);
+    usleep(TOUCH_DOUBLE_US+20000u);
+    assert(pad_read_state(1,&data)==0 && data.buttons==0 && data.touch_count==0);
+
+    /* A lone short tap on the right half: nothing while it may still become a double tap, then
+     * the game's click on that side. */
+    assert(SDL_SetJoystickVirtualTouchpad(joystick,0,0,true,0.75f,0.5f,1.0f));
+    assert(SDL_SetJoystickVirtualButton(joystick,SDL_GAMEPAD_BUTTON_TOUCHPAD,true));
+    SDL_UpdateJoysticks();
+    SDL_UpdateGamepads();
+    assert(pad_read_state(1,&data)==0 && data.touch_count==0 && !(data.buttons & BTN_TOUCHPAD));
+    assert(SDL_SetJoystickVirtualTouchpad(joystick,0,0,false,0,0,0));
+    assert(SDL_SetJoystickVirtualButton(joystick,SDL_GAMEPAD_BUTTON_TOUCHPAD,false));
+    SDL_UpdateJoysticks();
+    SDL_UpdateGamepads();
+    assert(pad_read_state(1,&data)==0 && !(data.buttons & BTN_TOUCHPAD));
+    usleep(TOUCH_DOUBLE_US+10000u); /* within the click's MAP_TAP_US after that */
+    assert(pad_read_state(1,&data)==0 && (data.buttons & BTN_TOUCHPAD));
+    assert(data.touch_count==1 && data.touches[0].x==1440 && data.touches[0].y==471);
+    assert(map_opened==map_before+1 && pings_asked==pings_before);
+    usleep(MAP_TAP_US+20000u);
+    assert(pad_read_state(1,&data)==0 && data.buttons==0 && data.touch_count==0);
+
+    /* Two taps within TOUCH_DOUBLE_US: one team ping, and no click for the game. */
+    for (int tap=0;tap<2;++tap) {
+        assert(SDL_SetJoystickVirtualTouchpad(joystick,0,0,true,0.25f,0.5f,1.0f));
+        assert(SDL_SetJoystickVirtualButton(joystick,SDL_GAMEPAD_BUTTON_TOUCHPAD,true));
+        SDL_UpdateJoysticks();
+        SDL_UpdateGamepads();
+        assert(pad_read_state(1,&data)==0 && !(data.buttons & BTN_TOUCHPAD));
+        assert(SDL_SetJoystickVirtualTouchpad(joystick,0,0,false,0,0,0));
+        assert(SDL_SetJoystickVirtualButton(joystick,SDL_GAMEPAD_BUTTON_TOUCHPAD,false));
+        SDL_UpdateJoysticks();
+        SDL_UpdateGamepads();
+        assert(pad_read_state(1,&data)==0 && !(data.buttons & BTN_TOUCHPAD));
+    }
+    assert(pings_asked==pings_before+1);
+    usleep(TOUCH_DOUBLE_US+MAP_TAP_US+20000u);
+    assert(pad_read_state(1,&data)==0 && data.buttons==0 && data.touch_count==0);
+    assert(map_opened==map_before+1 && pings_asked==pings_before+1);
     assert(SDL_SetJoystickVirtualButton(joystick,SDL_GAMEPAD_BUTTON_EAST,true));
     assert(SDL_SetJoystickVirtualButton(joystick,SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,true));
     assert(SDL_SetJoystickVirtualAxis(joystick,SDL_GAMEPAD_AXIS_RIGHT_TRIGGER,32767));
@@ -205,5 +250,5 @@ int main(void) {
     SDL_Quit();
     unlink(path);
     unlink(config);
-    puts("PASS: pad ABI, debug camera chord, left/right clicks, SDL touch coordinates, overlay capture, controls, co-op autoplay, party death");
+    puts("PASS: pad ABI, debug camera chord, left/right clicks, SDL touchpad hold for the map, tap and double-tap ping, overlay capture, controls, co-op autoplay, party death");
 }
