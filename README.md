@@ -285,7 +285,9 @@ nix-shell shell.nix --run "bash packaging/appimage.sh"
 they are missing and writes the release version (`BB_RELEASE_VERSION`, else the nearest `v*` tag)
 into its `VERSION.txt`. Its settings are in `~/.config/bbport-launcher-gtk` (as `bb-launcher.sh`'s)
 and its data in `~/.local/share/bbport-coop`, apart from the upstream bbport AppImage's folders. The
-AppImage has no co-op server: the host runs shadNet ([server/README.md](server/README.md)).
+AppImage has no co-op server: the host builds this repository's shadNet and starts it with
+`bbport/coop-run.sh server --listen <address>` ([hosting guide](server/README.md#hosting-for-this-repositorys-game);
+the shadNet of `shadnet-p2p` does not work with this game).
 
 ## Make a release
 

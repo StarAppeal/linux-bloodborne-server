@@ -5,6 +5,64 @@ SPDX-License-Identifier: GPL-2.0-or-later
 
 # Private Bloodborne co-op server
 
+> [!IMPORTANT]
+> **Playing with this repository's port (Windows release, Linux AppImage)? Read
+> [Hosting for this repository's game](#hosting-for-this-repositorys-game) first.**
+> The step-by-step guide below was written for the older shadPS4 P2P fork and its
+> own shadNet (`Wozzardman/shadnet-p2p`). That server does **not** work with this
+> repository's game: it listens on UDP `31314` for STUN pings only and never
+> answers the game's link, so a game stays at `Server link: no answer from the
+> server` and never signs in.
+
+## Hosting for this repository's game
+
+The game signs in through the *link* on UDP `31314`, which only the shadNet in
+this repository's `server/` speaks. There is no account to create by hand: the
+launcher makes each player's id itself and the server creates the account on the
+first sign-in. The AppImage has no server in it (its "Start server" button stays
+off), so the host builds one from the same checkout or tag as the game:
+
+```bash
+git clone https://github.com/lKaniel/bloodborne-server.git   # or the checkout your game came from
+cd bloodborne-server
+git submodule update --init server/externals/protobuf
+sudo pacman -S --needed base-devel git cmake ninja qt6-base qt6-httpserver   # Arch; Qt 6.8 or newer
+cmake -S server -B server/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+ninja -C server/build shadnet
+bash bbport/coop-run.sh server --listen 100.x.y.z    # the address your friends reach: LAN, Tailscale or ZeroTier
+```
+
+`coop-run.sh server` keeps its data in the co-op folder's `server/` (`BB_COOP_DIR`),
+turns seamless co-op on, sets `Host`, and tells the server which release it is (the
+build check on join). Every player, the host too, enters the same address as *Host IP*
+in the launcher. Where a built `server/build/shadnet` sits next to the launcher's
+checkout, the launcher's "Start server" button does the same; the AppImage has none.
+
+**Check that it is the right server.** The first lines must include
+
+```text
+Link UDP listener on: 0.0.0.0:31314
+Link: games must run this server's build: ...
+```
+
+If you see `STUN UDP listener on: ...` instead, this is the wrong shadNet (for example
+`shadnet-p2p`): build `server/` of this repository.
+
+Ports: UDP `31314` (the game's link; all game traffic), TCP `31315` and `20443` (web
+API and the game's online services). TCP `31313` is only used locally by the launcher
+to see whether the server runs. Qt older than 6.8 builds without the HTTP services, and
+Ubuntu 24.04's apt Qt (6.4) is such a Qt: use Docker there.
+
+**Docker.** `server/hosting/` builds the same server in a container (see its
+[README](hosting/README.md)); it is meant for a public server. The game and the server must
+be the same release: a server built from a clone without a `v*` tag calls itself `dev`
+and refuses a `1.3.0` game with a message in the game. Add `BB_RELEASE_VERSION: "1.3.0"`
+to the `shadnet` service's `environment` in `docker-compose.yml`, or set
+`CheckServerBuild=false` in `shadnet.cfg` on a private server.
+
+*The rest of this file is the older shadPS4 P2P guide, kept for its Tailscale and firewall
+notes.*
+
 This shadNet fork provides the account, matchmaking, signaling, and WebAPI
 services used by the matching [shadPS4 P2P fork](https://github.com/Wozzardman/shadp2p).
 This guide sets up a small private server for Bloodborne's traditional or
@@ -395,6 +453,15 @@ change a server running from `build/`.
 - Never assign the same account to two active players.
 - Confirm `build/db/shadnet.db` is the database containing the accounts.
 - Rebuild/update both repositories if the log reports a protocol mismatch.
+
+### The game log says `Server link: no answer from the server`
+
+The game's hellos reach the host (`sudo tcpdump -ni any udp port 31314` shows them, on `lo`
+when the game runs on the host itself) but nothing answers. Look at the server's startup lines:
+`STUN UDP listener on` means a shadNet that is not this repository's (see
+[Hosting for this repository's game](#hosting-for-this-repositorys-game)). With
+`Link UDP listener on` the game and the server may be different releases: the game then
+logs `the server refused this game: ...`.
 
 ### Login works but summoning does not
 
