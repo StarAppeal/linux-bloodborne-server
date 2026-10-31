@@ -45,6 +45,11 @@ Link UDP listener on: 0.0.0.0:31314
 Link: games must run this server's build: ...
 ```
 
+(Run from a terminal. Tested 2026-10-31 on CachyOS with Qt 6.12: a fresh clone builds with
+the commands above, `coop-run.sh server` starts and prints these lines, and the AppImage's
+game signs in to it, alone on the host. Not tested yet: several players, other distributions
+(Ubuntu, Debian), the Docker build.)
+
 If you see `STUN UDP listener on: ...` instead, this is the wrong shadNet (for example
 `shadnet-p2p`): build `server/` of this repository.
 
