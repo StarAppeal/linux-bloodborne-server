@@ -23,7 +23,8 @@ first sign-in. The AppImage has no server in it (its "Start server" button stays
 off), so the host builds one from the same checkout or tag as the game:
 
 ```bash
-git clone https://github.com/lKaniel/bloodborne-server.git   # or the checkout your game came from
+# Until the Linux port (PR #450) is merged, upstream `main` has no bbport/coop-run.sh:
+git clone -b linux-port https://github.com/StarAppeal/linux-bloodborne-server.git bloodborne-server
 cd bloodborne-server
 git submodule update --init server/externals/protobuf
 sudo pacman -S --needed base-devel git cmake ninja qt6-base qt6-httpserver   # Arch; Qt 6.8 or newer
